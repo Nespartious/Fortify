@@ -81,6 +81,53 @@ The TUI provides:
 - Esc to go back
 - 'q' to quit
 
+### Headless Deployment (Scripted)
+
+**For automated/headless server deployments without interactive TUI.**
+
+Fortify includes a comprehensive deployment script that configures everything from a single file. Perfect for:
+- Automated server provisioning
+- Infrastructure-as-code setups
+- Headless server environments
+- Reproducible deployments
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Nespartious/Fortify.git
+cd Fortify
+
+# 2. Edit the deployment script configuration
+#    Open deploy.sh and modify the settings at the top of the file.
+#    Each setting has comments explaining what it does.
+nano deploy.sh
+
+# 3. Review your configuration
+#    Make sure BACKEND_ADDRESS points to your real service
+#    Adjust CAPTCHA, mirror, and security settings as needed
+
+# 4. Run the deployment (requires root)
+sudo ./deploy.sh
+```
+
+The script will:
+- ✅ Install all system dependencies (Tor, Rust, build tools)
+- ✅ Apply OS hardening (sysctl, file limits)
+- ✅ Build Fortify from source
+- ✅ Generate configuration from your settings
+- ✅ Install and enable systemd services
+- ✅ Start all components
+
+**Key Configuration Sections in deploy.sh:**
+| Section | Description |
+|---------|-------------|
+| Backend Settings | Your protected service address and branding |
+| Mirror Settings | Number of mirrors and rotation behavior |
+| Vanity Settings | Custom .onion address prefixes |
+| CAPTCHA Settings | Pool size, difficulty, timeouts |
+| Rate Limiting | Request limits and ban thresholds |
+| Vanguards | Tor circuit protection settings |
+| Auto-Scaling | Dynamic resource allocation |
+
 ### Manual Component Control (Development Only)
 
 For development/debugging, individual components can be run:
