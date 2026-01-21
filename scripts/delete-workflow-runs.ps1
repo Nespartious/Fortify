@@ -108,26 +108,70 @@ if (-not $SkipLogin) {
 }
 
 # ============================================================================
-# STEP 3: Count workflow runs
+# MAIN LOOP - Keep trying until all runs are deleted
 # ============================================================================
-Write-Host ""
-Write-Host "[3/4] Fetching workflow runs for $Repo..." -ForegroundColor Yellow
+$totalDeleted = 0
+$totalFailed = 0
+$round = 0
+$rateLimitWait = 60  # Start with 60 second wait on rate limit
 
-try {
-    $runsJson = gh run list --repo $Repo --limit 500 --json databaseId,status,conclusion,name,createdAt 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Failed to fetch runs: $runsJson" -ForegroundColor Red
-        exit 1
+while ($true) {
+    $round++
+    
+    # ============================================================================
+    # Fetch workflow runs
+    # ============================================================================
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host " Round $round - Fetching workflow runs..." -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    
+    $fetchSuccess = $false
+    $fetchRetries = 0
+    
+    while (-not $fetchSuccess -and $fetchRetries -lt 10) {
+        try {
+            $runsJson = gh run list --repo $Repo --limit 500 --json databaseId,status,conclusion,name,createdAt 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                if ($runsJson -match "rate limit") {
+                    $fetchRetries++
+                    Write-Host "  Rate limited. Waiting $rateLimitWait seconds... (attempt $fetchRetries/10)" -ForegroundColor Yellow
+                    Start-Sleep -Seconds $rateLimitWait
+                    $rateLimitWait = [Math]::Min($rateLimitWait * 2, 300)  # Exponential backoff, max 5 min
+                    continue
+                }
+                Write-Host "ERROR: Failed to fetch runs: $runsJson" -ForegroundColor Red
+                exit 1
+            }
+            $fetchSuccess = $true
+            $rateLimitWait = 60  # Reset on success
+        } catch {
+            $fetchRetries++
+            Write-Host "  Error fetching runs. Retrying in 30 seconds... (attempt $fetchRetries/10)" -ForegroundColor Yellow
+            Start-Sleep -Seconds 30
+        }
+    }
+    
+    if (-not $fetchSuccess) {
+        Write-Host "  Failed to fetch runs after 10 attempts. Waiting 5 minutes..." -ForegroundColor Red
+        Start-Sleep -Seconds 300
+        continue
     }
     
     $runs = $runsJson | ConvertFrom-Json
     $totalRuns = $runs.Count
     
-    Write-Host "  Found $totalRuns workflow runs" -ForegroundColor Green
+    Write-Host "  Found $totalRuns workflow runs remaining" -ForegroundColor Green
     
     if ($totalRuns -eq 0) {
         Write-Host ""
-        Write-Host "No workflow runs to delete!" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host " ALL WORKFLOW RUNS DELETED!" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  Total deleted: $totalDeleted" -ForegroundColor White
+        Write-Host "  Total rounds:  $round" -ForegroundColor White
+        Write-Host ""
         exit 0
     }
     
@@ -142,93 +186,95 @@ try {
     Write-Host "    In Progress: $inProgress" -ForegroundColor Gray
     Write-Host "    Queued:      $queued" -ForegroundColor Gray
     
-} catch {
-    Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
-}
-
-# ============================================================================
-# STEP 4: Delete workflow runs
-# ============================================================================
-Write-Host ""
-Write-Host "[4/4] Deleting workflow runs..." -ForegroundColor Yellow
-
-if (-not $Force) {
-    Write-Host ""
-    $confirm = Read-Host "  Delete all $totalRuns workflow runs? (y/N)"
-    if ($confirm -notmatch "^[yY]") {
-        Write-Host "  Cancelled." -ForegroundColor Yellow
-        exit 0
-    }
-}
-
-$deleted = 0
-$failed = 0
-$runIds = $runs | ForEach-Object { $_.databaseId }
-
-# Process in batches
-for ($i = 0; $i -lt $runIds.Count; $i += $BatchSize) {
-    $batch = $runIds[$i..([Math]::Min($i + $BatchSize - 1, $runIds.Count - 1))]
-    $batchNum = [Math]::Floor($i / $BatchSize) + 1
-    $totalBatches = [Math]::Ceiling($runIds.Count / $BatchSize)
-    
-    Write-Host "  Batch $batchNum/$totalBatches (runs $($i + 1)-$([Math]::Min($i + $BatchSize, $runIds.Count)))..." -ForegroundColor Gray
-    
-    # Delete in parallel using PowerShell jobs
-    $jobs = @()
-    foreach ($runId in $batch) {
-        $jobs += Start-Job -ScriptBlock {
-            param($repo, $id)
-            gh run delete $id --repo $repo 2>&1
-            return $LASTEXITCODE
-        } -ArgumentList $Repo, $runId
-        
-        # Small delay between starting jobs to avoid hammering API
-        Start-Sleep -Milliseconds 500
-        
-        # Limit parallel jobs
-        while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -ge $MaxParallel) {
-            Start-Sleep -Milliseconds 500
+    # ============================================================================
+    # Confirm on first round only
+    # ============================================================================
+    if ($round -eq 1 -and -not $Force) {
+        Write-Host ""
+        $confirm = Read-Host "  Delete all $totalRuns workflow runs? (y/N)"
+        if ($confirm -notmatch "^[yY]") {
+            Write-Host "  Cancelled." -ForegroundColor Yellow
+            exit 0
         }
     }
     
-    # Wait for batch to complete
-    $results = $jobs | Wait-Job | Receive-Job
-    $jobs | Remove-Job
+    # ============================================================================
+    # Delete workflow runs
+    # ============================================================================
+    Write-Host ""
+    Write-Host "Deleting runs..." -ForegroundColor Yellow
     
-    $batchDeleted = ($results | Where-Object { $_ -eq 0 }).Count
-    $batchFailed = $batch.Count - $batchDeleted
+    $deleted = 0
+    $failed = 0
+    $runIds = $runs | ForEach-Object { $_.databaseId }
     
-    $deleted += $batchDeleted
-    $failed += $batchFailed
-    
-    # Progress
-    $progress = [Math]::Round(($deleted + $failed) / $totalRuns * 100)
-    Write-Host "    Deleted: $deleted | Failed: $failed | Progress: $progress%" -ForegroundColor Gray
-    
-    # Rate limit protection - pause between batches
-    if ($i + $BatchSize -lt $runIds.Count) {
-        Write-Host "    Pausing $DelayBetweenBatches seconds to avoid rate limit..." -ForegroundColor DarkGray
-        Start-Sleep -Seconds $DelayBetweenBatches
+    # Process in batches
+    for ($i = 0; $i -lt $runIds.Count; $i += $BatchSize) {
+        $batch = $runIds[$i..([Math]::Min($i + $BatchSize - 1, $runIds.Count - 1))]
+        $batchNum = [Math]::Floor($i / $BatchSize) + 1
+        $totalBatches = [Math]::Ceiling($runIds.Count / $BatchSize)
+        
+        Write-Host "  Batch $batchNum/$totalBatches (runs $($i + 1)-$([Math]::Min($i + $BatchSize, $runIds.Count)))..." -ForegroundColor Gray
+        
+        # Delete in parallel using PowerShell jobs
+        $jobs = @()
+        foreach ($runId in $batch) {
+            $jobs += Start-Job -ScriptBlock {
+                param($repo, $id)
+                $result = gh run delete $id --repo $repo 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    return 0
+                } else {
+                    return 1
+                }
+            } -ArgumentList $Repo, $runId
+            
+            # Small delay between starting jobs to avoid hammering API
+            Start-Sleep -Milliseconds 500
+            
+            # Limit parallel jobs
+            while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -ge $MaxParallel) {
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        
+        # Wait for batch to complete
+        $results = $jobs | Wait-Job | Receive-Job
+        $jobs | Remove-Job
+        
+        $batchDeleted = ($results | Where-Object { $_ -eq 0 }).Count
+        $batchFailed = $batch.Count - $batchDeleted
+        
+        $deleted += $batchDeleted
+        $failed += $batchFailed
+        
+        # Progress
+        $progress = [Math]::Round(($i + $batch.Count) / $totalRuns * 100)
+        Write-Host "    Deleted: $deleted | Failed: $failed | Progress: $progress%" -ForegroundColor Gray
+        
+        # Rate limit protection - pause between batches
+        if ($i + $BatchSize -lt $runIds.Count) {
+            Write-Host "    Pausing $DelayBetweenBatches seconds..." -ForegroundColor DarkGray
+            Start-Sleep -Seconds $DelayBetweenBatches
+        }
     }
-}
-
-# ============================================================================
-# SUMMARY
-# ============================================================================
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " Deletion Complete!" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Total runs:    $totalRuns" -ForegroundColor White
-Write-Host "  Deleted:       $deleted" -ForegroundColor Green
-Write-Host "  Failed:        $failed" -ForegroundColor $(if ($failed -gt 0) { "Red" } else { "Green" })
-Write-Host ""
-
-if ($failed -gt 0) {
-    Write-Host "Some deletions failed. This may be due to:" -ForegroundColor Yellow
-    Write-Host "  - Rate limiting (wait and retry)" -ForegroundColor Gray
-    Write-Host "  - Runs still in progress" -ForegroundColor Gray
-    Write-Host "  - Permission issues" -ForegroundColor Gray
+    
+    $totalDeleted += $deleted
+    $totalFailed += $failed
+    
+    # ============================================================================
+    # Round summary
+    # ============================================================================
+    Write-Host ""
+    Write-Host "  Round $round complete: Deleted $deleted, Failed $failed" -ForegroundColor Cyan
+    Write-Host "  Total deleted so far: $totalDeleted" -ForegroundColor White
+    
+    # If many failed, wait longer before next round
+    if ($failed -gt $deleted) {
+        Write-Host "  Many failures detected. Waiting 60 seconds before retry..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 60
+    } else {
+        Write-Host "  Waiting 10 seconds before checking for remaining runs..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds 10
+    }
 }
