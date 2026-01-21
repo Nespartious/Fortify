@@ -15,7 +15,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 hyper = { version = "0.14", features = ["server", "client", "http1", "tcp"] }
 hyper-tls = "0.5"
-http = "0.2"
+http = "1.4"
 bytes = "1.5"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
