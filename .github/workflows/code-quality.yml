@@ -10,6 +10,7 @@ on:
     - cron: '0 0 * * 0'
   workflow_dispatch:
 
+# Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:
   CARGO_TERM_COLOR: always
 
@@ -19,7 +20,7 @@ jobs:
   #############################################################################
   unused-deps:
     name: Unused Dependencies (cargo-machete)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,7 +44,7 @@ jobs:
   #############################################################################
   outdated:
     name: Outdated Dependencies
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,7 +68,7 @@ jobs:
   #############################################################################
   duplicates:
     name: Duplicate Dependencies
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -89,7 +90,7 @@ jobs:
   #############################################################################
   binary-size:
     name: Binary Size Analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -133,7 +134,7 @@ jobs:
   #############################################################################
   complexity:
     name: Code Complexity
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -153,7 +154,7 @@ jobs:
   #############################################################################
   dep-tree:
     name: Dependency Analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

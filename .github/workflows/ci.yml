@@ -6,21 +6,29 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Runner selection: Prefers self-hosted, falls back to GitHub-hosted
+# To use self-hosted: Add a runner with labels [self-hosted, linux, fortify]
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-Dwarnings"
+  # Set to 'true' to force GitHub-hosted runners
+  USE_GITHUB_HOSTED: 'false'
 
 jobs:
   #############################################################################
   # BUILD & TEST
   #############################################################################
   build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04]
+        # Self-hosted runners: use labels [self-hosted, linux, fortify]
+        # Falls back to GitHub-hosted if self-hosted unavailable
+        runner: 
+          - ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
+          - ubuntu-22.04
     
     steps:
       - name: Checkout repository
@@ -62,7 +70,7 @@ jobs:
   #############################################################################
   fmt:
     name: Code Formatting
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -81,7 +89,7 @@ jobs:
   #############################################################################
   clippy:
     name: Clippy Lints
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -124,7 +132,7 @@ jobs:
   #############################################################################
   docs:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -148,7 +156,7 @@ jobs:
   #############################################################################
   msrv:
     name: Minimum Rust Version (1.75)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

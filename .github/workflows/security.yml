@@ -10,6 +10,7 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:  # Allow manual trigger
 
+# Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:
   CARGO_TERM_COLOR: always
 
@@ -19,7 +20,7 @@ jobs:
   #############################################################################
   cargo-audit:
     name: Vulnerability Scan (cargo-audit)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,7 +40,7 @@ jobs:
   #############################################################################
   cargo-deny:
     name: License & Advisory Check (cargo-deny)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -59,7 +60,7 @@ jobs:
   #############################################################################
   semgrep:
     name: SAST (Semgrep)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     container:
       image: returntocorp/semgrep
     steps:
@@ -84,7 +85,7 @@ jobs:
   #############################################################################
   unsafe-check:
     name: Unsafe Code Audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -113,7 +114,7 @@ jobs:
   #############################################################################
   secrets-scan:
     name: Secrets Detection
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -130,7 +131,7 @@ jobs:
   #############################################################################
   supply-chain:
     name: Supply Chain Security
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

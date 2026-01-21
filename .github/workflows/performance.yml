@@ -7,6 +7,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:
   CARGO_TERM_COLOR: always
 
@@ -16,7 +17,7 @@ jobs:
   #############################################################################
   compile-time:
     name: Compile Time Analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -64,7 +65,7 @@ jobs:
   #############################################################################
   memory-analysis:
     name: Memory Analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -102,7 +103,7 @@ jobs:
   #############################################################################
   benchmarks:
     name: Runtime Benchmarks
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -136,7 +137,7 @@ jobs:
   #############################################################################
   startup-time:
     name: Startup Time Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
