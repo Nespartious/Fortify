@@ -11,8 +11,12 @@ use crate::app::{App, Dialog, DependencyState, DependencyCheckPhase};
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
     
-    // Calculate centered dialog area
-    let dialog_width = 70.min(area.width.saturating_sub(4));
+    // Calculate centered dialog area - wider for input dialogs (URLs can be long)
+    let base_width = match &app.dialog {
+        Dialog::Input { .. } => 90, // Wider for URL input
+        _ => 70,
+    };
+    let dialog_width = base_width.min(area.width.saturating_sub(4));
     let dialog_height = match &app.dialog {
         Dialog::Confirm { .. } => 8,
         Dialog::ApplyChanges { changes } => (8 + changes.len()).min(20) as u16,

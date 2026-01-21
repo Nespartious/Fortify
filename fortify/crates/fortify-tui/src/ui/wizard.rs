@@ -83,35 +83,76 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, step: usize) {
 }
 
 fn draw_progress(frame: &mut Frame, current: usize, area: Rect) {
-    let progress: Vec<Span> = WIZARD_STEPS
-        .iter()
-        .enumerate()
-        .flat_map(|(i, (name, _))| {
-            let style = if i < current {
-                Style::default().fg(Color::Green)
+    // Use compact format: show step numbers with dots for completed/pending
+    // and only show current step name to avoid overflow
+    let available_width = area.width as usize;
+    
+    // Calculate approximate length of full progress bar
+    let full_length: usize = WIZARD_STEPS.iter()
+        .map(|(name, _)| 2 + name.len() + 3) // "N.Name → "
+        .sum();
+    
+    // Use compact mode if we don't have enough space
+    let use_compact = full_length > available_width.saturating_sub(4);
+    
+    if use_compact {
+        // Compact: ● ● ● ○ ○ ○ ○  [Step 4: Network]
+        let mut progress: Vec<Span> = Vec::new();
+        
+        for i in 0..WIZARD_STEPS.len() {
+            let (symbol, color) = if i < current {
+                ("●", Color::Green)
             } else if i == current {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                ("◉", Color::Yellow)
             } else {
-                Style::default().fg(Color::DarkGray)
+                ("○", Color::DarkGray)
             };
+            progress.push(Span::styled(format!("{} ", symbol), Style::default().fg(color)));
+        }
+        
+        // Add current step name
+        let (step_name, _step_desc) = WIZARD_STEPS[current];
+        progress.push(Span::raw(" "));
+        progress.push(Span::styled(
+            format!("[{}/{}] {}", current + 1, WIZARD_STEPS.len(), step_name),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        ));
+        
+        let line = Line::from(progress);
+        let para = Paragraph::new(line).alignment(Alignment::Center);
+        frame.render_widget(para, area);
+    } else {
+        // Full format: 1.Deps → 2.Branding → ...
+        let progress: Vec<Span> = WIZARD_STEPS
+            .iter()
+            .enumerate()
+            .flat_map(|(i, (name, _))| {
+                let style = if i < current {
+                    Style::default().fg(Color::Green)
+                } else if i == current {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
 
-            let connector = if i < WIZARD_STEPS.len() - 1 {
-                Span::styled(" → ", Style::default().fg(Color::DarkGray))
-            } else {
-                Span::raw("")
-            };
+                let connector = if i < WIZARD_STEPS.len() - 1 {
+                    Span::styled(" → ", Style::default().fg(Color::DarkGray))
+                } else {
+                    Span::raw("")
+                };
 
-            vec![
-                Span::styled(format!("{}", i + 1), style),
-                Span::styled(format!(".{}", name), style),
-                connector,
-            ]
-        })
-        .collect();
+                vec![
+                    Span::styled(format!("{}", i + 1), style),
+                    Span::styled(format!(".{}", name), style),
+                    connector,
+                ]
+            })
+            .collect();
 
-    let line = Line::from(progress);
-    let para = Paragraph::new(line).alignment(Alignment::Center);
-    frame.render_widget(para, area);
+        let line = Line::from(progress);
+        let para = Paragraph::new(line).alignment(Alignment::Center);
+        frame.render_widget(para, area);
+    }
 }
 
 fn draw_step_dependencies(frame: &mut Frame, _app: &App, area: Rect) {
