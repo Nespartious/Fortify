@@ -507,6 +507,56 @@ impl DeploymentManager {
             "Installing vanguards via pip..."
         )).await.ok();
         
+        // First, check if pip3 is available - if not, install it
+        let pip_check = Command::new("which")
+            .arg("pip3")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+        
+        if pip_check.is_err() || !pip_check.unwrap().success() {
+            self.log_tx.send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "pip3 not found, installing python3-pip first..."
+            )).await.ok();
+            
+            let pip_install = Command::new("sudo")
+                .args(&["apt-get", "install", "-y", "python3-pip"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await;
+            
+            match pip_install {
+                Ok(result) if result.status.success() => {
+                    self.log_tx.send(LogEntry::from_source(
+                        LogLevel::Info,
+                        "install",
+                        "python3-pip installed successfully"
+                    )).await.ok();
+                }
+                Ok(result) => {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    self.log_tx.send(LogEntry::from_source(
+                        LogLevel::Error,
+                        "install",
+                        &format!("Failed to install python3-pip: {}", stderr.lines().next().unwrap_or("unknown error"))
+                    )).await.ok();
+                    return Ok(false);
+                }
+                Err(e) => {
+                    self.log_tx.send(LogEntry::from_source(
+                        LogLevel::Error,
+                        "install",
+                        &format!("Failed to run apt-get: {}", e)
+                    )).await.ok();
+                    return Ok(false);
+                }
+            }
+        }
+        
         // Try multiple methods in order of preference
         let methods = [
             // Method 1: pip3 with --break-system-packages (Ubuntu 23.04+)
