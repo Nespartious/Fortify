@@ -581,7 +581,10 @@ impl App {
     }
 
     /// Main run loop
-    pub async fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+    pub async fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()>
+    where
+        B::Error: Send + Sync + 'static,
+    {
         // Add initial log
         self.log_tx.send(LogEntry::info("Fortify TUI started")).await.ok();
 
