@@ -1,14 +1,18 @@
 name: Release
 
+# Manual trigger only - use GitHub Actions UI or gh workflow run
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
         description: 'Version tag (e.g., v1.0.0)'
         required: true
+
+# To re-enable automatic tag triggers, uncomment below:
+# on:
+#   push:
+#     tags:
+#       - 'v*'
 
 env:
   CARGO_TERM_COLOR: always

@@ -1,14 +1,23 @@
 name: Code Quality
 
+# Manual trigger only - use GitHub Actions UI or gh workflow run
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    # Run weekly on Sundays at 00:00 UTC
-    - cron: '0 0 * * 0'
   workflow_dispatch:
+    inputs:
+      run_all:
+        description: 'Run all quality checks'
+        required: false
+        default: true
+        type: boolean
+
+# To re-enable automatic triggers, uncomment below:
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+#   schedule:
+#     - cron: '0 0 * * 0'
 
 # Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:

@@ -1,10 +1,21 @@
 name: CI
 
+# Manual trigger only - use GitHub Actions UI or gh workflow run
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: 'Run all jobs'
+        required: false
+        default: true
+        type: boolean
+
+# To re-enable automatic triggers, uncomment below:
+# on:
+#   push:
+#     branches: [main, develop]
+#   pull_request:
+#     branches: [main, develop]
 
 # Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 # To use self-hosted: Add a runner with labels [self-hosted, linux, fortify]

@@ -1,11 +1,21 @@
 name: Performance Benchmarks
 
+# Manual trigger only - use GitHub Actions UI or gh workflow run
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      run_all:
+        description: 'Run all benchmarks'
+        required: false
+        default: true
+        type: boolean
+
+# To re-enable automatic triggers, uncomment below:
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
 
 # Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:
