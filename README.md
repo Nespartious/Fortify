@@ -39,16 +39,23 @@ Successfully defended against **65,576 attack requests** over 3 hours while main
 ### Installation
 
 ```bash
-# Clone repository
+# 1. Update system and install build dependencies
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git build-essential pkg-config libssl-dev
+
+# 2. Clone the repository
 git clone https://github.com/Nespartious/Fortify.git
 cd Fortify/fortify
 
-# Install dependencies (Ubuntu/Debian)
-sudo apt-get update
-sudo apt-get install tor build-essential pkg-config libssl-dev
+# 3. Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source $HOME/.cargo/env
 
-# Build release binaries
+# 4. Build the project
 cargo build --release
+
+# 5. Run the TUI
+./target/release/fortify
 ```
 
 ### Deployment via TUI
