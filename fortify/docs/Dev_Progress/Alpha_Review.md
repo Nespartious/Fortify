@@ -2,8 +2,142 @@
 
 **Version:** Alpha 1.0  
 **Review Date:** January 21, 2026  
-**Status:** Ready for Production Testing  
+**Status:** Ready for Testing (Production Deployment Requires Critical Fixes)  
 **Attack Defense Verified:** 65,576 requests blocked during 3-hour DDoS (Jan 20, 2026)
+
+---
+
+## 🚨 Critical Security Issues (Must Address Before Beta)
+
+### CRITICAL #1: Async Timeout Strategy - HIGHEST PRIORITY
+**Severity:** 🔴 **CRITICAL** (Beta Blocker)  
+**Risk:** Slow-loris attacks can exhaust worker pool and make entire proxy unresponsive  
+**Status:** Partially implemented, needs systematic completion
+
+**Missing Timeouts:**
+- [ ] Tor control socket operations (unbounded)
+- [ ] Mirror health check requests (unbounded)
+- [ ] Orchestrator API calls (no explicit timeout)
+- [ ] Backend node proxying (relying on defaults)
+- [ ] WebSocket/long-lived connection handling
+
+**Required Implementation:**
+- [ ] Connection timeout (handshake)
+- [ ] Read timeout (per chunk)
+- [ ] Write timeout (per flush)
+- [ ] Request timeout (end-to-end)
+- [ ] Idle timeout (keep-alive)
+- [ ] Document timeout strategy
+- [ ] Test with slow-loris simulation over Tor
+
+**Why Critical:** Slow-loris attacks over Tor are proven, realistic, and trivial to execute. We're a DDoS defense tool without complete timeout guarantees.
+
+---
+
+### CRITICAL #2: Panic Path Audit
+**Severity:** 🔴 **CRITICAL** (Beta Blocker)  
+**Risk:** Attacker-triggered panics cause instant DoS  
+**Status:** Not systematically audited
+
+**Required Actions:**
+- [ ] Audit all `unwrap()` calls in network-facing code
+- [ ] Audit all `expect()` calls on untrusted input
+- [ ] Replace panics with proper error handling
+- [ ] Add `#![deny(clippy::unwrap_used)]` in production crates
+- [ ] Implement fuzzing infrastructure
+- [ ] Add panic recovery in critical paths
+
+**Known Safe:**
+- ✅ Test code (panics acceptable)
+- ✅ Initialization code (validated during startup)
+
+**Needs Verification:**
+- ⚠️ HTTP request parsing paths
+- ⚠️ Token deserialization
+- ⚠️ Session state transitions
+- ⚠️ Tor control protocol handling
+
+**Why Critical:** One panic on attacker-controlled input = entire service crashes. Panics in async contexts can poison task pools.
+
+---
+
+### HIGH: Circuit Churn State Pressure
+**Severity:** 🟡 **HIGH**  
+**Risk:** Rapid circuit creation/destruction can pressure memory allocation  
+**Status:** Partially mitigated, not eliminated
+
+**Current Mitigation:**
+- ✅ Time-based cleanup of expired entries
+- ✅ Sliding window rate limiting
+- ✅ Per-circuit HashMap with bounded history
+
+**Remaining Vulnerability:**
+- ⚠️ HashMap scales with number of active circuits
+- ⚠️ Cleanup happens after admission, not before
+- ⚠️ Tor attackers excel at circuit churn
+- ⚠️ Sustained churn can degrade performance
+
+**Recommended Enhancements:**
+- [ ] Circuit admission limits (max concurrent circuits)
+- [ ] Aggressive cleanup on memory pressure
+- [ ] Circuit creation rate limiting
+- [ ] Monitoring and alerting for circuit churn
+- [ ] Admission control with backpressure
+
+**Why High:** Known DoS pressure point in Tor defenses. Mitigation exists but not elimination.
+
+---
+
+### MEDIUM: Input Validation Edge Cases
+**Severity:** 🟠 **MEDIUM**  
+**Risk:** Edge case validation gaps could allow resource exhaustion or logical bypass  
+**Status:** Core validation solid, edge cases need hardening
+
+**Current Protection:**
+- ✅ Rust type system (memory safety)
+- ✅ Hyper HTTP parsing (battle-tested)
+- ✅ HMAC-SHA256 token signatures
+- ✅ Trust tier enum validation
+
+**Edge Cases Needing Review:**
+- [ ] Path normalization attacks (`//`, `%2f`, `%00`, unicode tricks)
+- [ ] Header bloat attacks (many valid headers causing resource exhaustion)
+- [ ] Algorithmic complexity attacks (valid inputs triggering O(n²) behavior)
+- [ ] Request smuggling via malformed chunked encoding
+- [ ] All unwrap() calls on untrusted input
+
+**Recommended Actions:**
+- [ ] Add path canonicalization before routing
+- [ ] Implement header count/size limits
+- [ ] Complexity analysis of hot paths
+- [ ] Fuzz testing with pathological inputs
+- [ ] Property-based testing for parsers
+
+---
+
+### HIGH: Real-World Adversarial Testing
+**Severity:** 🟡 **HIGH**  
+**Risk:** Untested against adaptive adversaries in hostile environments  
+**Status:** Attack simulation completed, real deployment needed
+
+**Current Testing:**
+- ✅ 65,576 request DDoS simulation
+- ✅ Per-circuit rate limiting validated
+- ✅ CAPTCHA flow tested
+- ✅ Unit and integration tests passing
+
+**Missing:**
+- ⚠️ Real Tor network deployment
+- ⚠️ Adaptive attacker testing
+- ⚠️ Long-term stability testing
+- ⚠️ Performance under sustained load
+- ⚠️ Third-party penetration testing
+
+**Recommendation:**
+- [ ] Deploy to test hidden service
+- [ ] Run for 30+ days under real traffic
+- [ ] Commission external security audit
+- [ ] Bug bounty program for Beta release
 
 ---
 

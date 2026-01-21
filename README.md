@@ -36,26 +36,74 @@ Successfully defended against **65,576 attack requests** over 3 hours while main
 
 ## 🚀 Quick Start
 
+### Installation
+
 ```bash
 # Clone repository
 git clone https://github.com/Nespartious/Fortify.git
 cd Fortify/fortify
 
-# Build (requires Rust 1.75+)
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get update
+sudo apt-get install tor build-essential pkg-config libssl-dev
+
+# Build release binaries
 cargo build --release
-
-# Run (manual deployment - TUI coming soon)
-./target/release/fortify-controller
-
-# Access admin panel
-http://127.0.0.1:8080/ctrl_8f7k3m9x2n4p1q6w5v0b8c/
 ```
 
+### Deployment via TUI
+
+**Fortify uses an interactive TUI (Terminal User Interface) for deployment and management.**
+
+```bash
+# Launch the Fortify TUI
+./target/release/fortify
+```
+
+The TUI provides:
+- **Deployment Wizard** - Step-by-step setup for new deployments
+- **Live Status Monitoring** - Real-time component health and metrics
+- **Configuration Management** - Hot-reload settings without restart
+- **Log Streaming** - Multi-component log aggregation
+- **Mirror Management** - View and manage .onion addresses
+
+**Navigation:**
+- Arrow keys to navigate
+- Enter to select
+- Tab to switch panels
+- Esc to go back
+- 'q' to quit
+
+### Manual Component Control (Development Only)
+
+For development/debugging, individual components can be run:
+
+```bash
+# Controller (resource monitoring)
+./target/release/fortify-controller
+
+# Orchestrator (mirror management)
+SECRET_KEY="your-secret" ./target/release/fortify-orchestrator
+
+# Gate (CAPTCHA verification)
+SECRET_KEY="your-secret" ./target/release/fortify-gate
+
+# HTTP Proxy (main traffic handler)
+SECRET_KEY="your-secret" ./target/release/fortify-http
+
+# Nodes (backend services)
+NODE_MODE="healthy" ./target/release/fortify-node
+NODE_MODE="threat" ./target/release/fortify-node
+```
+
+⚠️ **Note:** Manual deployment is complex and error-prone. Use the TUI for reliable deployment.
+
 **Requirements:**
-- Rust 1.75 or higher
-- Tor daemon installed
-- Linux (tested on Ubuntu 22.04)
-- 2GB+ RAM (recommended for production)
+- **Rust:** 1.75 or higher
+- **Tor:** Latest stable version
+- **OS:** Linux (tested on Ubuntu 22.04)
+- **RAM:** 2GB minimum (4GB recommended for production)
+- **Disk:** 1GB for binaries + logs
 
 ---
 
