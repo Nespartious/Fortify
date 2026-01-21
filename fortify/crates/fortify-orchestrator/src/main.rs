@@ -34,12 +34,33 @@ async fn main() -> anyhow::Result<()> {
         config.tor_cookie_path = Some(PathBuf::from(cookie));
     }
     
+    // Get base data directory from controller (or use default)
+    let base_data_dir = std::env::var("FORTIFY_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            // Default to ~/.local/share/fortify if HOME is set
+            if let Some(home) = std::env::var_os("HOME") {
+                let mut path = PathBuf::from(home);
+                path.push(".local");
+                path.push("share");
+                path.push("fortify");
+                path
+            } else {
+                PathBuf::from("/tmp/fortify")
+            }
+        });
+    
     // Use orchestrator-specific data directory to prevent multiple orchestrators
     // from managing the same mirrors
     if let Ok(orch_id) = std::env::var("ORCH_ID") {
-        config.tor_data_dir = PathBuf::from(format!("/tmp/fortify/tor/mirrors/orch-{}", orch_id));
+        config.tor_data_dir = base_data_dir.join("tor").join("mirrors").join(format!("orch-{}", orch_id));
         info!("Orchestrator {} using data dir: {:?}", orch_id, config.tor_data_dir);
+    } else {
+        config.tor_data_dir = base_data_dir.join("tor").join("mirrors");
     }
+    
+    // Store base data dir in config for torrc path resolution
+    config.base_data_dir = Some(base_data_dir);
     
     // Vanity address configuration for mirrors
     if let Ok(val) = std::env::var("VANITY_ENABLED") {
@@ -55,6 +76,42 @@ async fn main() -> anyhow::Result<()> {
     if config.vanity_enabled && !config.vanity_prefix.is_empty() {
         info!("Vanity addresses enabled: prefix='{}', timeout={}s", 
             config.vanity_prefix, config.vanity_timeout);
+    }
+
+    // CAPTCHA pool configuration from TUI settings
+    if let Ok(val) = std::env::var("CAPTCHA_POOL_SIZE") {
+        if let Ok(size) = val.parse() {
+            config.multi_daemon.flex_core.captcha_pregen.target_pool_size = size;
+            info!("CAPTCHA target pool size: {}", size);
+        }
+    }
+    if let Ok(val) = std::env::var("CAPTCHA_MIN_POOL") {
+        if let Ok(size) = val.parse() {
+            config.multi_daemon.flex_core.captcha_pregen.min_pool_size = size;
+        }
+    }
+    if let Ok(val) = std::env::var("CAPTCHA_MAX_POOL") {
+        if let Ok(size) = val.parse() {
+            config.multi_daemon.flex_core.captcha_pregen.max_pool_size = size;
+        }
+    }
+    if let Ok(val) = std::env::var("CAPTCHA_ENABLED") {
+        config.multi_daemon.flex_core.captcha_pregen.enabled = val.parse().unwrap_or(true);
+    }
+    if let Ok(val) = std::env::var("CAPTCHA_ROTATION_PERCENT") {
+        if let Ok(pct) = val.parse() {
+            config.multi_daemon.flex_core.captcha_pregen.rotation_percent = pct;
+        }
+    }
+    if let Ok(val) = std::env::var("CAPTCHA_ROTATION_DAYS") {
+        if let Ok(days) = val.parse() {
+            config.multi_daemon.flex_core.captcha_pregen.rotation_interval_days = days;
+        }
+    }
+    if let Ok(val) = std::env::var("CAPTCHA_BATCH_SIZE") {
+        if let Ok(size) = val.parse() {
+            config.multi_daemon.flex_core.captcha_pregen.batch_size = size;
+        }
     }
 
     // Create orchestrator

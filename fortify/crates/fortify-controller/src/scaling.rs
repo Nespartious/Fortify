@@ -97,8 +97,10 @@ impl ScalingPolicy {
     }
 
     /// Check if should scale up based on resource usage
+    /// Note: We DON'T scale up when memory is already high - that would make it worse!
     fn should_scale_up(&self, cpu_usage: f32, memory_usage: f32) -> bool {
-        cpu_usage > self.cpu_scale_up_threshold || memory_usage > self.memory_scale_up_threshold
+        // Only scale up if CPU is high AND memory is still reasonable
+        cpu_usage > self.cpu_scale_up_threshold && memory_usage < self.memory_scale_up_threshold
     }
 
     /// Check if should scale down based on resource usage

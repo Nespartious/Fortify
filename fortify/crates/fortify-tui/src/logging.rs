@@ -2,6 +2,614 @@
 
 use std::collections::VecDeque;
 use chrono::{DateTime, Utc};
+use ratatui::style::Color;
+
+// ============================================================================
+// Status Dashboard Types
+// ============================================================================
+
+/// Status of a system component
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ComponentStatus {
+    #[default]
+    Pending,
+    Starting,
+    Running,
+    Warning,
+    Error,
+    Stopped,
+}
+
+impl ComponentStatus {
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            ComponentStatus::Pending => "○",
+            ComponentStatus::Starting => "◐",
+            ComponentStatus::Running => "●",
+            ComponentStatus::Warning => "◐",
+            ComponentStatus::Error => "✗",
+            ComponentStatus::Stopped => "○",
+        }
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            ComponentStatus::Pending => Color::DarkGray,
+            ComponentStatus::Starting => Color::Yellow,
+            ComponentStatus::Running => Color::Green,
+            ComponentStatus::Warning => Color::Rgb(255, 165, 0), // Orange
+            ComponentStatus::Error => Color::Red,
+            ComponentStatus::Stopped => Color::DarkGray,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ComponentStatus::Pending => "PENDING",
+            ComponentStatus::Starting => "STARTING",
+            ComponentStatus::Running => "RUNNING",
+            ComponentStatus::Warning => "WARNING",
+            ComponentStatus::Error => "ERROR",
+            ComponentStatus::Stopped => "STOPPED",
+        }
+    }
+}
+
+/// System-wide status for the status dashboard
+#[derive(Debug, Clone, Default)]
+pub struct SystemStatus {
+    /// Tor daemon status
+    pub tor_daemon: ComponentStatus,
+    /// Gate service status
+    pub gate: ComponentStatus,
+    /// Controller status
+    pub controller: ComponentStatus,
+    /// Orchestrator counts: (active, target)
+    pub orchestrators: (usize, usize),
+    /// Orchestrator overall status
+    pub orchestrator_status: ComponentStatus,
+    /// Mirror counts: (live, standby, total)
+    pub mirrors: (usize, usize, usize),
+    /// Mirror overall status
+    pub mirror_status: ComponentStatus,
+    /// CAPTCHA pool: (current, target)
+    pub captcha_pool: (usize, usize),
+    /// CAPTCHA pool status
+    pub captcha_status: ComponentStatus,
+    /// Node counts: (healthy, threat)
+    pub nodes: (usize, usize),
+    /// Current deployment step: (current, total, description)
+    pub deploy_step: Option<(usize, usize, String)>,
+    /// Last status update timestamp
+    pub last_update: Option<std::time::Instant>,
+}
+
+impl SystemStatus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Update component status with automatic timestamp
+    pub fn touch(&mut self) {
+        self.last_update = Some(std::time::Instant::now());
+    }
+}
+
+// ============================================================================
+// Security Status (Attack Detection)
+// ============================================================================
+
+/// Security threat level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SecurityLevel {
+    /// No threats, normal traffic
+    #[default]
+    Clear,
+    /// Some pending sessions, no unusual patterns
+    Normal,
+    /// Above-baseline new sessions
+    Elevated,
+    /// High unverified rate, possible probing
+    Suspicious,
+    /// Attack patterns detected, system coping
+    Warning,
+    /// Confirmed attack, high volume
+    Attack,
+}
+
+impl SecurityLevel {
+    pub fn color(&self) -> Color {
+        match self {
+            SecurityLevel::Clear => Color::Green,
+            SecurityLevel::Normal => Color::Rgb(144, 238, 144), // Pale green
+            SecurityLevel::Elevated => Color::Yellow,
+            SecurityLevel::Suspicious => Color::Rgb(255, 165, 0), // Orange
+            SecurityLevel::Warning => Color::Rgb(255, 100, 100), // Pale red
+            SecurityLevel::Attack => Color::Red,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            SecurityLevel::Clear => "Clear",
+            SecurityLevel::Normal => "Normal",
+            SecurityLevel::Elevated => "Elevated",
+            SecurityLevel::Suspicious => "Suspicious",
+            SecurityLevel::Warning => "Warning",
+            SecurityLevel::Attack => "ATTACK",
+        }
+    }
+
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            SecurityLevel::Clear => "●",
+            SecurityLevel::Normal => "●",
+            SecurityLevel::Elevated => "◐",
+            SecurityLevel::Suspicious => "◐",
+            SecurityLevel::Warning => "⚠",
+            SecurityLevel::Attack => "🔴",
+        }
+    }
+
+    /// Returns true if security level is elevated or higher
+    pub fn is_elevated(&self) -> bool {
+        matches!(self, SecurityLevel::Elevated | SecurityLevel::Suspicious | SecurityLevel::Warning | SecurityLevel::Attack)
+    }
+}
+
+/// Security status tracking with rolling counters
+/// Uses bucket-based counting for O(1) updates
+#[derive(Debug, Clone)]
+pub struct SecurityStatus {
+    /// Current threat level
+    pub level: SecurityLevel,
+    /// New sessions in current 30-second bucket
+    pub new_sessions_current: u32,
+    /// New sessions in previous 30-second bucket
+    pub new_sessions_previous: u32,
+    /// Unverified requests in current 30-second bucket
+    pub unverified_requests_current: u32,
+    /// Unverified requests in previous 30-second bucket
+    pub unverified_requests_previous: u32,
+    /// Sessions that solved CAPTCHA (resolved)
+    pub resolved_sessions: u32,
+    /// Failed CAPTCHA attempts
+    pub failed_captcha_attempts: u32,
+    /// Last bucket swap time
+    pub last_bucket_swap: std::time::Instant,
+    /// Suspicious pattern flags detected
+    pub suspicious_flags: Vec<String>,
+}
+
+impl Default for SecurityStatus {
+    fn default() -> Self {
+        Self {
+            level: SecurityLevel::Clear,
+            new_sessions_current: 0,
+            new_sessions_previous: 0,
+            unverified_requests_current: 0,
+            unverified_requests_previous: 0,
+            resolved_sessions: 0,
+            failed_captcha_attempts: 0,
+            last_bucket_swap: std::time::Instant::now(),
+            suspicious_flags: Vec::new(),
+        }
+    }
+}
+
+impl SecurityStatus {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Swap buckets if 30 seconds have passed
+    pub fn maybe_swap_buckets(&mut self) {
+        let elapsed = self.last_bucket_swap.elapsed();
+        if elapsed.as_secs() >= 30 {
+            // Move current to previous, reset current
+            self.new_sessions_previous = self.new_sessions_current;
+            self.new_sessions_current = 0;
+            self.unverified_requests_previous = self.unverified_requests_current;
+            self.unverified_requests_current = 0;
+            self.last_bucket_swap = std::time::Instant::now();
+            // Clear old suspicious flags
+            self.suspicious_flags.clear();
+            // Decay resolved count slowly
+            self.resolved_sessions = self.resolved_sessions.saturating_sub(5);
+            self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_sub(2);
+        }
+    }
+
+    /// Record a new session
+    pub fn record_new_session(&mut self) {
+        self.maybe_swap_buckets();
+        self.new_sessions_current = self.new_sessions_current.saturating_add(1);
+    }
+
+    /// Record an unverified request
+    pub fn record_unverified_request(&mut self) {
+        self.maybe_swap_buckets();
+        self.unverified_requests_current = self.unverified_requests_current.saturating_add(1);
+    }
+
+    /// Record a session that solved CAPTCHA
+    pub fn record_session_resolved(&mut self) {
+        self.resolved_sessions = self.resolved_sessions.saturating_add(1);
+    }
+
+    /// Record a failed CAPTCHA attempt
+    pub fn record_failed_captcha(&mut self) {
+        self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_add(1);
+    }
+
+    /// Add a suspicious pattern flag
+    pub fn add_suspicious_flag(&mut self, flag: &str) {
+        if self.suspicious_flags.len() < 10 {
+            self.suspicious_flags.push(flag.to_string());
+        }
+    }
+
+    /// Get new sessions per minute (estimated from buckets)
+    pub fn new_sessions_per_minute(&self) -> u32 {
+        // Sum both buckets (represents ~1 minute of data)
+        self.new_sessions_current.saturating_add(self.new_sessions_previous)
+    }
+
+    /// Get unverified requests per minute (estimated from buckets)
+    pub fn unverified_requests_per_minute(&self) -> u32 {
+        self.unverified_requests_current.saturating_add(self.unverified_requests_previous)
+    }
+
+    /// Compute the security level based on current metrics
+    pub fn compute_level(&mut self) {
+        self.maybe_swap_buckets();
+        
+        let sessions_per_min = self.new_sessions_per_minute();
+        let unverified_per_min = self.unverified_requests_per_minute();
+        let failed_captcha = self.failed_captcha_attempts;
+        let has_suspicious_flags = !self.suspicious_flags.is_empty();
+        
+        // Thresholds (these could be configurable)
+        self.level = if sessions_per_min > 100 || unverified_per_min > 500 || failed_captcha > 20 {
+            SecurityLevel::Attack
+        } else if sessions_per_min > 60 || unverified_per_min > 300 || failed_captcha > 10 || has_suspicious_flags {
+            SecurityLevel::Warning
+        } else if sessions_per_min > 30 || unverified_per_min > 100 || failed_captcha > 5 {
+            SecurityLevel::Suspicious
+        } else if sessions_per_min > 10 || unverified_per_min > 30 {
+            SecurityLevel::Elevated
+        } else if sessions_per_min > 0 || unverified_per_min > 0 {
+            SecurityLevel::Normal
+        } else {
+            SecurityLevel::Clear
+        };
+    }
+}
+
+// ============================================================================
+// Network Traffic Types
+// ============================================================================
+
+/// HTTP request method
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Head,
+    Options,
+    Other,
+}
+
+impl HttpMethod {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "GET" => HttpMethod::Get,
+            "POST" => HttpMethod::Post,
+            "PUT" => HttpMethod::Put,
+            "DELETE" => HttpMethod::Delete,
+            "HEAD" => HttpMethod::Head,
+            "OPTIONS" => HttpMethod::Options,
+            _ => HttpMethod::Other,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            HttpMethod::Get => "GET",
+            HttpMethod::Post => "POST",
+            HttpMethod::Put => "PUT",
+            HttpMethod::Delete => "DEL",
+            HttpMethod::Head => "HEAD",
+            HttpMethod::Options => "OPT",
+            HttpMethod::Other => "???",
+        }
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            HttpMethod::Get => Color::Green,
+            HttpMethod::Post => Color::Cyan,
+            HttpMethod::Put => Color::Yellow,
+            HttpMethod::Delete => Color::Red,
+            _ => Color::DarkGray,
+        }
+    }
+}
+
+/// HTTP response status category
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponseStatus {
+    Success,      // 2xx
+    Redirect,     // 3xx
+    ClientError,  // 4xx
+    ServerError,  // 5xx
+    Pending,      // In progress
+}
+
+impl ResponseStatus {
+    pub fn from_code(code: u16) -> Self {
+        match code {
+            200..=299 => ResponseStatus::Success,
+            300..=399 => ResponseStatus::Redirect,
+            400..=499 => ResponseStatus::ClientError,
+            500..=599 => ResponseStatus::ServerError,
+            _ => ResponseStatus::Pending,
+        }
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            ResponseStatus::Success => Color::Green,
+            ResponseStatus::Redirect => Color::Cyan,
+            ResponseStatus::ClientError => Color::Yellow,
+            ResponseStatus::ServerError => Color::Red,
+            ResponseStatus::Pending => Color::DarkGray,
+        }
+    }
+}
+
+/// Session trust level for traffic categorization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SessionTrust {
+    #[default]
+    Unknown,    // Not yet determined
+    Verified,   // Passed verification, trusted
+    Threat,     // Failed verification or suspicious
+}
+
+/// Session entry with trust level and last seen time
+#[derive(Debug, Clone)]
+pub struct SessionEntry {
+    /// Trust level for this session
+    pub trust: SessionTrust,
+    /// Last time this session was seen
+    pub last_seen: std::time::Instant,
+}
+
+impl SessionEntry {
+    pub fn new(trust: SessionTrust) -> Self {
+        Self {
+            trust,
+            last_seen: std::time::Instant::now(),
+        }
+    }
+
+    pub fn update_trust(&mut self, trust: SessionTrust) {
+        self.trust = trust;
+        self.last_seen = std::time::Instant::now();
+    }
+
+    pub fn touch(&mut self) {
+        self.last_seen = std::time::Instant::now();
+    }
+}
+
+/// A single network traffic event (or aggregated asset bundle)
+#[derive(Debug, Clone)]
+pub struct NetworkEvent {
+    /// Timestamp of request
+    pub timestamp: DateTime<Utc>,
+    /// Session ID (short hash)
+    pub session_id: String,
+    /// HTTP method
+    pub method: HttpMethod,
+    /// Request path (or aggregated description like "[5 assets]")
+    pub path: String,
+    /// Response status code
+    pub status_code: Option<u16>,
+    /// Response status category
+    pub status: ResponseStatus,
+    /// Request duration in milliseconds
+    pub duration_ms: Option<u64>,
+    /// Response size in bytes
+    pub size_bytes: Option<usize>,
+    /// Source mirror (truncated onion address)
+    pub mirror: Option<String>,
+    /// If this is an aggregated asset bundle
+    pub is_asset_bundle: bool,
+    /// Number of assets in bundle (if aggregated)
+    pub asset_count: usize,
+    /// Session trust level
+    pub trust: SessionTrust,
+}
+
+/// Static asset file extensions to aggregate
+const ASSET_EXTENSIONS: &[&str] = &[
+    ".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".bmp", ".avif",
+    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".css", ".map",
+];
+
+impl NetworkEvent {
+    pub fn new(session_id: &str, method: HttpMethod, path: &str) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            session_id: session_id.to_string(),
+            method,
+            path: path.to_string(),
+            status_code: None,
+            status: ResponseStatus::Pending,
+            duration_ms: None,
+            size_bytes: None,
+            mirror: None,
+            is_asset_bundle: false,
+            asset_count: 1,
+            trust: SessionTrust::Unknown,
+        }
+    }
+
+    /// Check if this event is for a static asset that should be bundled
+    pub fn is_static_asset(&self) -> bool {
+        let path_lower = self.path.to_lowercase();
+        ASSET_EXTENSIONS.iter().any(|ext| path_lower.ends_with(ext))
+    }
+
+    /// Merge another asset event into this bundle
+    pub fn merge_asset(&mut self, other: &NetworkEvent) {
+        self.is_asset_bundle = true;
+        self.asset_count += other.asset_count;
+        
+        // Sum sizes
+        match (self.size_bytes, other.size_bytes) {
+            (Some(a), Some(b)) => self.size_bytes = Some(a + b),
+            (None, Some(b)) => self.size_bytes = Some(b),
+            _ => {}
+        }
+        
+        // Take max duration (parallel loads)
+        match (self.duration_ms, other.duration_ms) {
+            (Some(a), Some(b)) => self.duration_ms = Some(a.max(b)),
+            (None, Some(b)) => self.duration_ms = Some(b),
+            _ => {}
+        }
+        
+        // Update path to show bundle info
+        self.path = format!("[{} assets]", self.asset_count);
+        
+        // Use most recent timestamp
+        if other.timestamp > self.timestamp {
+            self.timestamp = other.timestamp;
+        }
+    }
+
+    /// Format path for display (truncate if too long)
+    pub fn display_path(&self, max_len: usize) -> String {
+        if self.path.len() <= max_len {
+            self.path.clone()
+        } else {
+            format!("{}…", &self.path[..max_len - 1])
+        }
+    }
+
+    /// Format session ID for display (first 8 chars)
+    pub fn display_session(&self) -> &str {
+        if self.session_id.len() > 8 {
+            &self.session_id[..8]
+        } else {
+            &self.session_id
+        }
+    }
+
+    /// Format duration for display
+    pub fn display_duration(&self) -> String {
+        match self.duration_ms {
+            Some(ms) if ms >= 1000 => format!("{:.1}s", ms as f64 / 1000.0),
+            Some(ms) => format!("{}ms", ms),
+            None => "---".to_string(),
+        }
+    }
+
+    /// Format size for display
+    pub fn display_size(&self) -> String {
+        match self.size_bytes {
+            Some(bytes) if bytes >= 1024 * 1024 => format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0)),
+            Some(bytes) if bytes >= 1024 => format!("{:.1}KB", bytes as f64 / 1024.0),
+            Some(bytes) => format!("{}B", bytes),
+            None => "---".to_string(),
+        }
+    }
+}
+
+/// Buffer for network events (similar to LogBuffer)
+#[derive(Debug)]
+pub struct NetworkEventBuffer {
+    events: VecDeque<NetworkEvent>,
+    capacity: usize,
+}
+
+impl NetworkEventBuffer {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            events: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    pub fn push(&mut self, event: NetworkEvent) {
+        // Deduplicate: skip if we have same (session_id, path) within last 2 seconds
+        // This prevents duplicate entries from session activity + routing logs
+        let dominated = self.events.iter().rev().take(10).any(|e| {
+            e.session_id == event.session_id 
+                && e.path == event.path 
+                && (event.timestamp - e.timestamp).num_seconds().abs() < 2
+        });
+        if dominated {
+            return; // Skip duplicate
+        }
+        
+        // Check if this is a static asset that should be bundled with the previous event
+        if event.is_static_asset() {
+            // Look for an existing asset bundle from the same session in recent events
+            // (check last 5 events to allow for some interleaving)
+            let bundle_idx = self.events.iter().rev().take(5).position(|e| {
+                e.session_id == event.session_id && (e.is_asset_bundle || e.is_static_asset())
+            });
+            
+            if let Some(rev_idx) = bundle_idx {
+                // Convert reverse index to forward index
+                let idx = self.events.len() - 1 - rev_idx;
+                if let Some(existing) = self.events.get_mut(idx) {
+                    existing.merge_asset(&event);
+                    return; // Merged, don't add new event
+                }
+            }
+        }
+        
+        // Not an asset or no bundle to merge with - add as new event
+        if self.events.len() >= self.capacity {
+            self.events.pop_front();
+        }
+        self.events.push_back(event);
+    }
+
+    pub fn clear(&mut self) {
+        self.events.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
+    /// Get recent events (most recent first, limited)
+    pub fn recent(&self, count: usize) -> Vec<&NetworkEvent> {
+        self.events.iter().rev().take(count).collect()
+    }
+
+    /// Get all events (oldest first)
+    pub fn all(&self) -> impl Iterator<Item = &NetworkEvent> {
+        self.events.iter()
+    }
+}
+
+// ============================================================================
+// Log Entry Types (existing)
+// ============================================================================
 
 /// Log severity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -277,6 +885,7 @@ pub fn parse_log_line(line: &str) -> Option<LogEntry> {
         "target/debug/",
         "enabled=false, prefix=''",
         "OrchestratorConfig {",
+        "resource-usage",  // Filter out periodic resource monitoring logs
     ];
     for pattern in noisy_patterns {
         if line.contains(pattern) {

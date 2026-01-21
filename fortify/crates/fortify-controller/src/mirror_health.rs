@@ -54,14 +54,17 @@ impl MirrorHealthChecker {
         info!("Will fetch mirror list from: {}", orchestrator_url);
         info!("Using SOCKS proxy: {}", self.socks_proxy);
         
-        // Wait for orchestrator to be ready
-        info!("Waiting 10 seconds for orchestrator to initialize...");
-        sleep(Duration::from_secs(10)).await;
+        // Wait for orchestrators to fully initialize (they need time to generate vanity keys, etc.)
+        info!("Waiting 60 seconds for orchestrators to initialize...");
+        sleep(Duration::from_secs(60)).await;
+        
+        let mut consecutive_failures = 0u32;
         
         loop {
             // Fetch current mirror list from orchestrator
             match self.fetch_mirrors(&orchestrator_url).await {
                 Ok(mirrors) => {
+                    consecutive_failures = 0; // Reset on success
                     if !mirrors.is_empty() {
                         info!("Checking {} mirrors for reachability", mirrors.len());
                         self.check_all_mirrors(mirrors).await;
@@ -70,7 +73,12 @@ impl MirrorHealthChecker {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to fetch mirror list: {} (will retry)", e);
+                    consecutive_failures += 1;
+                    // Use exponential backoff for retries (max 5 minutes)
+                    let backoff = std::cmp::min(self.check_interval * consecutive_failures as u64, 300);
+                    warn!("Failed to fetch mirror list: {} (retry in {}s)", e, backoff);
+                    sleep(Duration::from_secs(backoff)).await;
+                    continue; // Skip the normal sleep at the end
                 }
             }
             

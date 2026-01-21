@@ -46,6 +46,8 @@ pub struct TorService {
     backend: TorBackend,
     /// Vanity address configuration
     vanity: VanityConfig,
+    /// Base data directory for Fortify (for torrc path)
+    base_data_dir: std::path::PathBuf,
 }
 
 impl TorService {
@@ -67,7 +69,22 @@ impl TorService {
         Self { 
             backend,
             vanity: VanityConfig::default(),
+            base_data_dir: if let Some(home) = std::env::var_os("HOME") {
+                let mut path = std::path::PathBuf::from(home);
+                path.push(".local");
+                path.push("share");
+                path.push("fortify");
+                path
+            } else {
+                std::path::PathBuf::from("/tmp/fortify")
+            },
         }
+    }
+    
+    /// Set base data directory for torrc path resolution
+    pub fn with_base_data_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.base_data_dir = dir;
+        self
     }
     
     /// Configure vanity address generation for mirrors
@@ -248,7 +265,7 @@ impl TorService {
         // Write torrc snippet for this hidden service with PoW
         // Since Tor regenerates its torrc and removes %include directives,
         // we append mirror configs directly to the main torrc file
-        let torrc_path = Path::new("/tmp/fortify/tor/torrc");
+        let torrc_path = self.base_data_dir.join("tor").join("torrc");
         
         let torrc_content = format!(
             "# Fortify mirror: {}\nHiddenServiceDir {}\nHiddenServicePort 80 127.0.0.1:{}\nHiddenServicePoWDefensesEnabled 1\n",
@@ -408,7 +425,7 @@ impl TorService {
                 .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to read torrc.inc: {}", e)))?;
             
             // Append to main torrc (same as create_file_based_pow_service does)
-            let main_torrc = Path::new("/tmp/fortify/tor/torrc");
+            let main_torrc = self.base_data_dir.join("tor").join("torrc");
             
             // Check if this mirror's config is already in torrc to avoid duplicates
             if main_torrc.exists() {
@@ -640,10 +657,8 @@ impl TorService {
     
     /// Remove the %include directive for a mirror from the main torrc file
     fn remove_torrc_include(&self, mirror: &Mirror) {
-        let tor_data_parent = mirror.tor_data_dir.parent()
-            .and_then(|p| p.parent())
-            .unwrap_or(Path::new("/tmp/fortify/tor"));
-        let main_torrc = tor_data_parent.join("torrc");
+        // Use base_data_dir for torrc path
+        let main_torrc = self.base_data_dir.join("tor").join("torrc");
         
         if !main_torrc.exists() {
             return;

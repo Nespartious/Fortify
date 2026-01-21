@@ -125,6 +125,7 @@ async fn handle_request(
 
     let response = match (req.method().as_str(), req.uri().path()) {
         ("GET", "/health") => health_check(Arc::clone(&orchestrator)),
+        ("GET", "/stats") => get_stats(Arc::clone(&orchestrator)),
         ("GET", "/mirrors") => list_mirrors(Arc::clone(&orchestrator)),
         ("GET", "/mirrors/all") => list_all_mirrors(Arc::clone(&orchestrator)),
         ("GET", "/mirrors/extended") => list_extended_mirrors(Arc::clone(&orchestrator)),
@@ -709,6 +710,37 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
                 .unwrap()
         }
     }
+}
+
+/// Get orchestrator statistics as JSON (for TUI polling)
+fn get_stats(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+    let captcha_stats = orchestrator.captcha_pool_stats();
+    let all_mirrors = orchestrator.get_all_mirrors_extended();
+    let active_count = all_mirrors.iter().filter(|m| m.status == "active" && !m.is_standby).count();
+    let standby_count = all_mirrors.iter().filter(|m| m.is_standby).count();
+    
+    let stats = serde_json::json!({
+        "captcha_pool": {
+            "current_size": captcha_stats.current_size,
+            "target_size": captcha_stats.target_size,
+            "min_size": captcha_stats.min_size,
+            "max_size": captcha_stats.max_size,
+            "total_generated": captcha_stats.total_generated,
+            "total_served": captcha_stats.total_served,
+            "needs_refill": captcha_stats.needs_refill
+        },
+        "mirrors": {
+            "active": active_count,
+            "standby": standby_count
+        },
+        "orchestrator_count": 1
+    });
+    
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(stats.to_string()))
+        .unwrap()
 }
 
 /// Status page (HTML)

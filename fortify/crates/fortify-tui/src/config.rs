@@ -233,6 +233,17 @@ impl Default for ThresholdConfig {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
+        // Use ~/.local/share/fortify for runtime data (persists across reboots)
+        let data_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push("fortify");
+            path
+        } else {
+            PathBuf::from("/tmp/fortify")
+        };
+        
         Self {
             backend_address: "http://127.0.0.1:9000".to_string(),
             socks_port: 9150,
@@ -242,7 +253,7 @@ impl Default for NetworkConfig {
             vanguards_enabled: true,
             vanguards_layer2: 4,
             vanguards_layer3: 8,
-            data_dir: PathBuf::from("/tmp/fortify"),
+            data_dir,
         }
     }
 }
@@ -271,7 +282,7 @@ impl Default for VanityConfig {
             // 30 seconds for testing, change to 900 (15 min) for production
             safety_net_timeout_seconds: 30,
             min_prefix_length: 1,
-            warn_threshold: 7,
+            warn_threshold: 5,
         }
     }
 }
@@ -344,14 +355,31 @@ impl FortifyConfig {
         self.dirty
     }
 
-    /// Get default config path
+    /// Get default config path (persistent across reboots)
     pub fn default_path() -> PathBuf {
+        // Use ~/.config/fortify for persistent storage (survives reboots)
+        if let Some(home) = std::env::var_os("HOME") {
+            let mut path = PathBuf::from(home);
+            path.push(".config");
+            path.push("fortify");
+            path.push("deployment.toml");
+            return path;
+        }
+        // Fallback to /tmp if HOME not available
         PathBuf::from("/tmp/fortify/config/deployment.toml")
     }
 
     /// List existing deployments
     pub fn list_deployments() -> Result<Vec<(String, PathBuf)>> {
-        let config_dir = PathBuf::from("/tmp/fortify/deployments");
+        let config_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = PathBuf::from(home);
+            path.push(".config");
+            path.push("fortify");
+            path.push("deployments");
+            path
+        } else {
+            PathBuf::from("/tmp/fortify/deployments")
+        };
         let mut deployments = Vec::new();
 
         if config_dir.exists() {

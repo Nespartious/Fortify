@@ -8,6 +8,31 @@ use ratatui::{
 use crate::app::App;
 use crate::deployment::check_dependencies;
 
+/// Mask backend address for security in summary views
+/// Shows first 12 and last 5 characters of the host
+fn mask_backend_address(addr: &str) -> String {
+    if let Some(scheme_end) = addr.find("://") {
+        let after_scheme = &addr[scheme_end + 3..];
+        let host_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+        let host = &after_scheme[..host_end];
+        let path = &after_scheme[host_end..];
+        
+        if host.len() > 17 {
+            let first = &host[..12];
+            let last = &host[host.len()-5..];
+            format!("{}://{}•••{}{}", &addr[..scheme_end], first, last, path)
+        } else {
+            addr.to_string()
+        }
+    } else if addr.len() > 17 {
+        let first = &addr[..12];
+        let last = &addr[addr.len()-5..];
+        format!("{}•••{}", first, last)
+    } else {
+        addr.to_string()
+    }
+}
+
 const WIZARD_STEPS: &[(&str, &str)] = &[
     ("Deps", "Check system dependencies"),
     ("Branding", "Configure your service identity"),
@@ -327,6 +352,9 @@ fn draw_step_thresholds(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_step_network(frame: &mut Frame, app: &App, area: Rect) {
+    // Mask backend address in summary view for security
+    let masked_backend = mask_backend_address(&app.config.network.backend_address);
+    
     let content = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -336,7 +364,7 @@ fn draw_step_network(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
         Line::from(Span::raw("  Backend (protected service):")),
         Line::from(Span::styled(
-            format!("    {}", &app.config.network.backend_address),
+            format!("    {}", masked_backend),
             Style::default().fg(Color::Green)
         )),
         Line::from(""),
@@ -383,11 +411,17 @@ fn draw_step_mirrors(frame: &mut Frame, app: &App, area: Rect) {
         app.config.vanity.prefix.clone()
     };
 
-    // Warning for long prefixes
+    // Warning for long prefixes with time estimates
     let prefix_warning = if app.config.vanity.prefix.len() > app.config.vanity.warn_threshold {
+        let estimate = match app.config.vanity.prefix.len() {
+            6 => "~30s per mirror",
+            7 => "~15-20 min per mirror",
+            _ => "hours+ (will timeout)",
+        };
         Some(format!(
-            "⚠ Prefix > {} chars may take a very long time to generate!",
-            app.config.vanity.warn_threshold
+            "⚠ {} chars → {} - Consider 4-5 chars!",
+            app.config.vanity.prefix.len(),
+            estimate
         ))
     } else {
         None
@@ -489,6 +523,9 @@ fn draw_step_review(frame: &mut Frame, app: &App, area: Rect) {
         "Disabled".to_string()
     };
 
+    // Mask backend address in summary view for security
+    let masked_backend = mask_backend_address(&app.config.network.backend_address);
+
     let content = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -502,7 +539,7 @@ fn draw_step_review(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(Span::raw("  Backend:")),
         Line::from(Span::styled(
-            format!("    {}", &app.config.network.backend_address),
+            format!("    {}", masked_backend),
             Style::default().fg(Color::Green)
         )),
         Line::from(""),

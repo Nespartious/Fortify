@@ -46,10 +46,21 @@ pub struct VanguardsConfig {
 
 impl Default for VanguardsConfig {
     fn default() -> Self {
+        // Use persistent path if HOME is set
+        let base_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = std::path::PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push("fortify");
+            path
+        } else {
+            std::path::PathBuf::from("/tmp/fortify")
+        };
+        
         Self {
-            config_path: "/tmp/fortify/config/vanguards.conf".to_string(),
-            state_path: "/tmp/fortify/vanguards/vanguards.state".to_string(),
-            log_path: "/tmp/fortify/log/vanguards.log".to_string(),
+            config_path: base_dir.join("config").join("vanguards.conf").to_string_lossy().to_string(),
+            state_path: base_dir.join("vanguards").join("vanguards.state").to_string_lossy().to_string(),
+            log_path: base_dir.join("log").join("vanguards.log").to_string_lossy().to_string(),
             tor_control_addr: "127.0.0.1".to_string(),
             tor_control_port: 9151,
             enabled: true,
@@ -135,17 +146,40 @@ impl VanguardsManager {
             }
         }
 
-        // Check Fortify venv at /tmp/fortify/venv
-        let venv_path = "/tmp/fortify/venv/bin/vanguards";
-        if Path::new(venv_path).exists() {
-            if Command::new(venv_path)
+        // Check Fortify venv (try both persistent and legacy locations)
+        let base_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = std::path::PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push("fortify");
+            path
+        } else {
+            std::path::PathBuf::from("/tmp/fortify")
+        };
+        let venv_path = base_dir.join("venv").join("bin").join("vanguards");
+        if venv_path.exists() {
+            if Command::new(&venv_path)
                 .arg("--help")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .is_ok()
             {
-                return Some((venv_path.to_string(), vec![]));
+                return Some((venv_path.to_string_lossy().to_string(), vec![]));
+            }
+        }
+        
+        // Also check legacy /tmp location
+        let legacy_venv = "/tmp/fortify/venv/bin/vanguards";
+        if Path::new(legacy_venv).exists() {
+            if Command::new(legacy_venv)
+                .arg("--help")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+            {
+                return Some((legacy_venv.to_string(), vec![]));
             }
         }
 

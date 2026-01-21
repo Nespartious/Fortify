@@ -18,5 +18,10 @@ fn main() {
     
     // Set environment variable for compile time
     println!("cargo:rustc-env=FORTIFY_VERSION={:.2}", version);
+    
+    // Re-run on every build by watching the VERSION file itself
+    // Since we write to it, cargo will see it changed and re-run next time
+    println!("cargo:rerun-if-changed=VERSION");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/");
 }

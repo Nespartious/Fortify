@@ -7,6 +7,9 @@ use std::time::Duration;
 /// Controller configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControllerConfig {
+    // Base data directory for all Fortify components
+    pub data_dir: std::path::PathBuf,
+    
     // Service limits
     pub min_orchestrators: usize,
     pub max_orchestrators: usize,
@@ -59,14 +62,29 @@ pub struct ControllerConfig {
     pub vanity_timeout_seconds: u64,
     
     // CAPTCHA configuration (forwarded to orchestrators)
+    pub captcha_enabled: bool,
     pub captcha_pool_size: usize,
     pub captcha_min_pool: usize,
     pub captcha_max_pool: usize,
+    pub captcha_rotation_percent: u8,
+    pub captcha_rotation_days: u32,
 }
 
 impl Default for ControllerConfig {
     fn default() -> Self {
+        // Use ~/.local/share/fortify if HOME is set, otherwise /tmp/fortify
+        let data_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = std::path::PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push("fortify");
+            path
+        } else {
+            std::path::PathBuf::from("/tmp/fortify")
+        };
+        
         Self {
+            data_dir,
             min_orchestrators: 2,
             max_orchestrators: 10,
             min_healthy_nodes: 10,
@@ -102,9 +120,12 @@ impl Default for ControllerConfig {
             vanity_prefix: String::new(),
             vanity_timeout_seconds: 30,
             // CAPTCHA defaults
+            captcha_enabled: true,
             captcha_pool_size: 500,
             captcha_min_pool: 150,
             captcha_max_pool: 1000,
+            captcha_rotation_percent: 25,
+            captcha_rotation_days: 10,
         }
     }
 }
@@ -112,6 +133,11 @@ impl Default for ControllerConfig {
 impl ControllerConfig {
     pub fn from_env() -> Result<Self> {
         let mut config = ControllerConfig::default();
+        
+        // Base data directory - passed from TUI
+        if let Ok(val) = env::var("FORTIFY_DATA_DIR") {
+            config.data_dir = std::path::PathBuf::from(val);
+        }
 
         if let Ok(val) = env::var("MIN_ORCHESTRATORS") {
             config.min_orchestrators = val.parse()?;
@@ -206,6 +232,9 @@ impl ControllerConfig {
         }
         
         // CAPTCHA configuration
+        if let Ok(val) = env::var("CAPTCHA_ENABLED") {
+            config.captcha_enabled = val.parse().unwrap_or(true);
+        }
         if let Ok(val) = env::var("CAPTCHA_POOL_SIZE") {
             config.captcha_pool_size = val.parse().unwrap_or(500);
         }
@@ -214,6 +243,12 @@ impl ControllerConfig {
         }
         if let Ok(val) = env::var("CAPTCHA_MAX_POOL") {
             config.captcha_max_pool = val.parse().unwrap_or(1000);
+        }
+        if let Ok(val) = env::var("CAPTCHA_ROTATION_PERCENT") {
+            config.captcha_rotation_percent = val.parse().unwrap_or(25);
+        }
+        if let Ok(val) = env::var("CAPTCHA_ROTATION_DAYS") {
+            config.captcha_rotation_days = val.parse().unwrap_or(10);
         }
 
         config.validate().map_err(|e| anyhow::anyhow!("{}", e))?;

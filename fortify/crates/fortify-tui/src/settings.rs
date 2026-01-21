@@ -10,15 +10,27 @@ pub use crate::config::*;
 /// Validate a setting value
 pub fn validate_setting(field: &str, value: &str) -> Result<(), String> {
     match field {
-        "Pool Size" | "Min Mirrors" | "Max Mirrors" | "Standby Mirrors" => {
+        "Pool Size" | "Min Pool" | "Max Pool" | "Min Mirrors" | "Max Mirrors" | "Standby Mirrors" => {
             value.parse::<usize>()
                 .map(|_| ())
                 .map_err(|_| "Must be a positive integer".to_string())
         }
-        "Difficulty" | "Probe Sensitivity (1-10)" => {
+        "Difficulty" | "Difficulty (1-10)" | "Probe Sensitivity (1-10)" => {
             match value.parse::<u8>() {
                 Ok(v) if (1..=10).contains(&v) => Ok(()),
                 _ => Err("Must be 1-10".to_string()),
+            }
+        }
+        "Rotation %" => {
+            match value.parse::<u8>() {
+                Ok(v) if v <= 100 => Ok(()),
+                _ => Err("Must be 0-100".to_string()),
+            }
+        }
+        "Rotation Days" => {
+            match value.parse::<u32>() {
+                Ok(v) if v > 0 => Ok(()),
+                _ => Err("Must be positive integer".to_string()),
             }
         }
         "Burn Threshold" | "Threat Threshold" | "Suspicion Threshold" => {
@@ -59,10 +71,15 @@ pub fn field_help(field: &str) -> &'static str {
         "Welcome Message" => "Message shown above CAPTCHA challenge",
         "Primary Color" => "Hex color for branding (#RRGGBB)",
         "Logo Path" => "Path to PNG/JPG logo (max 256x256)",
+        "Enabled" => "Enable/disable this feature",
         "Pool Size" => "Target number of pre-generated CAPTCHAs",
-        "Difficulty" => "CAPTCHA difficulty from 1 (easy) to 10 (hard)",
+        "Min Pool" => "Minimum pool size before emergency refill",
+        "Max Pool" => "Maximum pool size (hard cap)",
+        "Difficulty" | "Difficulty (1-10)" => "CAPTCHA difficulty from 1 (easy) to 10 (hard)",
         "Timeout (seconds)" => "Time allowed to solve CAPTCHA",
         "Max Attempts" => "Failed attempts before temporary ban",
+        "Rotation %" => "Percentage of pool to rotate periodically",
+        "Rotation Days" => "Days between pool rotations",
         "Rate Limit (req/min)" => "Requests per minute before limiting",
         "Burn Threshold" => "Threat score (0-1) that triggers mirror burn",
         "DDoS RPS Threshold" => "Requests/sec that triggers DDoS protection",

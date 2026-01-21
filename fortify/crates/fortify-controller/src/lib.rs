@@ -621,6 +621,8 @@ struct OrchestratorEnvFactory {
     base_addr: String,
     gate_url: String,
     proxy_port: u16,
+    /// Base data directory for Fortify (passed to orchestrators)
+    data_dir: std::path::PathBuf,
     tor_control_addr: Option<String>,
     tor_cookie_path: Option<String>,
     /// Vanity configuration for mirror addresses
@@ -628,9 +630,12 @@ struct OrchestratorEnvFactory {
     vanity_prefix: String,
     vanity_timeout: u64,
     /// CAPTCHA configuration
+    captcha_enabled: bool,
     captcha_pool_size: usize,
     captcha_min_pool: usize,
     captcha_max_pool: usize,
+    captcha_rotation_percent: u8,
+    captcha_rotation_days: u32,
     next_offset: AtomicUsize,
 }
 
@@ -648,14 +653,18 @@ impl OrchestratorEnvFactory {
             base_addr: config.orchestrator_bind_addr.clone(),
             gate_url: format!("http://{}", config.gate_bind_addr),
             proxy_port,
+            data_dir: config.data_dir.clone(),
             tor_control_addr: config.tor_control_addr.clone(),
             tor_cookie_path: config.tor_cookie_path.clone(),
             vanity_enabled: config.vanity_enabled,
             vanity_prefix: config.vanity_prefix.clone(),
             vanity_timeout: config.vanity_timeout_seconds,
+            captcha_enabled: config.captcha_enabled,
             captcha_pool_size: config.captcha_pool_size,
             captcha_min_pool: config.captcha_min_pool,
             captcha_max_pool: config.captcha_max_pool,
+            captcha_rotation_percent: config.captcha_rotation_percent,
+            captcha_rotation_days: config.captcha_rotation_days,
             next_offset: AtomicUsize::new(0),
         }
     }
@@ -672,6 +681,7 @@ impl OrchestratorEnvFactory {
             format!("GATE_ADDRESS={}", self.gate_url),
             format!("PROXY_PORT={}", self.proxy_port),
             format!("ORCH_ID={}", offset),
+            format!("FORTIFY_DATA_DIR={}", self.data_dir.display()),
         ];
 
         if let Some(ctrl) = &self.tor_control_addr {
@@ -690,9 +700,12 @@ impl OrchestratorEnvFactory {
         }
         
         // CAPTCHA configuration
+        env.push(format!("CAPTCHA_ENABLED={}", self.captcha_enabled));
         env.push(format!("CAPTCHA_POOL_SIZE={}", self.captcha_pool_size));
         env.push(format!("CAPTCHA_MIN_POOL={}", self.captcha_min_pool));
         env.push(format!("CAPTCHA_MAX_POOL={}", self.captcha_max_pool));
+        env.push(format!("CAPTCHA_ROTATION_PERCENT={}", self.captcha_rotation_percent));
+        env.push(format!("CAPTCHA_ROTATION_DAYS={}", self.captcha_rotation_days));
 
         Ok(env)
     }

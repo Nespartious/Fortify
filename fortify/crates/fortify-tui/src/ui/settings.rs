@@ -90,21 +90,24 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
 fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let enabled = if app.config.captcha.enabled { "Yes" } else { "No" };
     let pool = app.config.captcha.pool_size.to_string();
+    let min_pool = app.config.captcha.min_pool_size.to_string();
+    let max_pool = app.config.captcha.max_pool_size.to_string();
     let diff = app.config.captcha.difficulty.to_string();
     let timeout = app.config.captcha.timeout_seconds.to_string();
     let attempts = app.config.captcha.max_attempts.to_string();
-    let rotation = format!("{}% every {} days", 
-        app.config.captcha.rotation_percent,
-        app.config.captcha.rotation_interval_days
-    );
+    let rotation_pct = app.config.captcha.rotation_percent.to_string();
+    let rotation_days = app.config.captcha.rotation_interval_days.to_string();
 
     let fields = [
         ("Enabled", enabled),
         ("Pool Size", pool.as_str()),
+        ("Min Pool", min_pool.as_str()),
+        ("Max Pool", max_pool.as_str()),
         ("Difficulty (1-10)", diff.as_str()),
         ("Timeout (seconds)", timeout.as_str()),
         ("Max Attempts", attempts.as_str()),
-        ("Rotation", rotation.as_str()),
+        ("Rotation %", rotation_pct.as_str()),
+        ("Rotation Days", rotation_days.as_str()),
     ];
 
     draw_field_list(frame, area, &fields, selected);

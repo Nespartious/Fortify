@@ -13,6 +13,15 @@ use crate::deployment::DeploymentManager;
 use crate::logging::{LogEntry, LogLevel, LogBuffer};
 use crate::ui;
 
+/// Parse yes/no/true/false input to boolean
+fn parse_yes_no(value: &str, default: bool) -> bool {
+    match value.to_lowercase().trim() {
+        "yes" | "y" | "true" | "1" | "on" => true,
+        "no" | "n" | "false" | "0" | "off" => false,
+        _ => default,
+    }
+}
+
 /// Active panel focus
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -172,17 +181,21 @@ pub struct MirrorStatus {
     pub last_verified: Option<std::time::Instant>,
 }
 
-/// Backend health state
+/// Backend health state with degraded levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendHealthState {
     /// Not yet checked
     Unknown,
     /// Currently checking
     Checking,
-    /// Backend is reachable
-    Reachable,
-    /// Backend is unreachable
-    Unreachable,
+    /// 3/3 checks passed - fully connected
+    Connected,
+    /// 2/3 checks passed - mostly connected
+    Degraded2of3,
+    /// 1/3 checks passed - degraded
+    Degraded1of3,
+    /// 0/3 checks passed - disconnected
+    Disconnected,
 }
 
 impl BackendHealthState {
@@ -190,17 +203,21 @@ impl BackendHealthState {
         match self {
             BackendHealthState::Unknown => Color::DarkGray,
             BackendHealthState::Checking => Color::Yellow,
-            BackendHealthState::Reachable => Color::Green,
-            BackendHealthState::Unreachable => Color::Red,
+            BackendHealthState::Connected => Color::Green,
+            BackendHealthState::Degraded2of3 => Color::Rgb(144, 238, 144), // Light green
+            BackendHealthState::Degraded1of3 => Color::Yellow,
+            BackendHealthState::Disconnected => Color::Red,
         }
     }
 
     pub fn symbol(&self) -> &'static str {
         match self {
-            BackendHealthState::Unknown => "⚫",
-            BackendHealthState::Checking => "🟡",
-            BackendHealthState::Reachable => "🟢",
-            BackendHealthState::Unreachable => "🔴",
+            BackendHealthState::Unknown => "○",
+            BackendHealthState::Checking => "◐",
+            BackendHealthState::Connected => "●",
+            BackendHealthState::Degraded2of3 => "◐",
+            BackendHealthState::Degraded1of3 => "◐",
+            BackendHealthState::Disconnected => "✗",
         }
     }
 
@@ -208,8 +225,28 @@ impl BackendHealthState {
         match self {
             BackendHealthState::Unknown => "UNKNOWN",
             BackendHealthState::Checking => "CHECKING",
-            BackendHealthState::Reachable => "REACHABLE",
-            BackendHealthState::Unreachable => "UNREACHABLE",
+            BackendHealthState::Connected => "CONNECTED",
+            BackendHealthState::Degraded2of3 => "DEGRADED (2/3)",
+            BackendHealthState::Degraded1of3 => "DEGRADED (1/3)",
+            BackendHealthState::Disconnected => "DISCONNECTED",
+        }
+    }
+    
+    /// Calculate state from recent check history
+    pub fn from_recent_checks(checks: &[BackendHealthCheck]) -> Self {
+        if checks.is_empty() {
+            return BackendHealthState::Unknown;
+        }
+        
+        // Look at last 3 checks
+        let recent: Vec<_> = checks.iter().rev().take(3).collect();
+        let success_count = recent.iter().filter(|c| c.success).count();
+        
+        match success_count {
+            3 => BackendHealthState::Connected,
+            2 => BackendHealthState::Degraded2of3,
+            1 => BackendHealthState::Degraded1of3,
+            _ => BackendHealthState::Disconnected,
         }
     }
 }
@@ -275,6 +312,44 @@ pub enum Dialog {
         title: String,
         message: String,
     },
+    /// Dependency check progress dialog
+    DependencyCheck {
+        /// Status of each dependency
+        statuses: Vec<DependencyStatus>,
+        /// Current phase
+        phase: DependencyCheckPhase,
+        /// Time when all checks completed (for auto-dismiss)
+        completed_at: Option<std::time::Instant>,
+    },
+}
+
+/// Status of a single dependency during check
+#[derive(Debug, Clone)]
+pub struct DependencyStatus {
+    pub name: String,
+    pub description: String,
+    pub required: bool,
+    pub state: DependencyState,
+}
+
+/// State of a dependency check
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencyState {
+    Pending,
+    Checking,
+    Installing,
+    Ok,
+    Failed(String),
+    Skipped,
+}
+
+/// Phase of the dependency check process
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencyCheckPhase {
+    Checking,
+    Installing,
+    Complete,
+    Failed,
 }
 
 #[derive(Debug, Clone)]
@@ -345,6 +420,21 @@ pub struct App {
     last_mirror_poll: Option<std::time::Instant>,
     /// Log file for persistent log output
     log_file: Option<File>,
+    /// Attack events log file
+    attack_log_file: Option<File>,
+    /// Stats log file
+    stats_log_file: Option<File>,
+    /// Logs directory path (for future log rotation)
+    #[allow(dead_code)]
+    logs_dir: std::path::PathBuf,
+    /// Last stats log time
+    last_stats_log: std::time::Instant,
+    /// Last session cleanup time
+    last_session_cleanup: std::time::Instant,
+    /// Last security level (for detecting changes)
+    last_security_level: crate::logging::SecurityLevel,
+    /// Last attack log update time (for periodic updates during attacks)
+    last_attack_log_update: std::time::Instant,
     /// Backend health state
     pub backend_health: BackendHealthState,
     /// Last backend health check time
@@ -355,6 +445,16 @@ pub struct App {
     pub backend_check_interval: u64,
     /// Mirror health checks (address -> list of recent checks)
     pub mirror_health_checks: std::collections::HashMap<String, Vec<BackendHealthCheck>>,
+    /// System status for status dashboard
+    pub system_status: crate::logging::SystemStatus,
+    /// Security status for attack detection
+    pub security_status: crate::logging::SecurityStatus,
+    /// Network events buffer for verified/trusted traffic stream
+    pub network_events: crate::logging::NetworkEventBuffer,
+    /// Network events buffer for threat/unverified traffic stream
+    pub threat_events: crate::logging::NetworkEventBuffer,
+    /// Session trust level tracking (session_id -> session entry with trust and last_seen)
+    pub session_trust: std::collections::HashMap<String, crate::logging::SessionEntry>,
 }
 
 impl App {
@@ -362,15 +462,44 @@ impl App {
     pub async fn new() -> Result<Self> {
         let (log_tx, log_rx) = mpsc::channel(1000);
         
-        // Ensure config directory exists
-        std::fs::create_dir_all("/tmp/fortify/config")?;
+        // Ensure config directory exists (use persistent location)
+        let config_dir = FortifyConfig::default_path().parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&config_dir)?;
         
         // Create log directory and open log file for persistent logging
-        std::fs::create_dir_all("/tmp/fortify/logs")?;
+        let logs_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = std::path::PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push("fortify");
+            path.push("logs");
+            path
+        } else {
+            std::path::PathBuf::from("/tmp/fortify/logs")
+        };
+        std::fs::create_dir_all(&logs_dir)?;
+        
+        // Perform log rotation (daily, keep 90 days)
+        Self::rotate_logs(&logs_dir);
+        
+        // Open log files with date-based naming
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open("/tmp/fortify/logs/deployment.log")
+            .open(logs_dir.join(format!("deployment-{}.log", today)))
+            .ok();
+        
+        let attack_log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(logs_dir.join("attacks.log"))
+            .ok();
+        
+        let stats_log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(logs_dir.join("stats.log"))
             .ok();
         
         // Try to load existing config or use default
@@ -396,7 +525,9 @@ impl App {
 
         // Check if there's an existing session
         let deployment = DeploymentManager::new(log_tx.clone());
-
+        // Get captcha pool size before config is moved
+        let captcha_pool_target = config.captcha.pool_size;
+        
         Ok(Self {
             view: View::Home,
             focus: Focus::Menu,
@@ -424,11 +555,28 @@ impl App {
             vanity_current_prefix: None,
             last_mirror_poll: None,
             log_file,
+            attack_log_file,
+            stats_log_file,
+            logs_dir,
+            last_stats_log: std::time::Instant::now(),
+            last_session_cleanup: std::time::Instant::now(),
+            last_security_level: crate::logging::SecurityLevel::Clear,
+            last_attack_log_update: std::time::Instant::now(),
             backend_health: BackendHealthState::Unknown,
             backend_last_check: None,
             backend_check_history: Vec::new(),
             backend_check_interval: 15, // Start with 15 second checks
             mirror_health_checks: std::collections::HashMap::new(),
+            system_status: {
+                let mut status = crate::logging::SystemStatus::new();
+                // Initialize CAPTCHA target from config
+                status.captcha_pool.1 = captcha_pool_target;
+                status
+            },
+            security_status: crate::logging::SecurityStatus::new(),
+            network_events: crate::logging::NetworkEventBuffer::new(500),
+            threat_events: crate::logging::NetworkEventBuffer::new(500),
+            session_trust: std::collections::HashMap::new(),
         })
     }
 
@@ -461,6 +609,12 @@ impl App {
                 // Parse mirror health check logs
                 self.parse_mirror_health_log(&entry);
                 
+                // Parse system status updates for dashboard
+                self.parse_system_status_log(&entry);
+                
+                // Parse network traffic for traffic stream
+                self.parse_network_traffic_log(&entry);
+                
                 if !self.logs_paused {
                     self.logs.push(entry);
                 }
@@ -485,6 +639,43 @@ impl App {
                 }
             }
 
+            // Handle dependency check dialog auto-dismiss and deployment start
+            if let Dialog::DependencyCheck { phase, completed_at, .. } = &self.dialog {
+                if *phase == DependencyCheckPhase::Complete {
+                    if let Some(completed_time) = completed_at {
+                        if completed_time.elapsed() >= Duration::from_secs(2) {
+                            // Auto-dismiss and start actual deployment
+                            self.dialog = Dialog::None;
+                            self.do_actual_deployment().await?;
+                        }
+                    }
+                }
+            }
+
+            // Periodic stats logging (every 60 seconds)
+            if self.deployment.is_running() && self.last_stats_log.elapsed() >= Duration::from_secs(60) {
+                self.log_stats();
+                self.last_stats_log = std::time::Instant::now();
+            }
+
+            // Periodic session cleanup (every 5 minutes)
+            if self.last_session_cleanup.elapsed() >= Duration::from_secs(300) {
+                self.cleanup_sessions();
+                self.last_session_cleanup = std::time::Instant::now();
+            }
+
+            // Check for security level changes and log attack events
+            let current_level = self.security_status.level;
+            if current_level != self.last_security_level {
+                self.log_attack_event("STATE_CHANGE");
+                self.last_security_level = current_level;
+                self.last_attack_log_update = std::time::Instant::now();
+            } else if current_level.is_elevated() && self.last_attack_log_update.elapsed() >= Duration::from_secs(60) {
+                // Periodic update during elevated states
+                self.log_attack_event("PERIODIC");
+                self.last_attack_log_update = std::time::Instant::now();
+            }
+
             // Check if should quit
             if self.should_quit {
                 break;
@@ -492,6 +683,104 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Rotate log files, deleting logs older than 90 days
+    fn rotate_logs(logs_dir: &std::path::Path) {
+        let retention_days = 90;
+        let now = std::time::SystemTime::now();
+        
+        if let Ok(entries) = std::fs::read_dir(logs_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                
+                // Only process deployment-*.log files
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if !name.starts_with("deployment-") || !name.ends_with(".log") {
+                        continue;
+                    }
+                }
+                
+                // Check file age
+                if let Ok(metadata) = path.metadata() {
+                    if let Ok(modified) = metadata.modified() {
+                        if let Ok(age) = now.duration_since(modified) {
+                            let age_days = age.as_secs() / 86400;
+                            if age_days > retention_days {
+                                let _ = std::fs::remove_file(&path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Log system stats (every 60 seconds)
+    fn log_stats(&mut self) {
+        if let Some(ref mut file) = self.stats_log_file {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let status = &self.system_status;
+            let security = &self.security_status;
+            let (orch_cur, orch_tgt) = status.orchestrators;
+            let (live, standby, total) = status.mirrors;
+            let (captcha_cur, captcha_tgt) = status.captcha_pool;
+            let sessions = self.session_trust.len();
+            
+            // Get rate from security status
+            let rate = security.new_sessions_per_minute();
+            
+            let _ = writeln!(
+                file,
+                "{} | sessions={} rate={}/min | orch={}/{} mir={}/{}/{} cap={}/{} | backend={:?} security={}",
+                now,
+                sessions,
+                rate,
+                orch_cur, orch_tgt,
+                live, standby, total,
+                captcha_cur, captcha_tgt,
+                self.backend_health,
+                security.level.label()
+            );
+            let _ = file.flush();
+        }
+    }
+
+    /// Log attack events (state changes and periodic updates)
+    fn log_attack_event(&mut self, event_type: &str) {
+        if let Some(ref mut file) = self.attack_log_file {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let security = &self.security_status;
+            let sessions = self.session_trust.len();
+            
+            // Calculate current rates using helper methods
+            let new_rate = security.new_sessions_per_minute();
+            let unverified = security.unverified_requests_per_minute();
+            let failed_captcha = security.failed_captcha_attempts;
+            
+            let _ = writeln!(
+                file,
+                "{} {} level={} sessions={} new_rate={}/min unverified={} failed_captcha={}",
+                now,
+                event_type,
+                security.level.label(),
+                sessions,
+                new_rate,
+                unverified,
+                failed_captcha
+            );
+            let _ = file.flush();
+        }
+    }
+
+    /// Cleanup stale sessions (older than 30 minutes with no activity)
+    fn cleanup_sessions(&mut self) {
+        let max_age = Duration::from_secs(30 * 60); // 30 minutes
+        let now = std::time::Instant::now();
+        
+        self.session_trust.retain(|_, trust| {
+            now.duration_since(trust.last_seen) < max_age
+        });
     }
     
     /// Parse backend health check logs and update state
@@ -506,7 +795,6 @@ impl App {
         // Parse "Backend is now REACHABLE (took 234ms) - scaling down check frequency"
         if msg.contains("Backend is now REACHABLE") {
             if let Some(duration_ms) = Self::extract_duration_ms(msg) {
-                self.backend_health = BackendHealthState::Reachable;
                 self.backend_last_check = Some(std::time::Instant::now());
                 self.backend_check_history.push(BackendHealthCheck {
                     timestamp: std::time::Instant::now(),
@@ -515,13 +803,14 @@ impl App {
                     error: None,
                 });
                 self.trim_health_history();
+                // Calculate state from last 3 checks
+                self.backend_health = BackendHealthState::from_recent_checks(&self.backend_check_history);
             }
         }
         
         // Parse "Backend check: REACHABLE (123ms)"
         else if msg.contains("Backend check: REACHABLE") {
             if let Some(duration_ms) = Self::extract_duration_ms(msg) {
-                self.backend_health = BackendHealthState::Reachable;
                 self.backend_last_check = Some(std::time::Instant::now());
                 self.backend_check_history.push(BackendHealthCheck {
                     timestamp: std::time::Instant::now(),
@@ -530,13 +819,14 @@ impl App {
                     error: None,
                 });
                 self.trim_health_history();
+                // Calculate state from last 3 checks
+                self.backend_health = BackendHealthState::from_recent_checks(&self.backend_check_history);
             }
         }
         
         // Parse "Backend became UNREACHABLE (456ms) - increasing check frequency"
         else if msg.contains("Backend became UNREACHABLE") {
             if let Some(duration_ms) = Self::extract_duration_ms(msg) {
-                self.backend_health = BackendHealthState::Unreachable;
                 self.backend_last_check = Some(std::time::Instant::now());
                 self.backend_check_history.push(BackendHealthCheck {
                     timestamp: std::time::Instant::now(),
@@ -545,13 +835,14 @@ impl App {
                     error: Some("Connection timeout or circuit not ready".to_string()),
                 });
                 self.trim_health_history();
+                // Calculate state from last 3 checks
+                self.backend_health = BackendHealthState::from_recent_checks(&self.backend_check_history);
             }
         }
         
         // Parse "Backend check: UNREACHABLE (789ms) - circuits may still be building..."
         else if msg.contains("Backend check: UNREACHABLE") {
             if let Some(duration_ms) = Self::extract_duration_ms(msg) {
-                self.backend_health = BackendHealthState::Unreachable;
                 self.backend_last_check = Some(std::time::Instant::now());
                 self.backend_check_history.push(BackendHealthCheck {
                     timestamp: std::time::Instant::now(),
@@ -560,6 +851,8 @@ impl App {
                     error: Some("Circuits still building".to_string()),
                 });
                 self.trim_health_history();
+                // Calculate state from last 3 checks
+                self.backend_health = BackendHealthState::from_recent_checks(&self.backend_check_history);
             }
         }
         
@@ -672,6 +965,387 @@ impl App {
         }
     }
     
+    /// Parse log entries to update system status dashboard
+    fn parse_system_status_log(&mut self, entry: &LogEntry) {
+        use crate::logging::ComponentStatus;
+        
+        let msg = &entry.message;
+        let source = &entry.source;
+        
+        // --- Tor daemon status ---
+        // Tor runs separately - we infer its status from controller logs
+        if source.contains("tor") || msg.contains("Tor") || msg.contains("tor") || msg.contains("SOCKS") {
+            if msg.contains("Bootstrapped 100%") || msg.contains("Tor daemon is ready") || msg.contains("Tor started") {
+                self.system_status.tor_daemon = ComponentStatus::Running;
+            } else if msg.contains("Starting Tor") || msg.contains("Bootstrapped") || msg.contains("tor_service") {
+                self.system_status.tor_daemon = ComponentStatus::Starting;
+            } else if msg.contains("Tor daemon failed") || msg.contains("Tor error") {
+                self.system_status.tor_daemon = ComponentStatus::Error;
+            }
+        }
+        // If controller is using SOCKS proxy successfully, Tor must be running
+        if source.contains("controller") && msg.contains("Using SOCKS proxy") {
+            self.system_status.tor_daemon = ComponentStatus::Running;
+        }
+        // If mirrors become reachable via Tor, Tor is definitely working
+        if msg.contains("is now REACHABLE") && msg.contains(".onion") {
+            self.system_status.tor_daemon = ComponentStatus::Running;
+        }
+        // If backend is reachable through Tor, Tor is working
+        if msg.contains("Backend is now REACHABLE") || msg.contains("Backend check: REACHABLE") {
+            self.system_status.tor_daemon = ComponentStatus::Running;
+        }
+        
+        // --- Gate status ---
+        if source.contains("gate") || source.contains("fortify_gate") {
+            if msg.contains("listening on") || msg.contains("Gate started") || msg.contains("server started") {
+                self.system_status.gate = ComponentStatus::Running;
+            } else if msg.contains("Starting gate") || msg.contains("Starting") {
+                self.system_status.gate = ComponentStatus::Starting;
+            } else if msg.contains("error") || msg.contains("failed") {
+                self.system_status.gate = ComponentStatus::Error;
+            }
+        }
+        
+        // --- Controller status ---
+        if source.contains("controller") || source.contains("fortify_controller") {
+            if msg.contains("Controller ready") || msg.contains("Backend health checker started") {
+                self.system_status.controller = ComponentStatus::Running;
+            } else if msg.contains("Starting controller") || msg.contains("Starting") {
+                self.system_status.controller = ComponentStatus::Starting;
+            } else if msg.contains("error") {
+                self.system_status.controller = ComponentStatus::Error;
+            }
+        }
+        
+        // --- Orchestrator status ---
+        if source.contains("orchestrator") || source.contains("fortify_orchestrator") {
+            // "Orchestrator starting" or "Orchestrator ready"
+            if msg.contains("Orchestrator ready") || msg.contains("HTTP server listening") {
+                self.system_status.orchestrator_status = ComponentStatus::Running;
+                // Increment orchestrator count when we see "ready"
+                // (will be corrected by API polling)
+                if self.system_status.orchestrators.0 == 0 {
+                    self.system_status.orchestrators.0 = 1;
+                }
+            } else if msg.contains("Orchestrator starting") || msg.contains("Starting") {
+                self.system_status.orchestrator_status = ComponentStatus::Starting;
+            }
+        }
+        
+        // --- Mirror status (track individual spawns) ---
+        if source.contains("orchestrator") || msg.contains("mirror") || msg.contains("Mirror") {
+            // Count individual mirror spawns: "Mirror mirror-xxx spawned successfully"
+            if msg.contains("spawned successfully") && !msg.contains("Standby") {
+                let (live, standby, total) = self.system_status.mirrors;
+                self.system_status.mirrors = (live + 1, standby, total + 1);
+                self.system_status.mirror_status = ComponentStatus::Running;
+            }
+            // Count standby mirrors: "Standby mirror mirror-xxx spawned"
+            if msg.contains("Standby mirror") && msg.contains("spawned") {
+                let (live, standby, total) = self.system_status.mirrors;
+                self.system_status.mirrors = (live, standby + 1, total + 1);
+            }
+            // Track when creating: "Creating hidden service" or "Spawning new mirror"
+            if msg.contains("Creating hidden service") || msg.contains("Spawning new mirror") || msg.contains("Spawning standby mirror") {
+                if self.system_status.mirror_status != ComponentStatus::Running {
+                    self.system_status.mirror_status = ComponentStatus::Starting;
+                }
+            }
+        }
+        
+        // --- CAPTCHA pool status ---
+        if msg.contains("CAPTCHA") || msg.contains("captcha") || msg.contains("Flex Core") {
+            // Parse "CAPTCHA pool: size=450/500"
+            if let Some((current, target)) = Self::extract_captcha_pool(msg) {
+                self.system_status.captcha_pool = (current, target);
+                self.system_status.captcha_status = if current >= target * 80 / 100 {
+                    ComponentStatus::Running
+                } else if current > 0 {
+                    ComponentStatus::Starting
+                } else {
+                    ComponentStatus::Pending
+                };
+            }
+            // "Starting Flex Core CAPTCHA pre-generation task (target: 500"
+            if msg.contains("Starting Flex Core") || msg.contains("pre-generation task") {
+                self.system_status.captcha_status = ComponentStatus::Starting;
+                // Set target from log if visible: "target: 500"
+                if let Some(target) = Self::extract_captcha_target(msg) {
+                    self.system_status.captcha_pool.1 = target;
+                }
+            }
+            // "CAPTCHA pool reached target" means we're at 100%
+            if msg.contains("reached target") || msg.contains("persisting to disk") {
+                let target = self.system_status.captcha_pool.1;
+                if target > 0 {
+                    self.system_status.captcha_pool.0 = target; // Set current = target
+                } else {
+                    // Fall back to configured value
+                    let configured = self.config.captcha.pool_size;
+                    self.system_status.captcha_pool = (configured, configured);
+                }
+                self.system_status.captcha_status = ComponentStatus::Running;
+            }
+        }
+        
+        // --- Deployment steps ---
+        // Parse "Step 2/6: Initializing orchestrators"
+        if msg.contains("Step ") {
+            if let Some((current, total, desc)) = Self::extract_deploy_step(msg) {
+                self.system_status.deploy_step = Some((current, total, desc));
+            }
+        }
+        // Clear deploy step when deployment is complete
+        if msg.contains("Deployment complete") || msg.contains("Deployment ready") || msg.contains("Deployment started successfully") {
+            self.system_status.deploy_step = None;
+        }
+        
+        self.system_status.touch();
+    }
+    
+    /// Extract CAPTCHA target from log message like "target: 500"
+    fn extract_captcha_target(msg: &str) -> Option<usize> {
+        let re = regex::Regex::new(r"target:\s*(\d+)").ok()?;
+        let captures = re.captures(msg)?;
+        captures.get(1)?.as_str().parse().ok()
+    }
+    
+    /// Extract CAPTCHA pool size from log message like "size=450/500"
+    fn extract_captcha_pool(msg: &str) -> Option<(usize, usize)> {
+        let re = regex::Regex::new(r"size=(\d+)/(\d+)").ok()?;
+        let captures = re.captures(msg)?;
+        let current: usize = captures.get(1)?.as_str().parse().ok()?;
+        let target: usize = captures.get(2)?.as_str().parse().ok()?;
+        Some((current, target))
+    }
+    
+    /// Extract deployment step from log message like "Step 2/6: Initializing"
+    fn extract_deploy_step(msg: &str) -> Option<(usize, usize, String)> {
+        let re = regex::Regex::new(r"Step\s*(\d+)/(\d+):\s*(.+)").ok()?;
+        let captures = re.captures(msg)?;
+        let current: usize = captures.get(1)?.as_str().parse().ok()?;
+        let total: usize = captures.get(2)?.as_str().parse().ok()?;
+        let desc = captures.get(3)?.as_str().trim().to_string();
+        Some((current, total, desc))
+    }
+    
+    /// Parse log entries for network traffic events
+    /// 
+    /// Log format from HTTP proxy:
+    /// - `[{session_id}] +{idle} {path}` - session activity
+    /// - `[{session_id}] +{idle} {path} → {event}` - session activity with event
+    /// - `HEALTHY PATH: Routing {tier} user to backend: {path}`
+    /// - `THREAT PATH: Proxying {tier} user to Gate for verification: {path}`
+    /// - `GATE PATH: Routing to Gate service: {path}`
+    fn parse_network_traffic_log(&mut self, entry: &LogEntry) {
+        use crate::logging::{SessionTrust, SessionEntry};
+        
+        let msg = &entry.message;
+        let source = &entry.source;
+        
+        // Only parse HTTP-related logs
+        if !source.contains("http") && !source.contains("proxy") && !source.contains("fortify_http") {
+            // Check for CAPTCHA-related logs from gate
+            if source.contains("gate") || source.contains("fortify_gate") {
+                // Track CAPTCHA verification
+                if msg.contains("CAPTCHA") && (msg.contains("verified") || msg.contains("success") || msg.contains("solved")) {
+                    self.security_status.record_session_resolved();
+                } else if msg.contains("CAPTCHA") && (msg.contains("failed") || msg.contains("invalid")) {
+                    self.security_status.record_failed_captcha();
+                }
+            }
+            return;
+        }
+        
+        // Pattern 1: Session activity log "[abc123] +5s /some/path"
+        // This is the main traffic indicator
+        if let Some(mut event) = Self::parse_session_activity_log(msg, entry.timestamp) {
+            // Check if session trust level is known, or update from event content
+            let session_key = event.session_id.clone();
+            
+            // Check if this is a new session (first time we've seen this ID)
+            let is_new_session = !self.session_trust.contains_key(&session_key);
+            if is_new_session {
+                self.security_status.record_new_session();
+            }
+            
+            // Check for trust indicators in the message
+            if msg.contains("verified") || msg.contains("trusted") || msg.contains("authenticated") {
+                // Session was verified - record this as resolved
+                if self.session_trust.get(&session_key).map(|e| e.trust) != Some(SessionTrust::Verified) {
+                    self.security_status.record_session_resolved();
+                }
+                if let Some(entry) = self.session_trust.get_mut(&session_key) {
+                    entry.update_trust(SessionTrust::Verified);
+                } else {
+                    self.session_trust.insert(session_key.clone(), SessionEntry::new(SessionTrust::Verified));
+                }
+            } else if msg.contains("banned") || msg.contains("killed") || msg.contains("threat") || msg.contains("suspicious") {
+                if let Some(entry) = self.session_trust.get_mut(&session_key) {
+                    entry.update_trust(SessionTrust::Threat);
+                } else {
+                    self.session_trust.insert(session_key.clone(), SessionEntry::new(SessionTrust::Threat));
+                }
+                self.security_status.add_suspicious_flag(&format!("threat:{}", session_key));
+            } else if is_new_session {
+                // New session with no trust indicators yet
+                self.session_trust.insert(session_key.clone(), SessionEntry::new(SessionTrust::Unknown));
+            } else {
+                // Existing session - just update last_seen
+                if let Some(entry) = self.session_trust.get_mut(&session_key) {
+                    entry.touch();
+                }
+            }
+            
+            // Get current trust level for this session
+            let trust = self.session_trust.get(&session_key).map(|e| e.trust).unwrap_or(SessionTrust::Unknown);
+            event.trust = trust;
+            
+            // Track unverified requests for security metrics
+            if trust == SessionTrust::Unknown {
+                self.security_status.record_unverified_request();
+            }
+            
+            // Route to appropriate buffer - PENDING goes to verified panel (neutral), only THREAT goes to threat
+            match trust {
+                SessionTrust::Threat => self.threat_events.push(event),
+                _ => self.network_events.push(event), // Verified and Unknown go to verified panel
+            }
+            
+            // Update security level
+            self.security_status.compute_level();
+            return;
+        }
+        
+        // Pattern 2: "HEALTHY PATH: Routing Verified user to backend: /path"
+        if msg.contains("HEALTHY PATH:") || msg.contains("THREAT PATH:") || msg.contains("GATE PATH:") {
+            if let Some(event) = Self::parse_routing_log(msg, entry.timestamp) {
+                // Route based on trust level from the log
+                match event.trust {
+                    SessionTrust::Threat => {
+                        self.security_status.record_unverified_request();
+                        self.threat_events.push(event);
+                    }
+                    _ => self.network_events.push(event),
+                }
+            }
+            // Update security level after routing logs
+            self.security_status.compute_level();
+            return;
+        }
+        
+        // Pattern 3: Rate limiting - strong attack indicator
+        // "Rate limited circuit: temp_unknown_Mozilla/5.0 tier=Unknown"
+        if msg.contains("Rate limited") {
+            self.security_status.record_unverified_request();
+            self.security_status.add_suspicious_flag("rate_limited");
+            self.security_status.compute_level();
+            return;
+        }
+        
+        // Pattern 4: Connection/request flood indicators
+        if msg.contains("too many") || msg.contains("flood") || msg.contains("blocked") {
+            self.security_status.record_unverified_request();
+            self.security_status.add_suspicious_flag("flood_detected");
+            self.security_status.compute_level();
+        }
+    }
+    
+    /// Parse session activity log: "[abc123] +5s /some/path" or "[abc123] +5s /path → event"
+    fn parse_session_activity_log(msg: &str, timestamp: chrono::DateTime<chrono::Utc>) -> Option<crate::logging::NetworkEvent> {
+        use crate::logging::{HttpMethod, NetworkEvent, ResponseStatus};
+        
+        // Pattern: [SESSION] +IDLE PATH [→ EVENT]
+        // Example: "[abc123] +5s /api/data" or "[abc123] +new /login → verified"
+        let re = regex::Regex::new(r"\[([a-zA-Z0-9]+)\]\s+\+(\w+)\s+(\S+)(?:\s+→\s+(.+))?").ok()?;
+        let captures = re.captures(msg)?;
+        
+        let session_id = captures.get(1)?.as_str().to_string();
+        let path = captures.get(3)?.as_str().to_string();
+        let event = captures.get(4).map(|m| m.as_str());
+        
+        // Determine status based on event
+        let (status_code, status) = match event {
+            Some(e) if e.contains("verified") || e.contains("success") => (Some(200), ResponseStatus::Success),
+            Some(e) if e.contains("banned") || e.contains("killed") => (Some(403), ResponseStatus::ClientError),
+            Some(e) if e.contains("error") => (Some(500), ResponseStatus::ServerError),
+            Some(e) if e.contains("redirect") || e.contains("Gate") => (Some(302), ResponseStatus::Redirect),
+            None => (Some(200), ResponseStatus::Success), // Normal request, assume success
+            _ => (None, ResponseStatus::Pending),
+        };
+        
+        // Infer HTTP method from path
+        let method = if path.contains("/api/") || path.contains("/submit") || path.contains("/post") {
+            HttpMethod::Post
+        } else {
+            HttpMethod::Get
+        };
+        
+        Some(NetworkEvent {
+            timestamp,
+            session_id,
+            method,
+            path,
+            status_code,
+            status,
+            duration_ms: None, // Not available from this log format
+            size_bytes: None,
+            mirror: None,
+            is_asset_bundle: false,
+            asset_count: 1,
+            trust: crate::logging::SessionTrust::Unknown, // Will be set by caller
+        })
+    }
+    
+    /// Parse routing logs: "HEALTHY PATH: Routing Verified user to backend: /path"
+    fn parse_routing_log(msg: &str, timestamp: chrono::DateTime<chrono::Utc>) -> Option<crate::logging::NetworkEvent> {
+        use crate::logging::{HttpMethod, NetworkEvent, ResponseStatus};
+        
+        // Extract the path from various routing log formats
+        let path = if let Some(idx) = msg.rfind(": ") {
+            msg[idx + 2..].trim().to_string()
+        } else {
+            return None;
+        };
+        
+        // Skip internal paths
+        if path.starts_with("/gate/") || path.starts_with("/ctrl_") {
+            return None;
+        }
+        
+        // Determine route type and status
+        let (status, status_code, trust) = if msg.contains("HEALTHY PATH") {
+            (ResponseStatus::Success, Some(200), crate::logging::SessionTrust::Verified)
+        } else if msg.contains("THREAT PATH") {
+            (ResponseStatus::Redirect, Some(302), crate::logging::SessionTrust::Threat)
+        } else if msg.contains("GATE PATH") {
+            (ResponseStatus::Redirect, Some(302), crate::logging::SessionTrust::Unknown)
+        } else {
+            (ResponseStatus::Pending, None, crate::logging::SessionTrust::Unknown)
+        };
+        
+        // Generate a short session ID for display (since routing logs don't have session)
+        // Use timestamp-based ID since we don't have rand crate
+        let ts_part = timestamp.timestamp_millis() as u16;
+        let session_id = format!("route-{:04x}", ts_part);
+        
+        Some(NetworkEvent {
+            timestamp,
+            session_id,
+            method: HttpMethod::Get,
+            path,
+            status_code,
+            status,
+            duration_ms: None,
+            size_bytes: None,
+            mirror: None,
+            is_asset_bundle: false,
+            asset_count: 1,
+            trust,
+        })
+    }
+    
     /// Extract mirror address and duration from log message
     fn extract_mirror_and_duration(msg: &str) -> Option<(String, u64)> {
         // Extract mirror address (with or without http:// prefix)
@@ -685,8 +1359,11 @@ impl App {
         Some((mirror_addr, duration_ms))
     }
     
-    /// Update mirror status from orchestrator
+    /// Update mirror status from orchestrator API
+    /// Also updates system_status dashboard with live data
     async fn update_mirror_status(&mut self) {
+        use crate::logging::ComponentStatus;
+        
         // Try to fetch from orchestrator at 127.0.0.1:8080
         let client = match reqwest::Client::builder()
             .timeout(Duration::from_secs(1))
@@ -701,12 +1378,18 @@ impl App {
             Err(_) => return, // Orchestrator not ready yet
         };
         
+        // If we got a response, orchestrator is running
+        self.system_status.orchestrator_status = ComponentStatus::Running;
+        
         let json: serde_json::Value = match response.json().await {
             Ok(j) => j,
             Err(_) => return,
         };
         
         if let Some(mirrors) = json.get("mirrors").and_then(|m| m.as_array()) {
+            let mut live_count = 0usize;
+            let mut standby_count = 0usize;
+            
             self.mirror_statuses = mirrors.iter().enumerate().filter_map(|(idx, m)| {
                 let onion = m.get("onion_address")?.as_str()?.to_string();
                 let status = m.get("status")?.as_str()?;
@@ -720,6 +1403,13 @@ impl App {
                     _ => MirrorStatusState::Verifying,
                 };
                 
+                // Count for dashboard
+                if is_standby {
+                    standby_count += 1;
+                } else if state == MirrorStatusState::Live {
+                    live_count += 1;
+                }
+                
                 // Extract just the address part (without .onion)
                 let address = onion.trim_end_matches(".onion").to_string();
                 
@@ -732,7 +1422,44 @@ impl App {
                     last_verified: Some(std::time::Instant::now()),
                 })
             }).collect();
+            
+            // Update system status dashboard with actual counts from API
+            let total = live_count + standby_count;
+            self.system_status.mirrors = (live_count, standby_count, total);
+            self.system_status.mirror_status = if live_count > 0 {
+                ComponentStatus::Running
+            } else if total > 0 {
+                ComponentStatus::Starting
+            } else {
+                ComponentStatus::Pending
+            };
         }
+        
+        // Also try to get CAPTCHA pool stats from orchestrator
+        if let Ok(stats_response) = client.get("http://127.0.0.1:8080/stats").send().await {
+            if let Ok(stats_json) = stats_response.json::<serde_json::Value>().await {
+                // Parse CAPTCHA pool stats if available
+                if let Some(captcha) = stats_json.get("captcha_pool") {
+                    let current = captcha.get("current_size").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                    let target = captcha.get("target_size").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
+                    self.system_status.captcha_pool = (current, target);
+                    self.system_status.captcha_status = if current >= target * 80 / 100 {
+                        ComponentStatus::Running
+                    } else if current > 0 {
+                        ComponentStatus::Starting  
+                    } else {
+                        ComponentStatus::Pending
+                    };
+                }
+                
+                // Parse orchestrator count if available
+                if let Some(orch_count) = stats_json.get("orchestrator_count").and_then(|v| v.as_u64()) {
+                    self.system_status.orchestrators.0 = orch_count as usize;
+                }
+            }
+        }
+        
+        self.system_status.touch();
     }
 
     /// Handle key press
@@ -893,6 +1620,14 @@ impl App {
                         on_confirm: DialogAction::Quit,
                     };
                     self.focus = Focus::Dialog;
+                } else if self.config.is_dirty() {
+                    // Warn about unsaved changes
+                    self.dialog = Dialog::Confirm {
+                        title: "Unsaved Changes".into(),
+                        message: "You have unsaved configuration changes.\n\nQuit without saving?".into(),
+                        on_confirm: DialogAction::Quit,
+                    };
+                    self.focus = Focus::Dialog;
                 } else {
                     self.should_quit = true;
                 }
@@ -957,7 +1692,22 @@ impl App {
                     KeyCode::Enter => {
                         let field = field.clone();
                         let value = value.clone();
+                        
+                        // Special validation for Backend Address
+                        if field == "Backend Address" {
+                            if let Some(warning) = self.validate_backend_address(&value) {
+                                self.log_tx.send(LogEntry::warn(&warning)).await.ok();
+                                self.status_message = Some((warning.clone(), std::time::Instant::now()));
+                            }
+                        }
+                        
                         self.apply_input_value(&field, &value);
+                        
+                        // Auto-save after each field edit for persistence
+                        if let Err(e) = self.config.save() {
+                            self.log_tx.send(LogEntry::error(&format!("Failed to save config: {}", e))).await.ok();
+                        }
+                        
                         self.dialog = Dialog::None;
                         self.focus = Focus::Settings;
                     }
@@ -982,6 +1732,24 @@ impl App {
                 // Accept any key to dismiss
                 self.dialog = Dialog::None;
                 self.focus = Focus::Menu;
+            }
+            Dialog::DependencyCheck { phase, .. } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        // Cancel deployment
+                        self.dialog = Dialog::None;
+                        self.focus = Focus::Menu;
+                        self.log_tx.send(LogEntry::info("Deployment cancelled")).await.ok();
+                    }
+                    KeyCode::Char('r') | KeyCode::Char('R') if *phase == DependencyCheckPhase::Failed => {
+                        // Retry dependency check
+                        self.dialog = Dialog::None;
+                        self.start_deployment().await?;
+                    }
+                    _ => {
+                        // Ignore other keys during check/install
+                    }
+                }
             }
             Dialog::None => {}
         }
@@ -1049,10 +1817,13 @@ impl App {
             "Beginning instance destruction..."
         )).await.ok();
         
-        // Remove all Fortify data directories
+        // Remove all Fortify data directories (both old /tmp and new persistent locations)
+        let home = std::env::var("HOME").unwrap_or_default();
         let paths_to_remove = [
-            "/tmp/fortify",
-            "/var/lib/fortify",
+            "/tmp/fortify".to_string(),
+            "/var/lib/fortify".to_string(),
+            format!("{}/.config/fortify", home),
+            format!("{}/.local/share/fortify", home),
         ];
         
         for path in &paths_to_remove {
@@ -1431,7 +2202,7 @@ impl App {
             return;
         }
 
-        let export_path = std::path::PathBuf::from("/tmp/fortify/mirror-addresses.txt");
+        let export_path = std::path::PathBuf::from(&self.config.network.data_dir).join("mirror-addresses.txt");
         
         // Separate live and standby mirrors
         let live_mirrors: Vec<_> = self.mirror_statuses.iter()
@@ -1583,10 +2354,11 @@ impl App {
             // Try to copy to clipboard using various methods
             if let Err(_) = Self::copy_to_clipboard(&text) {
                 // Fallback: save to a temp file that user can access
-                let path = "/tmp/fortify/copied_log.txt";
-                let _ = std::fs::write(path, &text);
+                let path_buf = std::path::PathBuf::from(&self.config.network.data_dir).join("copied_log.txt");
+                let path_str = path_buf.to_str().unwrap_or("/tmp/fortify/copied_log.txt");
+                let _ = std::fs::write(&path_buf, &text);
                 self.status_message = Some((
-                    format!("Saved to {}", path),
+                    format!("Saved to {}", path_str),
                     std::time::Instant::now()
                 ));
             } else {
@@ -1749,11 +2521,17 @@ impl App {
             } else {
                 Some(std::path::PathBuf::from(value))
             },
-            "Enabled" => self.config.captcha.enabled = value.parse().unwrap_or(true),
+            "Enabled" => self.config.captcha.enabled = parse_yes_no(value, true),
             "Pool Size" => self.config.captcha.pool_size = value.parse().unwrap_or(500),
+            "Min Pool" => self.config.captcha.min_pool_size = value.parse().unwrap_or(100),
+            "Max Pool" => self.config.captcha.max_pool_size = value.parse().unwrap_or(1000),
             "Difficulty" => self.config.captcha.difficulty = value.parse().unwrap_or(5),
+            "Difficulty (1-10)" => self.config.captcha.difficulty = value.parse().unwrap_or(5),
             "Timeout (sec)" => self.config.captcha.timeout_seconds = value.parse().unwrap_or(120),
+            "Timeout (seconds)" => self.config.captcha.timeout_seconds = value.parse().unwrap_or(120),
             "Max Attempts" => self.config.captcha.max_attempts = value.parse().unwrap_or(3),
+            "Rotation %" => self.config.captcha.rotation_percent = value.parse().unwrap_or(25),
+            "Rotation Days" => self.config.captcha.rotation_interval_days = value.parse().unwrap_or(10),
             "Rate Limit (RPM)" => self.config.thresholds.rate_limit_rpm = value.parse().unwrap_or(60),
             "CAPTCHA Fail Limit" => self.config.thresholds.captcha_fail_limit = value.parse().unwrap_or(5),
             "Temp Ban (min)" => self.config.thresholds.temp_ban_minutes = value.parse().unwrap_or(30),
@@ -1770,7 +2548,7 @@ impl App {
             "Rotation (sec)" => self.config.mirrors.rotation_interval_seconds = value.parse().unwrap_or(3600),
             "Burn Min Days" => self.config.mirrors.burn_interval_days_min = value.parse().unwrap_or(60),
             // Vanity settings - order MUST match get_current_field() and draw_vanity()
-            "Vanity Enabled" => self.config.vanity.enabled = value.parse().unwrap_or(false),
+            "Vanity Enabled" => self.config.vanity.enabled = parse_yes_no(value, false),
             "Prefix" => {
                 // Limit prefix to 10 characters and lowercase alphanumeric only
                 let cleaned: String = value.chars()
@@ -1781,7 +2559,7 @@ impl App {
                 self.config.vanity.prefix = cleaned;
             },
             "Prefix Length" => {}, // Display only - computed from prefix, not editable
-            "Safety Net Enabled" => self.config.vanity.safety_net_enabled = value.parse().unwrap_or(true),
+            "Safety Net Enabled" => self.config.vanity.safety_net_enabled = parse_yes_no(value, true),
             "Vanity Timeout (sec)" => self.config.vanity.safety_net_timeout_seconds = value.parse().unwrap_or(30),
             "Min Prefix Length" => self.config.vanity.min_prefix_length = value.parse().unwrap_or(1),
             "Warn Threshold" => self.config.vanity.warn_threshold = value.parse().unwrap_or(7),
@@ -1800,8 +2578,15 @@ impl App {
             "Description" => self.config.branding.description.clone(),
             "Welcome Message" => self.config.branding.welcome_message.clone(),
             "Primary Color" => self.config.branding.primary_color.clone(),
-            "Enabled" => self.config.captcha.enabled.to_string(),
+            "Enabled" => if self.config.captcha.enabled { "Yes".to_string() } else { "No".to_string() },
             "Pool Size" => self.config.captcha.pool_size.to_string(),
+            "Min Pool" => self.config.captcha.min_pool_size.to_string(),
+            "Max Pool" => self.config.captcha.max_pool_size.to_string(),
+            "Difficulty" | "Difficulty (1-10)" => self.config.captcha.difficulty.to_string(),
+            "Timeout (seconds)" => self.config.captcha.timeout_seconds.to_string(),
+            "Max Attempts" => self.config.captcha.max_attempts.to_string(),
+            "Rotation %" => self.config.captcha.rotation_percent.to_string(),
+            "Rotation Days" => self.config.captcha.rotation_interval_days.to_string(),
             _ => String::new(),
         }
     }
@@ -1827,7 +2612,7 @@ impl App {
         Ok(())
     }
 
-    /// Start deployment
+    /// Start deployment - shows dependency check dialog first
     async fn start_deployment(&mut self) -> Result<()> {
         // Save config first
         if let Err(e) = self.config.save() {
@@ -1837,7 +2622,145 @@ impl App {
             return Ok(());
         }
 
-        self.log_tx.send(LogEntry::info("Starting deployment...")).await.ok();
+        self.log_tx.send(LogEntry::info("Checking system dependencies...")).await.ok();
+        
+        // Initialize dependency check dialog with all deps in Pending state
+        let deps = crate::deployment::get_dependencies();
+        let statuses: Vec<DependencyStatus> = deps.iter().map(|d| {
+            DependencyStatus {
+                name: d.name.to_string(),
+                description: d.description.to_string(),
+                required: d.required,
+                state: DependencyState::Pending,
+            }
+        }).collect();
+
+        self.dialog = Dialog::DependencyCheck {
+            statuses,
+            phase: DependencyCheckPhase::Checking,
+            completed_at: None,
+        };
+
+        // Spawn the dependency check process
+        self.run_dependency_check().await?;
+        
+        Ok(())
+    }
+
+    /// Run the dependency check and installation process
+    async fn run_dependency_check(&mut self) -> Result<()> {
+        let deps = crate::deployment::get_dependencies();
+        let mut needs_install: Vec<usize> = Vec::new();
+
+        // Phase 1: Check all dependencies
+        for (i, dep) in deps.iter().enumerate() {
+            // Update status to Checking
+            if let Dialog::DependencyCheck { statuses, .. } = &mut self.dialog {
+                if i < statuses.len() {
+                    statuses[i].state = DependencyState::Checking;
+                }
+            }
+
+            // Small delay so user can see the checking animation
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            let available = dep.is_available();
+
+            if let Dialog::DependencyCheck { statuses, .. } = &mut self.dialog {
+                if i < statuses.len() {
+                    if available {
+                        statuses[i].state = DependencyState::Ok;
+                        self.log_tx.send(LogEntry::from_source(
+                            crate::logging::LogLevel::Info,
+                            "deps",
+                            &format!("✓ {} is available", dep.name)
+                        )).await.ok();
+                    } else if dep.required {
+                        statuses[i].state = DependencyState::Pending;
+                        needs_install.push(i);
+                        self.log_tx.send(LogEntry::from_source(
+                            crate::logging::LogLevel::Warn,
+                            "deps",
+                            &format!("✗ {} is missing (required)", dep.name)
+                        )).await.ok();
+                    } else {
+                        statuses[i].state = DependencyState::Skipped;
+                        self.log_tx.send(LogEntry::from_source(
+                            crate::logging::LogLevel::Info,
+                            "deps",
+                            &format!("○ {} is missing (optional, skipping)", dep.name)
+                        )).await.ok();
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Install missing required dependencies
+        if !needs_install.is_empty() {
+            if let Dialog::DependencyCheck { phase, .. } = &mut self.dialog {
+                *phase = DependencyCheckPhase::Installing;
+            }
+
+            self.log_tx.send(LogEntry::info("Installing missing dependencies...")).await.ok();
+
+            for &i in &needs_install {
+                let dep = &deps[i];
+                
+                // Update to Installing state
+                if let Dialog::DependencyCheck { statuses, .. } = &mut self.dialog {
+                    if i < statuses.len() {
+                        statuses[i].state = DependencyState::Installing;
+                    }
+                }
+
+                // Attempt installation
+                let success = self.deployment.install_dependency(dep).await.unwrap_or(false);
+
+                if let Dialog::DependencyCheck { statuses, .. } = &mut self.dialog {
+                    if i < statuses.len() {
+                        if success && dep.is_available() {
+                            statuses[i].state = DependencyState::Ok;
+                            self.log_tx.send(LogEntry::from_source(
+                                crate::logging::LogLevel::Info,
+                                "deps",
+                                &format!("✓ {} installed successfully", dep.name)
+                            )).await.ok();
+                        } else {
+                            statuses[i].state = DependencyState::Failed("Installation failed".to_string());
+                            self.log_tx.send(LogEntry::from_source(
+                                crate::logging::LogLevel::Error,
+                                "deps",
+                                &format!("✗ Failed to install {}", dep.name)
+                            )).await.ok();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 3: Complete or Failed
+        if let Dialog::DependencyCheck { phase, completed_at, statuses } = &mut self.dialog {
+            // Check if any required deps failed
+            let any_required_failed = statuses.iter().any(|s| {
+                s.required && matches!(s.state, DependencyState::Failed(_))
+            });
+
+            if any_required_failed {
+                *phase = DependencyCheckPhase::Failed;
+                self.log_tx.send(LogEntry::error("Dependency check failed - cannot proceed")).await.ok();
+            } else {
+                *phase = DependencyCheckPhase::Complete;
+                *completed_at = Some(std::time::Instant::now());
+                self.log_tx.send(LogEntry::info("All dependencies ready!")).await.ok();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Actually start the deployment (called after dependency check passes)
+    async fn do_actual_deployment(&mut self) -> Result<()> {
+        self.log_tx.send(LogEntry::info("Starting Fortify services...")).await.ok();
         
         match self.deployment.start(&self.config).await {
             Ok(()) => {
@@ -1859,5 +2782,41 @@ impl App {
     /// Set status message
     pub fn set_status(&mut self, msg: &str) {
         self.status_message = Some((msg.to_string(), std::time::Instant::now()));
+    }
+
+    /// Validate backend address and return warning if trailing path detected
+    fn validate_backend_address(&self, addr: &str) -> Option<String> {
+        // Check for trailing path after .onion domain
+        if addr.contains(".onion") {
+            if let Some(onion_pos) = addr.find(".onion") {
+                let after_onion = &addr[onion_pos + 6..];
+                // Check if there's a path after .onion
+                if !after_onion.is_empty() && after_onion != "/" {
+                    let path = after_onion.trim_start_matches('/');
+                    if !path.is_empty() {
+                        return Some(format!(
+                            "⚠ Trailing path detected: '{}' - Is this intentional?",
+                            after_onion
+                        ));
+                    }
+                }
+            }
+        }
+        
+        // Check for trailing path on other URLs
+        if let Some(scheme_end) = addr.find("://") {
+            let after_scheme = &addr[scheme_end + 3..];
+            if let Some(slash_pos) = after_scheme.find('/') {
+                let path = &after_scheme[slash_pos..];
+                if path != "/" && !path.is_empty() {
+                    return Some(format!(
+                        "⚠ Backend URL includes path: '{}' - Verify this is correct.",
+                        path
+                    ));
+                }
+            }
+        }
+        
+        None
     }
 }

@@ -24,11 +24,36 @@ Fortify is a defensive protection layer for Tor hidden services. It acts as a di
 ## Requirements
 
 - Linux (Ubuntu/Debian)
-- Rust toolchain
-- Tor daemon
-- Root/sudo access for installation
+- 1+ CPU cores, 1GB+ RAM, 5GB+ disk
+- Root/sudo access for dependency installation
 
-## Installation
+## Quick Start (Fresh Ubuntu Server)
+
+```bash
+# 1. Update system and install build dependencies
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git build-essential pkg-config libssl-dev
+
+# 2. Clone the repository
+git clone https://github.com/Nespartious/Fortify.git
+cd Fortify/fortify
+
+# 3. Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source $HOME/.cargo/env
+
+# 4. Build the project
+cargo build --release
+
+# 5. Run the TUI
+./target/release/fortify
+```
+
+Runtime dependencies (Tor, Python, vanguards) are automatically detected and installed when you deploy.
+
+## Installation (Full)
+
+For production deployments with OS hardening:
 
 ```bash
 cd install/

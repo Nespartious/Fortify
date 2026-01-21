@@ -7,6 +7,35 @@ use ratatui::{
 
 use crate::app::{App, MirrorStatusState};
 
+/// Mask backend address for security - show first 12 and last 5 characters
+/// Example: "http://abc123def456.onion/path" -> "http://abc12•••456.onion/path"
+fn mask_backend_address(addr: &str) -> String {
+    // Parse the address to find the host part
+    if let Some(scheme_end) = addr.find("://") {
+        let after_scheme = &addr[scheme_end + 3..];
+        // Find the end of the host (either '/' or end of string)
+        let host_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+        let host = &after_scheme[..host_end];
+        let path = &after_scheme[host_end..];
+        
+        // Mask the host if it's long enough
+        if host.len() > 17 {
+            let first = &host[..12];
+            let last = &host[host.len()-5..];
+            format!("{}://{}•••{}{}", &addr[..scheme_end], first, last, path)
+        } else {
+            addr.to_string()
+        }
+    } else if addr.len() > 17 {
+        // No scheme, just mask the whole thing
+        let first = &addr[..12];
+        let last = &addr[addr.len()-5..];
+        format!("{}•••{}", first, last)
+    } else {
+        addr.to_string()
+    }
+}
+
 /// Draw running deployment view
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
@@ -69,15 +98,8 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let inner = status_block.inner(area);
     frame.render_widget(status_block, area);
 
-    // Shorten backend address for display
-    let backend_display = {
-        let addr = &app.config.network.backend_address;
-        if addr.len() > 50 {
-            format!("{}...{}", &addr[..25], &addr[addr.len()-20..])
-        } else {
-            addr.clone()
-        }
-    };
+    // Mask backend address for security - show first 12 and last 5 chars only
+    let backend_display = mask_backend_address(&app.config.network.backend_address);
 
     let content = vec![
         Line::from(vec![

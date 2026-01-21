@@ -5,20 +5,21 @@ use ratatui::{
     widgets::*,
 };
 
-use crate::app::{App, Dialog};
+use crate::app::{App, Dialog, DependencyState, DependencyCheckPhase};
 
 /// Draw dialog overlay
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
     
     // Calculate centered dialog area
-    let dialog_width = 60.min(area.width.saturating_sub(4));
+    let dialog_width = 70.min(area.width.saturating_sub(4));
     let dialog_height = match &app.dialog {
         Dialog::Confirm { .. } => 8,
         Dialog::ApplyChanges { changes } => (8 + changes.len()).min(20) as u16,
         Dialog::Input { .. } => 7,
         Dialog::Error { .. } => 8,
         Dialog::Info { .. } => 8,
+        Dialog::DependencyCheck { statuses, .. } => (6 + statuses.len() * 2).min(24) as u16,
         Dialog::None => return,
     };
 
@@ -53,6 +54,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         }
         Dialog::Info { title, message } => {
             draw_info(frame, dialog_area, title, message);
+        }
+        Dialog::DependencyCheck { statuses, phase, completed_at } => {
+            draw_dependency_check(frame, dialog_area, statuses, phase, completed_at);
         }
         Dialog::None => {}
     }
@@ -227,5 +231,104 @@ fn draw_info(frame: &mut Frame, area: Rect, title: &str, message: &str) {
     ];
 
     let para = Paragraph::new(content).alignment(Alignment::Center);
+    frame.render_widget(para, inner);
+}
+
+fn draw_dependency_check(
+    frame: &mut Frame, 
+    area: Rect, 
+    statuses: &[crate::app::DependencyStatus],
+    phase: &DependencyCheckPhase,
+    completed_at: &Option<std::time::Instant>,
+) {
+    let (title, border_color) = match phase {
+        DependencyCheckPhase::Checking => (" 🔍 Checking Dependencies ", Color::Cyan),
+        DependencyCheckPhase::Installing => (" 📦 Installing Dependencies ", Color::Yellow),
+        DependencyCheckPhase::Complete => (" ✓ Dependencies Ready ", Color::Green),
+        DependencyCheckPhase::Failed => (" ✗ Dependency Check Failed ", Color::Red),
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .border_type(BorderType::Rounded)
+        .title(title);
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut content = vec![Line::from("")];
+
+    for status in statuses {
+        let (icon, color) = match &status.state {
+            DependencyState::Pending => ("○", Color::DarkGray),
+            DependencyState::Checking => ("◐", Color::Cyan),
+            DependencyState::Installing => ("◐", Color::Yellow),
+            DependencyState::Ok => ("✓", Color::Green),
+            DependencyState::Failed(_) => ("✗", Color::Red),
+            DependencyState::Skipped => ("○", Color::DarkGray),
+        };
+
+        let state_text = match &status.state {
+            DependencyState::Pending => "pending".to_string(),
+            DependencyState::Checking => "checking...".to_string(),
+            DependencyState::Installing => "installing...".to_string(),
+            DependencyState::Ok => "ready".to_string(),
+            DependencyState::Failed(e) => format!("failed: {}", e),
+            DependencyState::Skipped => "skipped".to_string(),
+        };
+
+        let req_marker = if status.required { " *" } else { "" };
+
+        content.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{} ", icon), Style::default().fg(color)),
+            Span::styled(
+                format!("{}{}", status.name, req_marker),
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            ),
+            Span::raw(" - "),
+            Span::styled(&status.description, Style::default().fg(Color::Gray)),
+        ]));
+
+        content.push(Line::from(vec![
+            Span::raw("      "),
+            Span::styled(state_text, Style::default().fg(color)),
+        ]));
+    }
+
+    content.push(Line::from(""));
+
+    // Status message at bottom
+    let status_msg = match phase {
+        DependencyCheckPhase::Checking => "Verifying system dependencies...",
+        DependencyCheckPhase::Installing => "Installing missing packages (may require sudo)...",
+        DependencyCheckPhase::Complete => {
+            if completed_at.is_some() {
+                "All dependencies ready. Starting deployment..."
+            } else {
+                "All dependencies ready."
+            }
+        }
+        DependencyCheckPhase::Failed => "Press [Esc] to cancel or [R] to retry",
+    };
+
+    content.push(Line::from(Span::styled(
+        status_msg,
+        Style::default().fg(match phase {
+            DependencyCheckPhase::Complete => Color::Green,
+            DependencyCheckPhase::Failed => Color::Red,
+            _ => Color::Cyan,
+        }).add_modifier(Modifier::ITALIC)
+    )));
+
+    // Show legend for required marker
+    content.push(Line::from(""));
+    content.push(Line::from(Span::styled(
+        "  * = required dependency",
+        Style::default().fg(Color::DarkGray)
+    )));
+
+    let para = Paragraph::new(content);
     frame.render_widget(para, inner);
 }

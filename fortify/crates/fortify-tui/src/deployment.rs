@@ -43,9 +43,17 @@ impl DeploymentStateFile {
         Ok(())
     }
     
-    /// Get default path
+    /// Get default path (persistent location)
     pub fn default_path() -> std::path::PathBuf {
-        std::path::PathBuf::from("/tmp/fortify/config/deployment-state.json")
+        if let Some(home) = std::env::var_os("HOME") {
+            let mut path = std::path::PathBuf::from(home);
+            path.push(".config");
+            path.push("fortify");
+            path.push("deployment-state.json");
+            path
+        } else {
+            std::path::PathBuf::from("/tmp/fortify/config/deployment-state.json")
+        }
     }
 }
 
@@ -79,6 +87,16 @@ impl Dependency {
 pub fn get_dependencies() -> Vec<Dependency> {
     vec![
         Dependency {
+            name: "build-essential",
+            check_cmd: "which",
+            check_args: &["cc"],
+            install_cmd: "apt-get",
+            install_args: &["install", "-y", "build-essential"],
+            description: "C compiler and build tools",
+            required: true,
+            needs_sudo: true,
+        },
+        Dependency {
             name: "tor",
             check_cmd: "which",
             check_args: &["tor"],
@@ -89,22 +107,12 @@ pub fn get_dependencies() -> Vec<Dependency> {
             needs_sudo: true,
         },
         Dependency {
-            name: "mkp224o",
-            check_cmd: "which",
-            check_args: &["mkp224o"],
-            install_cmd: "echo",
-            install_args: &["mkp224o must be built from source: git clone https://github.com/cathugger/mkp224o && cd mkp224o && ./autogen.sh && ./configure && make && sudo cp mkp224o /usr/local/bin/"],
-            description: "Vanity .onion address generator",
-            required: false, // Optional - only needed for vanity addresses
-            needs_sudo: false,
-        },
-        Dependency {
             name: "python3",
             check_cmd: "which",
             check_args: &["python3"],
             install_cmd: "apt-get",
-            install_args: &["install", "-y", "python3", "python3-pip"],
-            description: "Python 3 runtime",
+            install_args: &["install", "-y", "python3", "python3-pip", "python3-venv"],
+            description: "Python 3 runtime (for vanguards)",
             required: true,
             needs_sudo: true,
         },
@@ -113,8 +121,8 @@ pub fn get_dependencies() -> Vec<Dependency> {
             check_cmd: "python3",
             check_args: &["-c", "import vanguards"],
             install_cmd: "pip3",
-            install_args: &["install", "vanguards"],
-            description: "Tor vanguards for enhanced security",
+            install_args: &["install", "--break-system-packages", "vanguards"],
+            description: "Tor vanguards for enhanced guard security",
             required: false, // Optional but recommended
             needs_sudo: false,
         },
@@ -124,9 +132,29 @@ pub fn get_dependencies() -> Vec<Dependency> {
             check_args: &["--exists", "libsodium"],
             install_cmd: "apt-get",
             install_args: &["install", "-y", "libsodium-dev"],
-            description: "Cryptography library (required for mkp224o)",
+            description: "Cryptography library (for vanity addresses)",
             required: false,
             needs_sudo: true,
+        },
+        Dependency {
+            name: "autoconf",
+            check_cmd: "which",
+            check_args: &["autoconf"],
+            install_cmd: "apt-get",
+            install_args: &["install", "-y", "autoconf", "automake"],
+            description: "Build tools for mkp224o",
+            required: false,
+            needs_sudo: true,
+        },
+        Dependency {
+            name: "mkp224o",
+            check_cmd: "which",
+            check_args: &["mkp224o"],
+            install_cmd: "echo",
+            install_args: &["mkp224o must be built from source"],
+            description: "Vanity .onion address generator",
+            required: false, // Optional - only needed for vanity addresses
+            needs_sudo: false,
         },
     ]
 }
@@ -503,6 +531,22 @@ impl DeploymentManager {
             .unwrap_or_else(FortifyConfig::default_path);
         config.save_to(&config_path)?;
 
+        // Check if backend address is still the default - this may be intentional or a mistake
+        let default_backend = "http://127.0.0.1:9000";
+        if config.network.backend_address == default_backend {
+            self.log_tx.send(LogEntry::from_source(
+                LogLevel::Warn,
+                "config",
+                &format!("Backend address is still the default ({}). If you intended to proxy to a .onion service, please update the Network settings.", default_backend)
+            )).await.ok();
+        } else if !config.network.backend_address.contains(".onion") && !config.network.backend_address.starts_with("http://127.") {
+            self.log_tx.send(LogEntry::from_source(
+                LogLevel::Warn,
+                "config",
+                &format!("Backend address ({}) is not a .onion address. Tor circuit pre-warming will be disabled.", config.network.backend_address)
+            )).await.ok();
+        }
+
         // Log vanity config status
         if config.vanity.enabled {
             self.log_tx.send(LogEntry::from_source(
@@ -513,13 +557,22 @@ impl DeploymentManager {
                     config.vanity.safety_net_timeout_seconds)
             )).await.ok();
             
-            if config.vanity.prefix.len() > 7 {
+            let prefix_len = config.vanity.prefix.len();
+            if prefix_len > 5 {
+                // Each additional character increases time by ~32x
+                // 5 chars = ~1 second, 6 chars = ~32 seconds, 7 chars = ~17 minutes
+                let estimated = match prefix_len {
+                    6 => "~30 seconds",
+                    7 => "~15-20 minutes",
+                    _ => "hours to days (likely timeout)",
+                };
                 self.log_tx.send(LogEntry::from_source(
                     LogLevel::Warn,
                     "vanity",
-                    &format!("Prefix '{}' ({} chars) may take very long to generate!", 
+                    &format!("Prefix '{}' ({} chars) estimated generation time: {} per mirror. Consider using 4-5 chars.", 
                         config.vanity.prefix, 
-                        config.vanity.prefix.len())
+                        prefix_len,
+                        estimated)
                 )).await.ok();
             }
         }
@@ -884,9 +937,13 @@ impl DeploymentManager {
             .env("FORTIFY_CONTROL_PORT", config.network.control_port.to_string())
             .env("TOR_CONTROL_ADDR", format!("127.0.0.1:{}", config.network.control_port))
             .env("TOR_COOKIE_PATH", config.network.data_dir.join("tor/data/control_auth_cookie").to_string_lossy().to_string())
+            // CAPTCHA pool configuration
+            .env("CAPTCHA_ENABLED", config.captcha.enabled.to_string())
             .env("CAPTCHA_POOL_SIZE", config.captcha.pool_size.to_string())
             .env("CAPTCHA_MIN_POOL", config.captcha.min_pool_size.to_string())
             .env("CAPTCHA_MAX_POOL", config.captcha.max_pool_size.to_string())
+            .env("CAPTCHA_ROTATION_PERCENT", config.captcha.rotation_percent.to_string())
+            .env("CAPTCHA_ROTATION_DAYS", config.captcha.rotation_interval_days.to_string())
             .env("RUST_LOG", "info,fortify_controller=debug");
         
         // Pass vanity configuration - controller will forward to orchestrators for mirror generation

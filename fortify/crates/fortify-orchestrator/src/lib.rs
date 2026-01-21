@@ -693,6 +693,9 @@ pub struct OrchestratorConfig {
     pub rotation_interval_seconds: u64,
     pub burn_threshold: f32,
     pub tor_data_dir: PathBuf,
+    /// Base data directory for Fortify (for torrc path resolution)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_data_dir: Option<PathBuf>,
     pub gate_address: String,
     pub public_bind_addr: String,
     pub proxy_port: u16,
@@ -1540,15 +1543,19 @@ pub enum DaemonHealth {
 }
 
 impl TorDaemon {
-    pub fn new(id: usize, config: &MultiDaemonConfig, tor_data_dir: &Path) -> Self {
+    pub fn new(id: usize, config: &MultiDaemonConfig, tor_data_dir: &Path, detected_cores: usize) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
+        // Use modulo to wrap daemon ID to valid core numbers
+        // This ensures CPU affinity works on any hardware (2, 4, 8, 64+ cores)
+        let core_id = if detected_cores > 0 { id % detected_cores } else { id };
+
         Self {
             id,
-            cpu_core: if config.cpu_affinity { Some(id) } else { None },
+            cpu_core: if config.cpu_affinity { Some(core_id) } else { None },
             socks_port: config.base_socks_port + id as u16,
             control_port: config.base_control_port + id as u16,
             pid: None,
@@ -1606,7 +1613,7 @@ impl MultiDaemonManager {
         daemons.clear();
 
         for i in 0..count {
-            let daemon = TorDaemon::new(i, &self.config, &self.tor_data_dir);
+            let daemon = TorDaemon::new(i, &self.config, &self.tor_data_dir, self.detected_cores);
             tracing::info!(
                 "Initialized Tor daemon {} on core {:?}, socks:{}, control:{}",
                 daemon.id,
@@ -1820,13 +1827,25 @@ CookieAuthentication 1
 
 impl Default for OrchestratorConfig {
     fn default() -> Self {
+        // Use persistent path if HOME is set
+        let base_dir = if let Some(home) = std::env::var_os("HOME") {
+            let mut path = PathBuf::from(home);
+            path.push(".local");
+            path.push("share");
+            path.push("fortify");
+            path
+        } else {
+            PathBuf::from("/tmp/fortify")
+        };
+        
         Self {
             min_mirrors: 2,
             max_mirrors: 5,
             standby_mirrors: 2, // 2 standby mirrors ready to activate
             rotation_interval_seconds: 3600, // 1 hour
             burn_threshold: 0.7,
-            tor_data_dir: PathBuf::from("/tmp/fortify/tor/mirrors"),
+            tor_data_dir: base_dir.join("tor").join("mirrors"),
+            base_data_dir: Some(base_dir),
             gate_address: "http://127.0.0.1:8081".to_string(),
             public_bind_addr: "0.0.0.0:8080".to_string(),
             proxy_port: 8082,
@@ -1877,10 +1896,24 @@ impl Orchestrator {
             timeout: config.vanity_timeout,
         };
         
+        // Determine base data dir for torrc path
+        let base_data_dir = config.base_data_dir.clone().unwrap_or_else(|| {
+            if let Some(home) = std::env::var_os("HOME") {
+                let mut path = PathBuf::from(home);
+                path.push(".local");
+                path.push("share");
+                path.push("fortify");
+                path
+            } else {
+                PathBuf::from("/tmp/fortify")
+            }
+        });
+        
         let tor_service = Arc::new(TorService::new(
             config.tor_control_addr.clone(),
             config.tor_cookie_path.clone(),
-        ).with_vanity(vanity_config));
+        ).with_vanity(vanity_config)
+         .with_base_data_dir(base_data_dir));
         
         // Initialize multi-daemon manager if enabled
         let multi_daemon_manager = if config.multi_daemon.enabled {
@@ -3412,6 +3445,9 @@ impl Orchestrator {
                 config.rotation_interval_days as u64 * 24 * 60 * 60
             );
             
+            // Track last logged count to avoid spam
+            let mut last_logged_generated: u64 = 0;
+            
             // Main generation loop - check every 5 seconds
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
             
@@ -3484,8 +3520,8 @@ impl Orchestrator {
                     tokio::time::sleep(std::time::Duration::from_millis(config.batch_delay_ms)).await;
                 }
                 
-                // Log stats periodically (less frequently to reduce noise)
-                if stats.total_generated % 500 == 0 && stats.total_generated > 0 {
+                // Log stats periodically (only when total_generated increases by 500)
+                if stats.total_generated >= last_logged_generated + 500 {
                     tracing::info!(
                         "CAPTCHA pool: size={}/{}, served={}, expired={}",
                         stats.current_size,
@@ -3493,6 +3529,7 @@ impl Orchestrator {
                         stats.total_served,
                         stats.total_expired
                     );
+                    last_logged_generated = stats.total_generated;
                 }
             }
         });
