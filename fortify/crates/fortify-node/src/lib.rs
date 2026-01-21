@@ -766,6 +766,7 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fortify_core::TrustTier;
 
     fn create_test_node(mode: NodeMode) -> Node {
         let secret = b"test-secret";
@@ -774,7 +775,7 @@ mod tests {
             mode,
             ..Default::default()
         };
-        Node::new(config, session_manager)
+        Node::new(config, session_manager, secret.to_vec())
     }
 
     #[test]

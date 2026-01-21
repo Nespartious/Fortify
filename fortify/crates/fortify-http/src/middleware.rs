@@ -143,7 +143,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new(secret.to_vec()));
 
         // Create a valid token
-        let mut token = SessionToken::new("session-123".into(), TrustTier::Verified, 3600);
+        let mut token = SessionToken::new("session-123".into(), TrustTier::Verified, 3600, "test-agent");
         token.sign(secret).unwrap();
         let token_str = token.encode().unwrap();
 

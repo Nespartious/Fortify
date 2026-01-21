@@ -892,7 +892,10 @@ mod tests {
         assert!(!state.is_complete());
 
         state.pow_solved = true;
-        assert!(state.is_complete());
+        assert!(!state.is_complete()); // Still need to solve captchas
+        
+        state.captchas_remaining = 0;
+        assert!(state.is_complete()); // Now complete
     }
 
     #[test]

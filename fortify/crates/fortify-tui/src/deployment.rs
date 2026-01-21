@@ -30,18 +30,6 @@ pub struct DeploymentStateFile {
 }
 
 impl DeploymentStateFile {
-    /// Create new deployment state
-    pub fn new(deployment_id: String) -> Self {
-        Self {
-            active: false,
-            last_started: None,
-            last_stopped: None,
-            deployment_id,
-            mirror_addresses: Vec::new(),
-            node_addresses: Vec::new(),
-        }
-    }
-    
     /// Load from disk
     pub fn load(path: &std::path::Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;

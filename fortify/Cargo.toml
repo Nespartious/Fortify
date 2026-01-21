@@ -5,7 +5,6 @@ members = [
     "crates/fortify-gate",
     "crates/fortify-orchestrator",
     "crates/fortify-node",
-    "crates/fortify-community",
     "crates/fortify-controller",
     "crates/fortify-tui",
 ]

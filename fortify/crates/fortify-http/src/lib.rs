@@ -22,18 +22,15 @@ struct GlobalRateLimiter {
     requests: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     /// Track unique circuits per time window (for attack detection)
     active_circuits: Arc<Mutex<HashMap<Instant, Vec<String>>>>,
-    /// Base limit for Unknown/Suspicious users
-    base_limit: usize,
     /// Time window for rate limiting
     window: Duration,
 }
 
 impl GlobalRateLimiter {
-    fn new(base_limit: usize, window_secs: u64) -> Self {
+    fn new(window_secs: u64) -> Self {
         Self {
             requests: Arc::new(Mutex::new(HashMap::new())),
             active_circuits: Arc::new(Mutex::new(HashMap::new())),
-            base_limit,
             window: Duration::from_secs(window_secs),
         }
     }
@@ -427,7 +424,7 @@ impl HttpProxy {
             behavior_sessions: Arc::new(RwLock::new(HashMap::new())),
             gate_address,
             activity_tracker: Arc::new(Mutex::new(SessionActivityTracker::new())),
-            rate_limiter: Arc::new(GlobalRateLimiter::new(75, 10)), // 75 requests per 10 seconds
+            rate_limiter: Arc::new(GlobalRateLimiter::new(10)), // 10 second window
             blacklist_check: None,
         }
     }
@@ -463,7 +460,7 @@ impl HttpProxy {
             behavior_sessions: Arc::new(RwLock::new(HashMap::new())),
             gate_address: "http://127.0.0.1:8081".to_string(),
             activity_tracker: Arc::new(Mutex::new(SessionActivityTracker::new())),
-            rate_limiter: Arc::new(GlobalRateLimiter::new(75, 10)), // 75 requests per 10 seconds
+            rate_limiter: Arc::new(GlobalRateLimiter::new(10)), // 10 second window
             blacklist_check: None,
         }
     }

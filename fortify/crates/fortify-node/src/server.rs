@@ -150,6 +150,7 @@ fn error_response(status: StatusCode, message: &str) -> Response<Body> {
 mod tests {
     use super::*;
     use crate::NodeConfig;
+    use fortify_core::SessionManager;
 
     #[test]
     fn test_extract_session_id() {
@@ -176,7 +177,7 @@ mod tests {
         let secret = b"test-secret";
         let session_manager = Arc::new(SessionManager::new(secret.to_vec()));
         let config = NodeConfig::default();
-        let node = Arc::new(Node::new(config, session_manager));
+        let node = Arc::new(Node::new(config, session_manager, secret.to_vec()));
 
         let response = health_check(node);
         assert_eq!(response.status(), StatusCode::OK);
@@ -193,7 +194,7 @@ mod tests {
         let secret = b"test-secret";
         let session_manager = Arc::new(SessionManager::new(secret.to_vec()));
         let config = NodeConfig::default();
-        let node = Arc::new(Node::new(config, session_manager));
+        let node = Arc::new(Node::new(config, session_manager, secret.to_vec()));
 
         let response = metrics_endpoint(node);
         assert_eq!(response.status(), StatusCode::OK);

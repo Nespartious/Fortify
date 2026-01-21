@@ -3,7 +3,6 @@
 //! Periodically tests mirror accessibility via SOCKS proxy to ensure they're reachable.
 
 use anyhow::Result;
-use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,7 +13,6 @@ use tracing::{debug, info, warn};
 /// Mirror health status
 #[derive(Debug, Clone)]
 pub struct MirrorHealthStatus {
-    pub address: String,
     pub is_reachable: bool,
     pub last_check: Instant,
     pub last_success: Option<Instant>,
@@ -26,8 +24,6 @@ pub struct MirrorHealthStatus {
 pub struct MirrorHealthChecker {
     /// SOCKS proxy address
     socks_proxy: String,
-    /// HTTP client with SOCKS proxy
-    client: Client,
     /// Mirror health statuses
     statuses: Arc<Mutex<HashMap<String, MirrorHealthStatus>>>,
     /// Check interval (in seconds)
@@ -44,24 +40,12 @@ impl MirrorHealthChecker {
             .unwrap_or(9050);
         
         let socks_proxy = format!("socks5h://127.0.0.1:{}", socks_port);
-        
-        // Create HTTP client with SOCKS proxy and shorter timeout for mirrors
-        let client = reqwest::Client::builder()
-            .proxy(reqwest::Proxy::all(&socks_proxy)?)
-            .timeout(Duration::from_secs(15))  // Shorter timeout for mirrors
-            .build()?;
 
         Ok(Self {
             socks_proxy,
-            client,
             statuses: Arc::new(Mutex::new(HashMap::new())),
             check_interval: 30, // Check mirrors every 30 seconds
         })
-    }
-
-    /// Get statuses (for external access)
-    pub fn statuses(&self) -> Arc<Mutex<HashMap<String, MirrorHealthStatus>>> {
-        Arc::clone(&self.statuses)
     }
 
     /// Start health checking loop
@@ -134,7 +118,6 @@ impl MirrorHealthChecker {
         for mirror_addr in mirrors {
             let status = statuses.entry(mirror_addr.clone()).or_insert_with(|| {
                 MirrorHealthStatus {
-                    address: mirror_addr.clone(),
                     is_reachable: false,
                     last_check: Instant::now(),
                     last_success: None,

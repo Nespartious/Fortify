@@ -217,7 +217,12 @@ mod tests {
     fn test_round_robin_selection() {
         let healthy = create_test_nodes(3, 10);
         let threat = create_test_nodes(2, 10);
-        let router = Router::new(healthy, threat, RoutingStrategy::RoundRobin);
+        let router = Router::new_with_strategies(
+            healthy,
+            threat,
+            RoutingStrategy::RoundRobin,
+            RoutingStrategy::RoundRobin,
+        );
 
         // Test healthy tier
         let node1 = router.select_backend(TrustTier::Verified).unwrap();

@@ -337,14 +337,14 @@ mod tests {
 
     #[test]
     fn test_token_creation() {
-        let token = SessionToken::new("test".into(), TrustTier::Verified, 3600);
+        let token = SessionToken::new("test".into(), TrustTier::Verified, 3600, "test-agent");
         assert!(!token.is_expired());
         assert!(token.is_valid());
     }
 
     #[test]
     fn test_token_signing() {
-        let mut token = SessionToken::new("test".into(), TrustTier::Verified, 3600);
+        let mut token = SessionToken::new("test".into(), TrustTier::Verified, 3600, "test-agent");
         let secret = b"test-secret-key";
 
         token.sign(secret).unwrap();
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_token_invalid_signature() {
-        let mut token = SessionToken::new("test".into(), TrustTier::Verified, 3600);
+        let mut token = SessionToken::new("test".into(), TrustTier::Verified, 3600, "test-agent");
         let secret = b"test-secret-key";
         let wrong_secret = b"wrong-secret-key";
 
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_burned_token_invalid() {
-        let mut token = SessionToken::new("test".into(), TrustTier::Burned, 3600);
+        let mut token = SessionToken::new("test".into(), TrustTier::Burned, 3600, "test-agent");
         let secret = b"test-secret-key";
         token.sign(secret).unwrap();
 
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_session_promotion() {
-        let token = SessionToken::new("test".into(), TrustTier::Unknown, 3600);
+        let token = SessionToken::new("test".into(), TrustTier::Unknown, 3600, "test-agent");
         let mut session = Session::new(token);
 
         session.promote().unwrap();
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_session_demotion() {
-        let token = SessionToken::new("test".into(), TrustTier::Trusted, 3600);
+        let token = SessionToken::new("test".into(), TrustTier::Trusted, 3600, "test-agent");
         let mut session = Session::new(token);
 
         session.demote().unwrap();
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_session_violations() {
-        let token = SessionToken::new("test".into(), TrustTier::Verified, 3600);
+        let token = SessionToken::new("test".into(), TrustTier::Verified, 3600, "test-agent");
         let mut session = Session::new(token);
 
         assert!(!session.should_demote());
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_session_burn_threshold() {
-        let token = SessionToken::new("test".into(), TrustTier::Verified, 3600);
+        let token = SessionToken::new("test".into(), TrustTier::Verified, 3600, "test-agent");
         let mut session = Session::new(token);
 
         for _ in 0..10 {
