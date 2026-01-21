@@ -17,7 +17,7 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sysinfo = "0.30"
+sysinfo = "0.37"
 thiserror = { workspace = true }
 hyper = { version = "0.14", features = ["server", "http1", "tcp"] }
 hex = "0.4"
