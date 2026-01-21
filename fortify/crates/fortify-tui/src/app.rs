@@ -2625,15 +2625,19 @@ impl App {
         self.log_tx.send(LogEntry::info("Checking system dependencies...")).await.ok();
         
         // Initialize dependency check dialog with all deps in Pending state
-        // If vanity is enabled, mkp224o and autoconf become required
+        // Dynamically mark dependencies as required based on config settings
         let vanity_enabled = self.config.vanity.enabled;
+        let vanguards_enabled = self.config.network.vanguards_enabled;
         let deps = crate::deployment::get_dependencies();
         let statuses: Vec<DependencyStatus> = deps.iter().map(|d| {
-            // Make mkp224o and autoconf required if vanity is enabled
-            let is_required = if vanity_enabled && (d.name == "mkp224o" || d.name == "autoconf") {
-                true
-            } else {
-                d.required
+            // Determine if this dependency should be required based on config
+            let is_required = match d.name {
+                // Vanity address dependencies (git, libsodium, autoconf needed to build mkp224o)
+                "mkp224o" | "autoconf" | "libsodium" | "git" if vanity_enabled => true,
+                // Vanguards dependency
+                "vanguards" if vanguards_enabled => true,
+                // Use the default required flag
+                _ => d.required,
             };
             DependencyStatus {
                 name: d.name.to_string(),

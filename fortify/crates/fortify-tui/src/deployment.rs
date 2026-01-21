@@ -97,6 +97,16 @@ pub fn get_dependencies() -> Vec<Dependency> {
             needs_sudo: true,
         },
         Dependency {
+            name: "git",
+            check_cmd: "which",
+            check_args: &["git"],
+            install_cmd: "apt-get",
+            install_args: &["install", "-y", "git"],
+            description: "Git version control (for building mkp224o)",
+            required: false, // Required when vanity is enabled
+            needs_sudo: true,
+        },
+        Dependency {
             name: "tor",
             check_cmd: "which",
             check_args: &["tor"],
@@ -308,6 +318,11 @@ impl DeploymentManager {
             return self.install_mkp224o().await;
         }
         
+        // Special handling for vanguards (pip can be tricky on modern Ubuntu)
+        if dep.name == "vanguards" {
+            return self.install_vanguards().await;
+        }
+        
         // Build command with or without sudo
         let (cmd, args) = if dep.needs_sudo {
             ("sudo", {
@@ -482,6 +497,71 @@ impl DeploymentManager {
             )).await.ok();
             Ok(false)
         }
+    }
+    
+    /// Install vanguards via pip (handles multiple pip configurations)
+    async fn install_vanguards(&self) -> Result<bool> {
+        self.log_tx.send(LogEntry::from_source(
+            LogLevel::Info,
+            "install",
+            "Installing vanguards via pip..."
+        )).await.ok();
+        
+        // Try multiple methods in order of preference
+        let methods = [
+            // Method 1: pip3 with --break-system-packages (Ubuntu 23.04+)
+            ("pip3", vec!["install", "--break-system-packages", "vanguards"]),
+            // Method 2: pip3 with --user flag
+            ("pip3", vec!["install", "--user", "vanguards"]),
+            // Method 3: pipx (if available)
+            ("pipx", vec!["install", "vanguards"]),
+            // Method 4: Plain pip3 (older systems)
+            ("pip3", vec!["install", "vanguards"]),
+        ];
+        
+        for (cmd, args) in &methods {
+            self.log_tx.send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                &format!("Trying: {} {}", cmd, args.join(" "))
+            )).await.ok();
+            
+            let output = Command::new(cmd)
+                .args(args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await;
+            
+            match output {
+                Ok(result) if result.status.success() => {
+                    self.log_tx.send(LogEntry::from_source(
+                        LogLevel::Info,
+                        "install",
+                        "vanguards installed successfully"
+                    )).await.ok();
+                    return Ok(true);
+                }
+                Ok(result) => {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    self.log_tx.send(LogEntry::from_source(
+                        LogLevel::Warn,
+                        "install",
+                        &format!("Method failed: {}", stderr.lines().next().unwrap_or("unknown error"))
+                    )).await.ok();
+                }
+                Err(_) => {
+                    // Command not found, try next method
+                }
+            }
+        }
+        
+        self.log_tx.send(LogEntry::from_source(
+            LogLevel::Error,
+            "install",
+            "Failed to install vanguards - all methods failed"
+        )).await.ok();
+        Ok(false)
     }
     
     /// Install all missing dependencies
