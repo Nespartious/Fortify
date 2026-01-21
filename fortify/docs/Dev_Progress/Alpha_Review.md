@@ -2,8 +2,23 @@
 
 **Version:** Alpha 1.0  
 **Review Date:** January 21, 2026  
-**Status:** Ready for Testing (Production Deployment Requires Critical Fixes)  
+**Status:** Core Ready - Security Hardening Required  
 **Attack Defense Verified:** 65,576 requests blocked during 3-hour DDoS (Jan 20, 2026)
+
+---
+
+## 🎯 Project Mission
+
+**Primary Goal:** Protect Tor hidden services from DDoS attacks through a multi-layered defense proxy that sits between attackers and the real hidden service.
+
+**Key Requirements:**
+- ✅ Keep existing valid user sessions **unaffected during active attacks**
+- ✅ Allow new real users to **gain access if verified during active attacks**  
+- ✅ Run efficiently on **relatively low-powered systems**
+- ✅ Provide layered defense (rate limiting + CAPTCHA + behavioral analysis + per-circuit isolation)
+- ✅ Zero JavaScript requirement for accessibility
+
+**PoW Status:** ✅ **ENABLED** - System attempts ADD_ONION with PoW first (Tor 0.4.9.2+), falls back to file-based hidden service with PoW via torrc (Tor 0.4.8+). This defends against introduction point flooding at the Tor layer.
 
 ---
 
@@ -12,41 +27,75 @@
 ### CRITICAL #1: Async Timeout Strategy - HIGHEST PRIORITY
 **Severity:** 🔴 **CRITICAL** (Beta Blocker)  
 **Risk:** Slow-loris attacks can exhaust worker pool and make entire proxy unresponsive  
-**Status:** Partially implemented, needs systematic completion
+**Status:** Partially implemented, needs systematic completion  
+**Impact:** Application-layer attack that bypasses PoW defenses (which only protect introduction point layer)
 
-**Missing Timeouts:**
-- [ ] Tor control socket operations (unbounded)
-- [ ] Mirror health check requests (unbounded)
-- [ ] Orchestrator API calls (no explicit timeout)
-- [ ] Backend node proxying (relying on defaults)
-- [ ] WebSocket/long-lived connection handling
+**Current State:**
+- ✅ Gate verification timeout: 45s (configurable)
+- ✅ Mirror health checks: 30s timeout
+- ✅ Controller health checks: 30s timeout
+- ✅ HTTP Proxy health checks: 2s timeout
+- ✅ Hyper framework provides some default timeouts
+
+**Missing Critical Timeouts:**
+- [ ] **Tor control socket operations** (ADD_ONION, DEL_ONION, SIGNAL RELOAD) - unbounded
+- [ ] **Orchestrator API calls** (inter-component communication) - unbounded
+- [ ] **WebSocket/long-lived connections** (admin panel) - unbounded
+- [ ] **Backend node proxying** (Node → Real Hidden Service) - relying on defaults
+  - *Note: Connection from Node → Real HS expected to be in safe space (external VPS → internal service)*
+  - *Still worth implementing for defense-in-depth*
 
 **Required Implementation:**
-- [ ] Connection timeout (handshake)
-- [ ] Read timeout (per chunk)
-- [ ] Write timeout (per flush)
-- [ ] Request timeout (end-to-end)
-- [ ] Idle timeout (keep-alive)
-- [ ] Document timeout strategy
-- [ ] Test with slow-loris simulation over Tor
+- [ ] Connection timeout: 10s (TCP handshake)
+- [ ] Read timeout: 30s per chunk (accommodate Tor latency)
+- [ ] Write timeout: 30s per flush
+- [ ] Request timeout: 60s end-to-end
+- [ ] Idle timeout: 300s (keep-alive)
+- [ ] Document comprehensive timeout strategy
+- [ ] Test with slow-loris simulation   
+**Impact:** One panic on attacker-controlled input = entire service crashes
 
-**Why Critical:** Slow-loris attacks over Tor are proven, realistic, and trivial to execute. We're a DDoS defense tool without complete timeout guarantees.
+**Current State:**
+- ✅ Zero compiler warnings (recent cleanup)
+- ✅ Most error paths use `Result<T, E>` properly
+- ⚠️ Lock operations use `.unwrap()` (can panic on poisoned locks)
+- ⚠️ No systematic audit completed for network-facing code paths
 
----
-
-### CRITICAL #2: Panic Path Audit
-**Severity:** 🔴 **CRITICAL** (Beta Blocker)  
-**Risk:** Attacker-triggered panics cause instant DoS  
-**Status:** Not systematically audited
+**Known Unwrap Locations (preliminary grep):**
+- `fortify-core/src/logging.rs`: Mutex lock unwraps
+- `fortify-http/src/admin.rs`: RwLock unwraps (20+ instances)
+- More in network-facing crates (needs audit)
 
 **Required Actions:**
-- [ ] Audit all `unwrap()` calls in network-facing code
+- [ ] Audit all `unwrap()` calls in network-facing code paths
 - [ ] Audit all `expect()` calls on untrusted input
 - [ ] Replace panics with proper error handling
+- [ ] Handle lock poisoning gracefully (don't cascade failures)
 - [ ] Add `#![deny(clippy::unwrap_used)]` in production crates
-- [ ] Implement fuzzing infrastructure
-- [ ] Add panic recovery in critical paths
+- [ ] Add `#![warn(clippy::expect_used)]` in production crates
+- [ ] Implement fuzzing infrastructure for input validation
+- [ ] Add panic recovery in critical async paths
 
+**Known Safe (exclude from audit):**
+- ✅ Test code (panics acceptable)
+- ✅ Initialization code (validated during startup, fail-fast appropriate)
+- ✅ Configuration parsing at startup
+
+**Needs Verification (priority order):**
+1. ⚠️ **HTTP request parsing** (headers, cookies, body)
+2. ⚠️ **Token deserialization** (HMAC verification, signature checks)
+3. ⚠️ **Session state transitions** (trust tier changes)
+4. ⚠️ **Tor control protocol handling** (ADD_ONION responses)
+5. ⚠️ **Lock operations** (mutex/rwlock poisoning)
+6. ⚠️ **WebSocket message parsing** (admin panel)
+
+**Why Critical:** 
+- In network services: **one panic = instant DoS**
+- Rust panics in async contexts can poison task executor pools
+- Lock poisoning can cascade to all future operations
+- This is a realistic, exploitable attack vector
+
+**Implementation Details:** See `docs/security-hardening/02-panic-audit.md`
 **Known Safe:**
 - ✅ Test code (panics acceptable)
 - ✅ Initialization code (validated during startup)

@@ -186,14 +186,29 @@ Called by fortify-http proxy when user presents verification token.
 
 ---
 
-### Proof-of-Work Endpoints (DISABLED)
+### Proof-of-Work at Tor Layer (ENABLED)
 
-**Note:** PoW (Proof-of-Work) challenge system is currently **disabled** in favor of CAPTCHA-only verification. The following endpoints are not implemented:
+**Note:** PoW (Proof-of-Work) defense is **ENABLED** at the Tor hidden service layer, not at the application HTTP layer. 
 
-- ~~`GET /pow`~~ (not implemented)
-- ~~`POST /pow/verify`~~ (not implemented)
+**Implementation Strategy:**
+1. **Primary:** Attempts to create mirrors with `ADD_ONION` + `PoWDefensesEnabled` flag (Tor 0.4.9.2+)
+2. **Fallback:** Creates file-based hidden services with `HiddenServicePoWDefensesEnabled 1` in torrc (Tor 0.4.8+)
 
-PoW may be re-enabled in future versions for additional bot protection.
+**What PoW Protects:**
+- ✅ Introduction point flooding attacks (Tor connection layer)
+- ✅ Circuit creation DoS attempts
+- ✅ Bot connections at Tor protocol level
+
+**What PoW Does NOT Protect:**
+- ❌ Application-layer attacks (slow-loris, malformed requests)
+- ❌ Attacks from clients who already solved PoW puzzle
+
+**Application Layer:** Uses CAPTCHA verification for human validation after PoW defense.
+
+**No HTTP Endpoints:** PoW is transparent to application - handled entirely by Tor daemon. The following endpoints do NOT exist:
+
+- ~~`GET /pow`~~ (not implemented - PoW at Tor layer)
+- ~~`POST /pow/verify`~~ (not implemented - PoW at Tor layer)
 
 **Response:**
 ```json
