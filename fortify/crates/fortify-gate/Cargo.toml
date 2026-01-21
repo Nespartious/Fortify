@@ -13,7 +13,7 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 hyper = { version = "0.14", features = ["server", "http1", "tcp"] }
-hyper-staticfile = "0.9"
+hyper-staticfile = "0.10"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
