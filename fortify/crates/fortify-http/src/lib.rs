@@ -929,6 +929,10 @@ async fn process_request(
         tracing::debug!("No token found in request");
     }
 
+    // Track if this is a brand new visitor (no existing session at all)
+    // Used to differentiate new users (1 CAPTCHA) from demoted users (2 CAPTCHAs)
+    let is_new_visitor = verified_session_id.is_none() && stale_session_id.is_none();
+
     // Get or create session based on verification status
     // Priority: verified_session_id > stale_session_id > new session
     let session = if let Some(ref sid) = verified_session_id {
@@ -1172,9 +1176,10 @@ async fn process_request(
         } else {
             request_path.clone()
         };
-        // Detect demoted users: they have a valid token but need gate re-verification
-        // This happens when admin moves them to threat pool
-        let is_demoted_user = verified_session_id.is_some();
+        // Detect demoted users: they had an existing session that was demoted to threat pool
+        // NEW visitors (is_new_visitor=true) should NOT be marked as demoted - they get 1 CAPTCHA
+        // Demoted/stale users (is_new_visitor=false) get 2 CAPTCHAs to re-verify
+        let is_demoted_user = !is_new_visitor;
         
         match proxy_to_gate(req, &gate_address, &gate_path).await {
             Ok(mut resp) => {
