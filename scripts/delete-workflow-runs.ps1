@@ -6,8 +6,9 @@
 
 param(
     [string]$Repo = "Nespartious/Fortify",
-    [int]$BatchSize = 50,
-    [int]$MaxParallel = 10,
+    [int]$BatchSize = 20,
+    [int]$MaxParallel = 3,
+    [int]$DelayBetweenBatches = 5,
     [switch]$Force,
     [switch]$SkipLogin
 )
@@ -182,9 +183,12 @@ for ($i = 0; $i -lt $runIds.Count; $i += $BatchSize) {
             return $LASTEXITCODE
         } -ArgumentList $Repo, $runId
         
+        # Small delay between starting jobs to avoid hammering API
+        Start-Sleep -Milliseconds 500
+        
         # Limit parallel jobs
         while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -ge $MaxParallel) {
-            Start-Sleep -Milliseconds 100
+            Start-Sleep -Milliseconds 500
         }
     }
     
@@ -204,7 +208,8 @@ for ($i = 0; $i -lt $runIds.Count; $i += $BatchSize) {
     
     # Rate limit protection - pause between batches
     if ($i + $BatchSize -lt $runIds.Count) {
-        Start-Sleep -Seconds 1
+        Write-Host "    Pausing $DelayBetweenBatches seconds to avoid rate limit..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds $DelayBetweenBatches
     }
 }
 
