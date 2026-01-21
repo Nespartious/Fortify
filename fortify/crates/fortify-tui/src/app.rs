@@ -2625,12 +2625,20 @@ impl App {
         self.log_tx.send(LogEntry::info("Checking system dependencies...")).await.ok();
         
         // Initialize dependency check dialog with all deps in Pending state
+        // If vanity is enabled, mkp224o and autoconf become required
+        let vanity_enabled = self.config.vanity.enabled;
         let deps = crate::deployment::get_dependencies();
         let statuses: Vec<DependencyStatus> = deps.iter().map(|d| {
+            // Make mkp224o and autoconf required if vanity is enabled
+            let is_required = if vanity_enabled && (d.name == "mkp224o" || d.name == "autoconf") {
+                true
+            } else {
+                d.required
+            };
             DependencyStatus {
                 name: d.name.to_string(),
                 description: d.description.to_string(),
-                required: d.required,
+                required: is_required,
                 state: DependencyState::Pending,
             }
         }).collect();
@@ -2651,9 +2659,18 @@ impl App {
     async fn run_dependency_check(&mut self) -> Result<()> {
         let deps = crate::deployment::get_dependencies();
         let mut needs_install: Vec<usize> = Vec::new();
+        
+        // Get the required flags from statuses (which may have vanity overrides)
+        let required_flags: Vec<bool> = if let Dialog::DependencyCheck { statuses, .. } = &self.dialog {
+            statuses.iter().map(|s| s.required).collect()
+        } else {
+            deps.iter().map(|d| d.required).collect()
+        };
 
         // Phase 1: Check all dependencies
         for (i, dep) in deps.iter().enumerate() {
+            let is_required = required_flags.get(i).copied().unwrap_or(dep.required);
+            
             // Update status to Checking
             if let Dialog::DependencyCheck { statuses, .. } = &mut self.dialog {
                 if i < statuses.len() {
@@ -2675,7 +2692,7 @@ impl App {
                             "deps",
                             &format!("✓ {} is available", dep.name)
                         )).await.ok();
-                    } else if dep.required {
+                    } else if is_required {
                         statuses[i].state = DependencyState::Pending;
                         needs_install.push(i);
                         self.log_tx.send(LogEntry::from_source(
