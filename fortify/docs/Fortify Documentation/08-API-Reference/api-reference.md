@@ -19,50 +19,82 @@
 
 **Base URL:** `http://[gate_address]:[port]/`
 
-### GET /
+### GET /Fortify
 
-Returns the gate page with CAPTCHA challenge.
+Returns the gate landing page. Includes cookie compliance check to filter bots.
 
-**Response:**
-- Content-Type: `text/html`
-- Body: HTML page with CAPTCHA form
+**Flow:**
+1. First visit → Sets `fortify_test=1` cookie, redirects to `/Fortify?check=1`
+2. Second visit with cookie → Shows landing page
+3. Second visit without cookie → Blocks as bot (no cookie support)
 
 **Query Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `redirect` | string | URL to redirect after verification |
-| `demoted` | bool | If true, show threat captcha |
+| `check` | bool | Internal parameter for cookie compliance check |
+
+**Response:**
+- Content-Type: `text/html`
+- Body: Landing page HTML (gate.html or demoted.html for demoted users)
+
+**Cookies Read:**
+| Cookie | Description |
+|--------|-------------|
+| `fortify_test` | Cookie compliance test |
+| `fortify_demoted` | Set by nodes when user is demoted |
+| `fortify_original_session` | Preserved session ID during demotion |
+| `fortify_pending_session` | Session ID assigned before verification |
 
 ---
 
-### GET /captcha
+### GET /Fortify/Portcullis
 
-Returns a new CAPTCHA image.
+Returns the CAPTCHA challenge page.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `reason` | string | Why user is seeing CAPTCHA (`rate_limit`, `demotion`, etc.) |
+
+**Response:**
+- Content-Type: `text/html`
+- Body: CAPTCHA challenge page with form
+
+**Cookies Preserved:**
+- Session IDs maintained through verification process
+
+---
+
+### GET /gate/captcha/{id}
+
+Returns a CAPTCHA image for the given challenge ID.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | Challenge UUID |
 
 **Response:**
 ```
 Content-Type: image/bmp (or image/png depending on type)
-X-Captcha-Id: <challenge_id>
-X-Captcha-Type: <captcha_type>
 ```
 
-**Headers:**
-| Header | Value |
-|--------|-------|
-| `X-Captcha-Id` | UUID of the challenge |
-| `X-Captcha-Type` | BmpText, Emoji, Direction, etc. |
+**Example:**
+```
+GET /gate/captcha/550e8400-e29b-41d4-a716-446655440000.png
+```
 
 ---
 
-### POST /verify
+### POST /gate/verify
 
-Submit CAPTCHA answer.
+Submit CAPTCHA answer and receive verification token.
 
 **Request:**
 ```
 Content-Type: application/x-www-form-urlencoded
 
-captcha_id=<id>&answer=<answer>&redirect=<url>
+captcha_id=<id>&answer=<answer>
 ```
 
 **Form Fields:**
@@ -70,13 +102,12 @@ captcha_id=<id>&answer=<answer>&redirect=<url>
 |-------|------|----------|-------------|
 | `captcha_id` | string | Yes | Challenge ID |
 | `answer` | string | Yes | User's answer |
-| `redirect` | string | No | Redirect URL |
 
 **Response (Success):**
 ```
 HTTP/1.1 302 Found
-Location: <redirect_url>
-Set-Cookie: fortify_session=<token>; Path=/; HttpOnly; SameSite=Strict
+Location: /
+Set-Cookie: fortify_verification=<token>; Path=/; HttpOnly; SameSite=Strict; Max-Age=60
 ```
 
 **Response (Failure):**
@@ -84,44 +115,27 @@ Set-Cookie: fortify_session=<token>; Path=/; HttpOnly; SameSite=Strict
 HTTP/1.1 200 OK
 Content-Type: text/html
 
-<!-- Gate page with error message -->
+<!-- CAPTCHA page with error message -->
 ```
+
+**Notes:**
+- Verification token is **single-use** and expires in 60 seconds
+- Token must be upgraded to session token on first request to site
+- User-Agent binding prevents token sharing
 
 ---
 
-### GET /pow
+### POST /gate/upgrade-token
 
-Get Proof-of-Work challenge (if enabled).
+**Internal API:** Upgrade verification token to session token.
 
-**Response:**
-```json
-{
-  "challenge_id": "uuid",
-  "prefix": "0000abc123",
-  "difficulty": 20,
-  "algorithm": "sha256"
-}
-```
-
-**Fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `challenge_id` | string | UUID of challenge |
-| `prefix` | string | String to prepend |
-| `difficulty` | int | Number of leading zeros |
-| `algorithm` | string | Hash algorithm |
-
----
-
-### POST /pow/verify
-
-Submit Proof-of-Work solution.
+Called by fortify-http proxy when user presents verification token.
 
 **Request:**
 ```json
 {
-  "challenge_id": "uuid",
-  "nonce": "12345678"
+  "verification_token": "base64-encoded-token",
+  "user_agent": "TorBrowser/13.0"
 }
 ```
 
@@ -129,7 +143,8 @@ Submit Proof-of-Work solution.
 ```json
 {
   "success": true,
-  "session_token": "base64-token"
+  "session_token": "base64-encoded-session-token",
+  "session_id": "uuid"
 }
 ```
 
@@ -137,15 +152,48 @@ Submit Proof-of-Work solution.
 ```json
 {
   "success": false,
-  "error": "Invalid solution"
+  "error": "Token expired" | "Token already used" | "User-Agent mismatch"
+}
+```
+
+**Notes:**
+- Atomic operation prevents token reuse
+- User-Agent must match token binding
+- Session token has 24-hour lifetime
+
+---
+
+### POST /gate/admin/captcha-config
+
+**Admin API:** Update CAPTCHA configuration.
+
+**Request:**
+```json
+{
+  "gate_captcha_type": "BmpText",
+  "threat_captcha_type": "Emoji",
+  "random_cycling": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "config": { /* updated configuration */ }
 }
 ```
 
 ---
 
-### GET /health
+### Proof-of-Work Endpoints (DISABLED)
 
-Health check endpoint.
+**Note:** PoW (Proof-of-Work) challenge system is currently **disabled** in favor of CAPTCHA-only verification. The following endpoints are not implemented:
+
+- ~~`GET /pow`~~ (not implemented)
+- ~~`POST /pow/verify`~~ (not implemented)
+
+PoW may be re-enabled in future versions for additional bot protection.
 
 **Response:**
 ```json
