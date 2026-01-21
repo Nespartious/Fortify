@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="10;url=/">
+    <title>Fortify — Access Granted</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --gold-light: #d4b85a;
+            --bronze: #8b7355;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --sage: #9ab893;
+            --slate-blue: #6b7c8c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        /* Subtle radial glow */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% 30%, rgba(125, 154, 120, 0.04) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        .container {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 48px 56px;
+            max-width: 460px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            position: relative;
+        }
+        /* Top accent line */
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 20%;
+            right: 20%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--sage), transparent);
+            border-radius: 1px;
+        }
+        .success-badge {
+            display: inline-block;
+            background: var(--sage);
+            color: var(--bg-deep);
+            padding: 6px 20px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            border-radius: 2px;
+            margin-bottom: 28px;
+        }
+        .icon-row {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 400;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .tagline {
+            font-size: 0.75rem;
+            color: var(--sage);
+            letter-spacing: 0.1em;
+            margin-bottom: 32px;
+        }
+        .message-box {
+            background: var(--bg-elevated);
+            border-left: 2px solid var(--sage);
+            border-radius: 0 3px 3px 0;
+            padding: 20px 24px;
+            margin-bottom: 28px;
+            text-align: left;
+        }
+        .message-box p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            margin: 0;
+        }
+        .message-box strong {
+            color: var(--text-primary);
+        }
+        .status-indicators {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+        }
+        .indicator {
+            font-size: 0.65rem;
+            padding: 6px 14px;
+            border: 1px solid var(--border-accent);
+            border-radius: 2px;
+            color: var(--text-secondary);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .indicator::before {
+            content: '';
+            width: 5px;
+            height: 5px;
+            background: var(--sage);
+            border-radius: 50%;
+        }
+        .redirect-notice {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            margin-bottom: 20px;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .proceed-btn {
+            display: inline-block;
+            background: transparent;
+            color: var(--gold-muted);
+            border: 1px solid var(--gold-muted);
+            border-radius: 3px;
+            padding: 12px 32px;
+            font-family: inherit;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            opacity: 0;
+            animation: fadeIn 0.5s ease-out 2s forwards;
+        }
+        .proceed-btn:hover {
+            background: var(--gold-muted);
+            color: var(--bg-deep);
+        }
+        .footer-text {
+            margin-top: 28px;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-badge">✓ Verified</div>
+        <div class="icon-row">🔓</div>
+        <h1>Access Granted</h1>
+        <p class="tagline">Identity Confirmed</p>
+        
+        <div class="message-box">
+            <p>Verification complete. You will be transferred to the <strong>secure zone</strong> momentarily.</p>
+        </div>
+        
+        <div class="status-indicators">
+            <span class="indicator">Encrypted</span>
+            <span class="indicator">Verified</span>
+            <span class="indicator">Secure</span>
+        </div>
+        
+        <div class="redirect-notice">
+            Preparing secure connection...
+        </div>
+        
+        <a href="/" class="proceed-btn">Continue Now →</a>
+        
+        <div class="footer-text">
+            Fortify Security Layer • Trust Established
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+[Unit]
+Description=Fortify Node (Threat)
+After=network.target tor.service
+Requires=tor.service
+
+[Service]
+Type=simple
+User=fortify
+Group=fortify
+Environment="NODE_MODE=threat"
+ExecStart=/opt/fortify/bin/fortify-node
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/fortify /var/run/fortify
+NoNewPrivileges=yes
+PrivateNetwork=no
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits
+LimitNOFILE=32768
+LimitNPROC=2048
+MemoryMax=512M
+CPUQuota=100%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fortify-node-threat
+
+[Install]
+WantedBy=multi-user.target

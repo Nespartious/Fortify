@@ -1,0 +1,31 @@
+[workspace]
+members = [
+    "crates/fortify-core",
+    "crates/fortify-http",
+    "crates/fortify-gate",
+    "crates/fortify-orchestrator",
+    "crates/fortify-node",
+    "crates/fortify-community",
+    "crates/fortify-controller",
+    "crates/fortify-tui",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.6"
+edition = "2021"
+authors = ["Fortify Project"]
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1.35", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+sysinfo = { version = "0.30", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+anyhow = "1.0"
+thiserror = "1.0"

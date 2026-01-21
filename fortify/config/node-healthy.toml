@@ -1,0 +1,28 @@
+# Fortify Node Configuration (Healthy Mode)
+
+[node]
+mode = "healthy"
+bind_address = "127.0.0.1:9001"
+
+# Forwarding configuration
+forward_to = "real_service"  # Configured in main fortify.toml
+
+# Connection limits
+max_concurrent_connections = 500
+connection_timeout_seconds = 30
+
+# Session handling
+require_valid_token = true
+token_validation_strict = true
+
+# Request limits
+max_request_size_bytes = 10485760  # 10MB
+max_requests_per_session = 1000
+
+# Health checks
+health_check_interval_seconds = 60
+backend_timeout_seconds = 10
+
+# Logging
+log_requests = false  # Only log errors
+log_level = "info"

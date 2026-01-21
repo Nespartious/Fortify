@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortify — Mirror Retiring</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --amber: #d4a54a;
+            --amber-muted: #8b7235;
+            --sage: #9ab893;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+        }
+        
+        /* Discovery Bar - Top of page */
+        .discovery-bar {
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .discovery-label {
+            font-size: 0.65rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .discovery-mirrors {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+        .discovery-link {
+            display: inline-block;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 3px;
+            padding: 4px 10px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.7rem;
+            letter-spacing: 0.02em;
+            transition: all 0.2s ease;
+        }
+        .discovery-link:hover {
+            background: rgba(201, 162, 39, 0.08);
+            border-color: var(--gold-muted);
+            color: var(--text-primary);
+        }
+        .discovery-link.active {
+            border-color: var(--amber-muted);
+            color: var(--amber);
+        }
+        .discovery-link .pow-mini {
+            display: inline-block;
+            background: rgba(125, 154, 120, 0.15);
+            color: var(--sage);
+            padding: 1px 4px;
+            font-size: 0.5rem;
+            font-weight: 500;
+            border-radius: 2px;
+            margin-left: 6px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        
+        /* Main content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .container {
+            max-width: 560px;
+            width: 100%;
+        }
+        .alert-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--amber-muted);
+            border-radius: 4px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .alert-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .alert-icon {
+            font-size: 2.25rem;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: 1.2rem;
+            font-weight: 500;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--amber);
+        }
+        .status-msg {
+            color: var(--text-secondary);
+            line-height: 1.7;
+            font-size: 0.9rem;
+        }
+        .status-msg strong {
+            color: var(--amber);
+            font-weight: 500;
+        }
+        .countdown-box {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .countdown-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .countdown-time {
+            font-size: 1.8rem;
+            color: var(--amber);
+            font-weight: 300;
+            letter-spacing: 0.05em;
+            font-variant-numeric: tabular-nums;
+        }
+        .countdown-note {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        
+        .migration-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 24px 28px;
+        }
+        .migration-box h2 {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+        .mirror-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .mirror-list li {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-left: 2px solid var(--gold-muted);
+            border-radius: 0 3px 3px 0;
+            margin-bottom: 10px;
+            transition: all 0.2s ease;
+        }
+        .mirror-list li:last-child { margin-bottom: 0; }
+        .mirror-list li:hover {
+            border-left-color: var(--gold-primary);
+            background: rgba(201, 162, 39, 0.03);
+        }
+        .mirror-list a {
+            display: block;
+            padding: 14px 18px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            letter-spacing: 0.02em;
+            transition: color 0.2s ease;
+        }
+        .mirror-list li:hover a {
+            color: var(--text-primary);
+        }
+        .pow-badge {
+            display: inline-block;
+            background: rgba(125, 154, 120, 0.15);
+            color: var(--sage);
+            padding: 2px 8px;
+            font-size: 0.6rem;
+            font-weight: 500;
+            border-radius: 2px;
+            margin-left: 10px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .footer-note {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .no-mirrors {
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 16px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Discovery Bar: Always shows available mirrors -->
+    <div class="discovery-bar">
+        <span class="discovery-label">Active Mirrors:</span>
+        <div class="discovery-mirrors">
+            {{DISCOVERY_BAR}}
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div class="container">
+            <div class="alert-box">
+                <div class="alert-header">
+                    <span class="alert-icon">⏳</span>
+                    <h1>Mirror Retiring</h1>
+                </div>
+                <p class="status-msg">
+                    <strong>This entry point is scheduled for retirement.</strong><br><br>
+                    This mirror is being gracefully retired and will be taken offline soon.
+                    Please bookmark an alternative entry point from the list below for uninterrupted access.
+                </p>
+                <div class="countdown-box">
+                    <div class="countdown-label">Page Available For</div>
+                    <div class="countdown-time">{{COUNTDOWN_TIME}}</div>
+                    <div class="countdown-note">After this, you will need to use another mirror</div>
+                </div>
+            </div>
+            <div class="migration-box">
+                <h2>Available Mirrors</h2>
+                <ul class="mirror-list">
+                    {{MIRROR_LIST}}
+                </ul>
+            </div>
+            <div class="footer-note">
+                Scheduled Maintenance • Save Alternative Links Now
+            </div>
+        </div>
+    </div>
+</body>
+</html>

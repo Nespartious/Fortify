@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortify — Mirror Decommissioned</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --crimson: #c96969;
+            --crimson-muted: #8b5252;
+            --sage: #9ab893;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .container {
+            max-width: 560px;
+            width: 100%;
+        }
+        .alert-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--crimson-muted);
+            border-radius: 4px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .alert-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .alert-icon {
+            font-size: 2.25rem;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: 1.2rem;
+            font-weight: 500;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--crimson);
+        }
+        .status-msg {
+            color: var(--text-secondary);
+            line-height: 1.7;
+            font-size: 0.9rem;
+        }
+        .status-msg strong {
+            color: var(--crimson);
+            font-weight: 500;
+        }
+        .migration-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 24px 28px;
+        }
+        .migration-box h2 {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+        .mirror-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .mirror-list li {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-left: 2px solid var(--gold-muted);
+            border-radius: 0 3px 3px 0;
+            margin-bottom: 10px;
+            transition: all 0.2s ease;
+        }
+        .mirror-list li:last-child { margin-bottom: 0; }
+        .mirror-list li:hover {
+            border-left-color: var(--gold-primary);
+            background: rgba(201, 162, 39, 0.03);
+        }
+        .mirror-list a {
+            display: block;
+            padding: 14px 18px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            letter-spacing: 0.02em;
+            transition: color 0.2s ease;
+        }
+        .mirror-list li:hover a {
+            color: var(--text-primary);
+        }
+        .pow-badge {
+            display: inline-block;
+            background: rgba(125, 154, 120, 0.15);
+            color: var(--sage);
+            padding: 2px 8px;
+            font-size: 0.6rem;
+            font-weight: 500;
+            border-radius: 2px;
+            margin-left: 10px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .footer-note {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .no-mirrors {
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 16px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="alert-box">
+            <div class="alert-header">
+                <span class="alert-icon">🔥</span>
+                <h1>Mirror Burned</h1>
+            </div>
+            <p class="status-msg">
+                <strong>This entry point has been compromised and decommissioned.</strong><br><br>
+                For security, this mirror has been taken offline. Please migrate to 
+                an alternative entry point below.
+            </p>
+        </div>
+        <div class="migration-box">
+            <h2>Available Mirrors</h2>
+            <ul class="mirror-list">
+                {{MIRROR_LIST}}
+            </ul>
+        </div>
+        <div class="footer-note">
+            Automated Defense Response • Re-verification Required
+        </div>
+    </div>
+</body>
+</html>

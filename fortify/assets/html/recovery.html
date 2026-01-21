@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortify — Session Recovery</title>
+    <meta http-equiv="refresh" content="10;url=?action=resume">
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --sage: #9ab893;
+            --crimson: #c96969;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .container {
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+        }
+        .recovery-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--gold-muted);
+            border-radius: 4px;
+            padding: 40px 32px;
+            margin-bottom: 24px;
+        }
+        .icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.4rem;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--gold-primary);
+            margin-bottom: 16px;
+        }
+        .status-msg {
+            color: var(--text-secondary);
+            line-height: 1.7;
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+        .timer-box {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 16px;
+            margin: 24px 0;
+        }
+        .timer-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .timer-value {
+            font-size: 2.5rem;
+            color: var(--gold-primary);
+            font-weight: 300;
+            font-variant-numeric: tabular-nums;
+        }
+        .timer-note {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 24px;
+        }
+        .btn {
+            padding: 14px 32px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-block;
+            border: 1px solid transparent;
+        }
+        .btn-resume {
+            background: rgba(201, 162, 39, 0.15);
+            border-color: var(--gold-muted);
+            color: var(--gold-primary);
+        }
+        .btn-resume:hover {
+            background: rgba(201, 162, 39, 0.25);
+            border-color: var(--gold-primary);
+        }
+        .btn-wipe {
+            background: rgba(201, 105, 105, 0.1);
+            border-color: var(--crimson);
+            color: var(--crimson);
+        }
+        .btn-wipe:hover {
+            background: rgba(201, 105, 105, 0.2);
+        }
+        .session-info {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 20px;
+            text-align: left;
+        }
+        .session-info h2 {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 0.8rem;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            color: var(--text-muted);
+        }
+        .info-value {
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+        .footer-note {
+            margin-top: 24px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        
+        /* CSS-only countdown animation */
+        @keyframes countdown {
+            0% { --time: 10; }
+            10% { --time: 9; }
+            20% { --time: 8; }
+            30% { --time: 7; }
+            40% { --time: 6; }
+            50% { --time: 5; }
+            60% { --time: 4; }
+            70% { --time: 3; }
+            80% { --time: 2; }
+            90% { --time: 1; }
+            100% { --time: 0; }
+        }
+        .timer-value {
+            animation: countdown 10s linear forwards;
+        }
+        @property --time {
+            syntax: '<integer>';
+            initial-value: 10;
+            inherits: false;
+        }
+        .timer-value::after {
+            counter-reset: time var(--time);
+            content: counter(time) "s";
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="recovery-box">
+            <div class="icon">🔄</div>
+            <h1>Session Recovery</h1>
+            <p class="status-msg">
+                A previous session was detected. Would you like to resume 
+                where you left off, or start fresh with a new session?
+            </p>
+            
+            <div class="timer-box">
+                <div class="timer-label">Auto-Resume In</div>
+                <div class="timer-value"></div>
+                <div class="timer-note">Resuming automatically unless you choose otherwise</div>
+            </div>
+            
+            <div class="action-buttons">
+                <a href="?action=resume" class="btn btn-resume">↩ Resume Session</a>
+                <a href="?action=wipe" class="btn btn-wipe">🗑 Start Fresh</a>
+            </div>
+        </div>
+        
+        <div class="session-info">
+            <h2>Previous Session</h2>
+            <div class="info-row">
+                <span class="info-label">Trust Level</span>
+                <span class="info-value">{{TRUST_TIER}}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Requests</span>
+                <span class="info-value">{{REQUEST_COUNT}}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Last Active</span>
+                <span class="info-value">{{LAST_ACTIVE}}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Session Age</span>
+                <span class="info-value">{{SESSION_AGE}}</span>
+            </div>
+        </div>
+        
+        <div class="footer-note">
+            Fortify Session Recovery • Your choice is remembered
+        </div>
+    </div>
+</body>
+</html>

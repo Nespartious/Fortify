@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortify — Session Cooldown</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --gold-light: #d4b85a;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --amber: #e4bc5e;
+            --slate-blue: #6b7c8c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .shield-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: clamp(1.5rem, 3vw, 2rem);
+            font-weight: 400;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--amber);
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 32px;
+        }
+        .message-box {
+            max-width: 480px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-left: 3px solid var(--amber);
+            border-radius: 0 4px 4px 0;
+            padding: 24px 28px;
+            margin-bottom: 32px;
+            text-align: left;
+        }
+        .message-box p {
+            margin: 0 0 14px 0;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .message-box p:last-child { margin-bottom: 0; }
+        .highlight {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .delay-show {
+            opacity: 0;
+            animation: fadeIn 0.5s ease-out 1s forwards;
+        }
+        .proceed-btn {
+            display: inline-block;
+            background: var(--gold-primary);
+            color: var(--bg-deep);
+            border: none;
+            border-radius: 3px;
+            padding: 14px 36px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .proceed-btn:hover {
+            background: var(--gold-light);
+            box-shadow: 0 4px 16px rgba(201, 162, 39, 0.25);
+        }
+        .mirror-section {
+            max-width: 480px;
+            width: 100%;
+            margin-top: 28px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 20px 24px;
+            text-align: left;
+        }
+        .mirror-section h3 {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 14px;
+        }
+        .mirror-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .mirror-list li {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-left: 2px solid var(--gold-muted);
+            border-radius: 0 3px 3px 0;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+        }
+        .mirror-list li:hover {
+            border-left-color: var(--gold-primary);
+        }
+        .mirror-list a {
+            display: block;
+            padding: 10px 14px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.8rem;
+            transition: color 0.2s ease;
+        }
+        .mirror-list li:hover a {
+            color: var(--text-primary);
+        }
+        .footer {
+            position: fixed;
+            bottom: 16px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="shield-icon">🛡️</div>
+    <h1>Hold Position</h1>
+    <p class="subtitle">Cooldown Protocol Engaged</p>
+    
+    <div class="message-box">
+        <p>
+            Our defense systems detected elevated activity from your session.
+            <span class="highlight">No action required</span> — this is a routine security measure.
+        </p>
+        <p>
+            Complete a quick verification to resume browsing. This helps protect 
+            the network for all users.
+        </p>
+    </div>
+    
+    <div class="delay-show">
+        <a href="/Fortify/Portcullis" class="proceed-btn">Resume Access →</a>
+    </div>
+    
+    <div class="mirror-section delay-show">
+        <h3>Or try an alternative mirror</h3>
+        <ul class="mirror-list">
+            {{MIRROR_LIST}}
+        </ul>
+    </div>
+    
+    <div class="footer">
+        Fortify Defense Grid • Session Cooldown
+    </div>
+</body>
+</html>

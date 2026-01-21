@@ -1,0 +1,39 @@
+# Fortify Node Configuration (Threat Mode)
+
+[node]
+mode = "threat"
+bind_address = "127.0.0.1:9002"
+
+# Forwarding configuration
+forward_to = "real_service"  # Configured in main fortify.toml
+
+# Connection limits (more restrictive)
+max_concurrent_connections = 100
+connection_timeout_seconds = 60
+
+# Session handling
+require_valid_token = true
+token_validation_strict = true
+additional_verification = true
+
+# Request limits (more restrictive)
+max_request_size_bytes = 1048576  # 1MB
+max_requests_per_session = 100
+request_inspection_level = "high"
+
+# Rate limiting
+rate_limit_per_token = 10  # requests per minute
+burst_limit = 3
+
+# Behavioral analysis
+track_patterns = true
+anomaly_detection = true
+auto_demote_to_burned = true
+
+# Health checks
+health_check_interval_seconds = 30
+backend_timeout_seconds = 10
+
+# Logging
+log_requests = true  # Log all requests for analysis
+log_level = "debug"

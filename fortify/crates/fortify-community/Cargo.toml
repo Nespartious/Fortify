@@ -1,0 +1,19 @@
+[package]
+name = "fortify-community"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+fortify-core = { path = "../fortify-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+hyper = { version = "0.14", features = ["server", "client", "http1", "tcp"] }
+tracing = { workspace = true }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"

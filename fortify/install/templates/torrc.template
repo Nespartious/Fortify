@@ -1,0 +1,38 @@
+# Fortify Tor Configuration Template
+# This file is included by /etc/tor/torrc
+
+# SOCKS proxy (local only)
+SocksPort 127.0.0.1:9050
+
+# Control port (local only)
+ControlPort 127.0.0.1:9051
+CookieAuthentication 1
+
+# Data directory
+DataDirectory /var/lib/tor
+
+# Logging
+Log notice syslog
+
+# Hidden service configuration (managed by Fortify)
+# HiddenServiceDir /var/lib/tor/fortify-orchestrator/
+# HiddenServicePort 80 127.0.0.1:8080
+
+# Connection limits
+MaxClientCircuitsPending 256
+ConnLimit 1024
+
+# Performance tuning
+NumEntryGuards 3
+NumCPUs 0
+
+# Security
+SafeLogging 1
+
+# Defense against DoS (Tor 0.4.8+)
+# Enable Proof-of-Work defenses for services
+# Note: For ephemeral services used by Fortify, these settings might need updated Tor versions
+# or specific service configuration. We set defaults here.
+HiddenServicePoWDefensesEnabled 1
+HiddenServicePoWQueueRate 50
+HiddenServicePoWBurst 100

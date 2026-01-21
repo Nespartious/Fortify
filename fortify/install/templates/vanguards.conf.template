@@ -1,0 +1,80 @@
+# Vanguards Configuration for Fortify
+# This addon provides additional guard layers to protect against
+# guard discovery attacks.
+
+[Global]
+# Path to Tor control port socket or TCP address
+control_socket = 
+control_ip = 127.0.0.1
+control_port = 9151
+
+# Path to Tor control auth cookie
+control_pass = 
+
+# Enable state persistence across restarts
+state_file = /tmp/fortify/vanguards/vanguards.state
+
+# Logging configuration
+loglevel = NOTICE
+logfile = /tmp/fortify/log/vanguards.log
+
+[Vanguards]
+# Layer 2 guards - persist for weeks, changed on guard failure
+# These protect the path between you and your Layer 1 guards
+num_layer2_guards = 4
+min_layer2_lifetime_days = 1
+max_layer2_lifetime_days = 30
+
+# Layer 3 guards - persist for hours to days
+# These protect against middle-relay traffic analysis
+num_layer3_guards = 8
+min_layer3_lifetime_hours = 1
+max_layer3_lifetime_hours = 48
+
+[Bandguards]
+# Detect bandwidth-based side channel attacks
+# These settings control thresholds for detecting unusual bandwidth patterns
+
+# Maximum circuit age before we close it (prevents long-lived MITM)
+circ_max_age_hours = 24
+
+# Maximum megabytes on a single circuit before closing
+# Prevents bandwidth correlation attacks
+circ_max_megabytes = 0
+
+# Maximum dropped cells before we close a circuit
+# Detects certain cell manipulation attacks
+circ_max_dropped_cells = 30
+
+# Maximum kilobytes read without any writes
+# Detects asymmetric bandwidth attacks
+circ_max_read_kb = 0
+
+# Maximum kilobytes written without any reads  
+circ_max_write_kb = 0
+
+[Rendguard]
+# Protect rendezvous point diversity
+# Ensures you use diverse rendezvous points for hidden services
+
+# Enable rendezvous guard monitoring
+enabled = True
+
+# Minimum consensus weight for rendezvous points
+# Low-bandwidth relays are more suspicious
+min_rend_relay_weight = 0.0
+
+# Scale factor for calculating suspicion threshold
+# Higher = more tolerant, lower = stricter
+rend_use_max_scale = 1.0
+
+[Cbtverify]
+# Circuit Build Timeout verification
+# Detects if someone is manipulating your circuit build times
+
+# Enable CBT verification
+enabled = True
+
+# Number of circuits to track for timeout analysis
+cbt_circuits_for_timeout = 1000
+

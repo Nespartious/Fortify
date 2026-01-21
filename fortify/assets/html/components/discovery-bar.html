@@ -1,0 +1,106 @@
+<!-- Discovery Bar Component
+     CSS-only, no JavaScript required.
+     Include at the very top of <body> in any Fortify page.
+     Replace {{DISCOVERY_BAR}} with rendered mirror links.
+-->
+<style>
+    .discovery-bar {
+        background: #1e1e23;
+        border-bottom: 1px solid #3a3a42;
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .discovery-label {
+        font-size: 0.65rem;
+        font-weight: 500;
+        color: #6b6862;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .discovery-mirrors {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        flex: 1;
+    }
+    .discovery-link {
+        display: inline-block;
+        background: #26262d;
+        border: 1px solid #3a3a42;
+        border-radius: 3px;
+        padding: 4px 10px;
+        color: #a8a4a0;
+        text-decoration: none;
+        font-size: 0.7rem;
+        letter-spacing: 0.02em;
+        transition: all 0.2s ease;
+    }
+    .discovery-link:hover {
+        background: rgba(201, 162, 39, 0.08);
+        border-color: #a68b5b;
+        color: #f5f0e8;
+    }
+    /* Mark current mirror */
+    .discovery-link.current {
+        border-color: #c9a227;
+        color: #c9a227;
+    }
+    /* Retiring mirror (still accessible but being phased out) */
+    .discovery-link.retiring {
+        border-color: #8b7235;
+        color: #d4a54a;
+        opacity: 0.8;
+    }
+    /* Restoring mirror (limited discovery visibility) */
+    .discovery-link.restoring {
+        border-color: #5b7b55;
+        color: #9ab893;
+        opacity: 0.7;
+    }
+    /* POW indicator */
+    .discovery-link .pow-mini {
+        display: inline-block;
+        background: rgba(125, 154, 120, 0.15);
+        color: #9ab893;
+        padding: 1px 4px;
+        font-size: 0.5rem;
+        font-weight: 500;
+        border-radius: 2px;
+        margin-left: 6px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+</style>
+
+<div class="discovery-bar">
+    <span class="discovery-label">Active Mirrors:</span>
+    <div class="discovery-mirrors">
+        {{DISCOVERY_BAR}}
+    </div>
+</div>
+
+<!-- 
+Usage in templates:
+
+Each mirror link should be rendered as:
+  <a href="http://{onion_address}" class="discovery-link {state_class}">
+    {short_id}
+    {if pow}<span class="pow-mini">POW</span>{endif}
+  </a>
+
+State classes:
+  - current: This is the mirror user is currently on
+  - retiring: Mirror is in retirement phase
+  - restoring: Mirror is being restored (limited visibility)
+  - (none): Normal active mirror
+
+Example rendered bar:
+  <a href="http://abc123...onion" class="discovery-link current">M1</a>
+  <a href="http://def456...onion" class="discovery-link">M2<span class="pow-mini">POW</span></a>
+  <a href="http://ghi789...onion" class="discovery-link retiring">M3</a>
+-->

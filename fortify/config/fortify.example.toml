@@ -1,0 +1,89 @@
+# Fortify Configuration Example
+# Copy to /etc/fortify/fortify.toml and customize
+
+[service]
+# The real hidden service onion address (never exposed publicly)
+real_onion_address = "http://sigilahzwq5u34gdh2bl3ymokyc7kobika55kyhztsucdoub73hz7qid.onion"
+real_service_port = 80
+
+[controller]
+# Controller bind address (internal only)
+bind_address = "127.0.0.1:7000"
+
+# Resource limits
+max_orchestrators = 5
+max_healthy_nodes = 10
+max_threat_nodes = 5
+
+# Scaling thresholds
+scale_up_threshold = 0.8  # Scale up at 80% capacity
+scale_down_threshold = 0.2  # Scale down at 20% capacity
+
+[orchestrator]
+# Public-facing bind address
+bind_address = "127.0.0.1:8080"
+public_bind_address = "127.0.0.1:8080"
+
+# Burn triggers
+max_connections_per_minute = 100
+max_failed_challenges = 50
+rotation_interval_hours = 24
+
+# Tor configuration
+tor_control_port = "127.0.0.1:9051"
+tor_socks_port = "127.0.0.1:9050"
+tor_control_addr = "127.0.0.1:9151"
+tor_cookie_path = "/tmp/fortify/tor/data/control_auth_cookie"
+
+[gate]
+# Gate bind address (internal)
+bind_address = "127.0.0.1:8081"
+
+# Rate limiting
+max_concurrent_verifications = 10
+verification_timeout_seconds = 300
+
+# Challenge configuration
+captcha_difficulty = "medium"  # easy, medium, hard
+pow_difficulty = 20  # Number of leading zero bits
+
+# Token configuration
+token_lifetime_seconds = 3600  # 1 hour
+token_signing_key = "/etc/fortify/gate-signing.key"
+
+[http_proxy]
+# HTTP proxy bind address (internal)
+bind_address = "127.0.0.1:8082"
+
+# Connection limits
+max_concurrent_connections = 1000
+connection_timeout_seconds = 30
+max_request_size_bytes = 10485760  # 10MB
+
+# Backpressure
+queue_size = 100
+reject_when_full = true
+
+[node]
+# Local node pool settings
+bind_base = "127.0.0.1:9100"
+backend_address = "http://127.0.0.1:9000"
+
+[community]
+# Community network participation
+enabled = false
+mode = "standalone"  # standalone, consumer, provider, seed
+registry_url = ""
+update_interval_seconds = 3600
+signing_key_path = ""
+
+[logging]
+level = "info"  # trace, debug, info, warn, error
+output = "syslog"  # syslog, file, stdout
+log_file = "/var/log/fortify/fortify.log"
+
+[security]
+# Security settings
+drop_privileges = true
+chroot_path = ""
+secure_memory = true

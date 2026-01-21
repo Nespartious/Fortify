@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortify — Portcullis Verification</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --bg-input: #1a1a1f;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --gold-light: #d4b85a;
+            --bronze: #8b7355;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --sage: #9ab893;
+            --slate-blue: #6b7c8c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 40px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+        .panel-header {
+            text-align: center;
+            padding-bottom: 24px;
+            margin-bottom: 28px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .lock-icon {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: 1.1rem;
+            font-weight: 500;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            font-size: 0.75rem;
+            color: var(--gold-muted);
+            letter-spacing: 0.1em;
+        }
+        .captcha-display {
+            background: var(--bg-input);
+            border: 1px solid var(--border-accent);
+            border-radius: 3px;
+            padding: 24px;
+            margin-bottom: 24px;
+            text-align: center;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .captcha-display img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 2px;
+        }
+        .captcha-placeholder {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        .input-group {
+            margin-bottom: 24px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        input[type="text"] {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-accent);
+            border-radius: 3px;
+            color: var(--text-primary);
+            padding: 14px 18px;
+            font-family: inherit;
+            font-size: 1.1rem;
+            letter-spacing: 0.15em;
+            text-align: center;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--gold-muted);
+            box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.1);
+        }
+        input[type="text"]::placeholder {
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+        button {
+            width: 100%;
+            background: var(--gold-primary);
+            color: var(--bg-deep);
+            border: none;
+            border-radius: 3px;
+            padding: 14px 24px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        button:hover {
+            background: var(--gold-light);
+            box-shadow: 0 4px 16px rgba(201, 162, 39, 0.3);
+        }
+        .footer-note {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .footer-note a {
+            color: var(--gold-muted);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        .footer-note a:hover {
+            color: var(--gold-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <div class="panel-header">
+            <div class="lock-icon">🔐</div>
+            <h1>Portcullis</h1>
+            <div class="subtitle">Identity Verification</div>
+        </div>
+        <form method="POST" action="/gate/verify">
+            <div class="captcha-display">
+                <span class="captcha-placeholder">Loading challenge...</span>
+            </div>
+            <div class="input-group">
+                <label>Enter Verification Code</label>
+                <input type="text" name="solution" placeholder="• • • • • •" required autofocus autocomplete="off">
+            </div>
+            <button type="submit">Verify Access</button>
+        </form>
+        <div class="footer-note">
+            Server-side verification • No scripts required<br>
+            <a href="/Fortify">← Return to gate</a>
+        </div>
+    </div>
+</body>
+</html>

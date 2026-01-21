@@ -1,0 +1,33 @@
+# Community Network Configuration
+
+[community]
+enabled = false
+mode = "standalone"  # standalone, consumer, provider, seed
+
+[registry]
+# Where to fetch the community registry
+url = "http://example-seed-xxxxxxxxxxxxxx.onion/registry.toml"
+update_interval_seconds = 3600
+cache_path = "/var/lib/fortify/community-cache.toml"
+
+# Signature verification
+verify_signatures = true
+trusted_keys = [
+    "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+]
+
+[participation]
+# If mode = "provider" or "seed", advertise these orchestrators
+advertise_orchestrators = [
+    # { onion_address = "your-orchestrator-xxx.onion", capacity = "medium" },
+]
+
+# Signing key for publishing registry entries (providers/seeds only)
+signing_key_path = "/etc/fortify/community-signing.key"
+
+[discovery]
+# Display community page at /community
+show_community_page = false
+max_listed_orchestrators = 20
+filter_by_capacity = false
+filter_by_region = false
