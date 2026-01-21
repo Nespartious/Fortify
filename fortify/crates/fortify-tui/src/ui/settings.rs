@@ -229,12 +229,24 @@ fn draw_vanity(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
 }
 
 fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selected: usize) {
+    // Calculate available width for content (minus borders and padding)
+    let content_width = area.width.saturating_sub(4) as usize;
+    let label_width = 22.min(content_width / 2);  // Max 22 chars for label
+    let value_width = content_width.saturating_sub(label_width + 6);  // Rest for value
+    
     let lines: Vec<Line> = fields
         .iter()
         .enumerate()
         .map(|(i, (label, value))| {
             let is_selected = i == selected;
-            let prefix = if is_selected { " ▶ " } else { "   " };
+            
+            // Colored dot indicator instead of arrow
+            let dot = if is_selected { "●" } else { "○" };
+            let dot_style = if is_selected {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
             
             let label_style = if is_selected {
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
@@ -248,10 +260,24 @@ fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selec
                 Style::default().fg(Color::White)
             };
 
+            // Truncate label if too long
+            let truncated_label: String = if label.len() > label_width {
+                format!("{}…", &label[..label_width.saturating_sub(1)])
+            } else {
+                (*label).to_string()
+            };
+            
+            // Truncate value if too long
+            let truncated_value: String = if value.len() > value_width {
+                format!("{}…", &value[..value_width.saturating_sub(1)])
+            } else {
+                (*value).to_string()
+            };
+
             Line::from(vec![
-                Span::styled(prefix, label_style),
-                Span::styled(format!("{}: ", label), label_style),
-                Span::styled(*value, value_style),
+                Span::styled(format!(" {} ", dot), dot_style),
+                Span::styled(format!("{}: ", truncated_label), label_style),
+                Span::styled(truncated_value, value_style),
             ])
         })
         .collect();
