@@ -1,0 +1,114 @@
+name: Test Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  #############################################################################
+  # CODE COVERAGE WITH TARPAULIN
+  #############################################################################
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Run tests with coverage
+        working-directory: ./fortify
+        run: |
+          cargo tarpaulin --out Xml --out Html --output-dir coverage \
+            --skip-clean --timeout 300 \
+            --ignore-tests --ignore-panics \
+            || true  # Don't fail if coverage is low
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./fortify/coverage/cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+        continue-on-error: true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: fortify/coverage/
+        if: always()
+
+      - name: Generate coverage summary
+        working-directory: ./fortify
+        run: |
+          echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "coverage/tarpaulin-report.html" ]; then
+            # Extract coverage percentage if possible
+            coverage=$(grep -oP 'Coverage: \K[0-9.]+' coverage/tarpaulin-report.html 2>/dev/null | head -1 || echo "N/A")
+            echo "**Overall Coverage**: ${coverage}%" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "_Full report available in artifacts_" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_Coverage report not generated. This may be due to compilation issues or no tests._" >> $GITHUB_STEP_SUMMARY
+          fi
+        continue-on-error: true
+
+  #############################################################################
+  # TEST SUMMARY
+  #############################################################################
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Run tests with output
+        working-directory: ./fortify
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo test --all-targets 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Count tests
+        working-directory: ./fortify
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Statistics" >> $GITHUB_STEP_SUMMARY
+          
+          # Count test functions
+          test_count=$(grep -r "#\[test\]" --include="*.rs" | wc -l)
+          echo "- **Unit tests**: $test_count" >> $GITHUB_STEP_SUMMARY
+          
+          # Count integration tests
+          integration_count=$(find tests -name "*.rs" 2>/dev/null | wc -l)
+          echo "- **Integration test files**: $integration_count" >> $GITHUB_STEP_SUMMARY

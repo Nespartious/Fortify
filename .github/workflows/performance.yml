@@ -1,0 +1,174 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  #############################################################################
+  # COMPILE TIME BENCHMARKS
+  #############################################################################
+  compile-time:
+    name: Compile Time Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Clean build
+        working-directory: ./fortify
+        run: cargo clean
+
+      - name: Time debug build
+        working-directory: ./fortify
+        run: |
+          echo "## Compile Time Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Debug Build" >> $GITHUB_STEP_SUMMARY
+          start=$(date +%s)
+          cargo build --all-targets 2>&1
+          end=$(date +%s)
+          echo "- **Time**: $((end - start)) seconds" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clean for release build
+        working-directory: ./fortify
+        run: cargo clean
+
+      - name: Time release build
+        working-directory: ./fortify
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Build" >> $GITHUB_STEP_SUMMARY
+          start=$(date +%s)
+          cargo build --release 2>&1
+          end=$(date +%s)
+          echo "- **Time**: $((end - start)) seconds" >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # MEMORY USAGE ANALYSIS
+  #############################################################################
+  memory-analysis:
+    name: Memory Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config valgrind
+
+      - name: Build release
+        working-directory: ./fortify
+        run: cargo build --release
+
+      - name: Analyze binary sections
+        working-directory: ./fortify
+        run: |
+          echo "## Binary Section Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for bin in fortify-controller fortify-orchestrator fortify-gate fortify-http; do
+            if [ -f "target/release/$bin" ]; then
+              echo "### $bin" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              size "target/release/$bin" 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+  #############################################################################
+  # RUNTIME BENCHMARKS (if we have any bench tests)
+  #############################################################################
+  benchmarks:
+    name: Runtime Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Run benchmarks (if available)
+        working-directory: ./fortify
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if we have any benchmarks
+          if cargo bench --no-run 2>/dev/null; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cargo bench 2>&1 | tee -a $GITHUB_STEP_SUMMARY || echo "No benchmarks defined yet"
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No benchmarks defined. Consider adding criterion benchmarks._" >> $GITHUB_STEP_SUMMARY
+          fi
+        continue-on-error: true
+
+  #############################################################################
+  # STARTUP TIME TEST
+  #############################################################################
+  startup-time:
+    name: Startup Time Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Build release
+        working-directory: ./fortify
+        run: cargo build --release
+
+      - name: Test startup times
+        working-directory: ./fortify
+        run: |
+          echo "## Startup Time Test" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Testing how fast each binary starts and shows help:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          for bin in fortify-controller fortify-orchestrator fortify-gate fortify-http fortify-node; do
+            if [ -f "target/release/$bin" ]; then
+              # Time how long --help takes (quick sanity check)
+              time_output=$( { time timeout 2 "./target/release/$bin" --help 2>&1 || true; } 2>&1 )
+              real_time=$(echo "$time_output" | grep real | awk '{print $2}' || echo "N/A")
+              echo "$bin: $real_time" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true

@@ -1,0 +1,20 @@
+# Fortify Code Owners
+# These users will be automatically requested for review
+
+# Global owners - review all PRs
+* @Nespartious
+
+# Rust code
+/fortify/ @Nespartious
+
+# Security-sensitive files - require explicit approval
+/fortify/crates/fortify-core/ @Nespartious
+/fortify/crates/fortify-gate/ @Nespartious
+/deploy.sh @Nespartious
+
+# CI/CD configuration
+/.github/ @Nespartious
+
+# Documentation
+*.md @Nespartious
+/docs/ @Nespartious

@@ -1,0 +1,175 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Sundays at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  #############################################################################
+  # UNUSED DEPENDENCIES - Find crates that aren't actually used
+  #############################################################################
+  unused-deps:
+    name: Unused Dependencies (cargo-machete)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+
+      - name: Find unused dependencies
+        working-directory: ./fortify
+        run: |
+          echo "## Unused Dependencies Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo machete 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # OUTDATED DEPENDENCIES - Check for newer versions
+  #############################################################################
+  outdated:
+    name: Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated
+
+      - name: Check for outdated dependencies
+        working-directory: ./fortify
+        run: |
+          echo "## Outdated Dependencies Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo outdated --root-deps-only 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # DUPLICATE DEPENDENCIES - Find multiple versions of same crate
+  #############################################################################
+  duplicates:
+    name: Duplicate Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Find duplicate dependencies
+        working-directory: ./fortify
+        run: |
+          echo "## Duplicate Dependencies Report" >> $GITHUB_STEP_SUMMARY
+          echo "These crates have multiple versions in the dependency tree:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo tree --duplicates 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # BINARY SIZE ANALYSIS - Track binary bloat
+  #############################################################################
+  binary-size:
+    name: Binary Size Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Build release
+        working-directory: ./fortify
+        run: cargo build --release
+
+      - name: Analyze binary sizes
+        working-directory: ./fortify
+        run: |
+          echo "## Binary Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for bin in fortify-controller fortify-orchestrator fortify-gate fortify-http fortify-node; do
+            if [ -f "target/release/$bin" ]; then
+              size=$(du -h "target/release/$bin" | cut -f1)
+              echo "- **$bin**: $size" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Top 20 Crates by Size (fortify-controller)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo bloat --release --crates -n 20 -p fortify-controller 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # COMPLEXITY ANALYSIS - Code complexity metrics
+  #############################################################################
+  complexity:
+    name: Code Complexity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install tokei
+        run: cargo install tokei
+
+      - name: Analyze code statistics
+        run: |
+          echo "## Code Statistics" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tokei ./fortify 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # DEPENDENCY TREE DEPTH - Check for overly deep dependencies
+  #############################################################################
+  dep-tree:
+    name: Dependency Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Analyze dependency tree
+        working-directory: ./fortify
+        run: |
+          echo "## Dependency Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          total=$(cargo tree --prefix none --edges no-dev 2>/dev/null | sort -u | wc -l)
+          direct=$(cargo tree --depth 1 --prefix none 2>/dev/null | sort -u | wc -l)
+          
+          echo "- **Total unique crates**: $total" >> $GITHUB_STEP_SUMMARY
+          echo "- **Direct dependencies**: $direct" >> $GITHUB_STEP_SUMMARY
+          echo "- **Transitive dependencies**: $((total - direct))" >> $GITHUB_STEP_SUMMARY
