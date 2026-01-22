@@ -1,18 +1,56 @@
 # Fortify Documentation
 
+**Last Updated:** January 22, 2026
+
+---
+
+## Documentation Structure
+
+| Folder | Purpose |
+|--------|---------|
+| [planning/](planning/) | Project planning, task aggregation, status snapshots |
+| [Dev_Progress/](Dev_Progress/) | Sprint guides for execution |
+| [Fortify Documentation/](Fortify%20Documentation/) | Final user/operator documentation |
+| [research/](research/) | Long-form research and analysis |
+
+---
+
+## Current Status
+
+See [planning/PLANNING-OVERVIEW.md](planning/PLANNING-OVERVIEW.md) for current sprint queue.
+
+| Area | Status |
+|------|--------|
+| Core Protection | ✅ Production Ready |
+| Beta Blockers | ⬜ 2 remaining |
+| TUI Wizard | 🟡 40% complete |
+| CI/CD | ⚠️ Needs fixes |
+
+---
+
 ## Quick Links
 
+### Planning & Progress
 | Document | Description |
 |----------|-------------|
-| [Architecture](architecture.md) | System design and component overview |
-| [Threat Model](threat-model.md) | Security assumptions and attack scenarios |
-| [Trust Levels](trust-levels.md) | The 5-tier trust system explained |
-| [Scaling Model](scaling-model.md) | Resource-aware scaling strategy |
-| [Hardening](hardening.md) | OS and system hardening procedures |
-| [Community Network](community-network.md) | Decentralized discovery system |
-| [Testing Guide](TESTING.md) | How to run and write tests |
-| [Roadmap](ROADMAP.md) | Future development plans |
-| [TUI Deployment Wizard](Dev_Progress/06-PHASE-6.md) | Terminal UI and deployment wizard |
+| [Planning Overview](planning/PLANNING-OVERVIEW.md) | Current sprint queue and workflow |
+| [Master Status](planning/MASTER-STATUS-2026-01-22.md) | Complete project status |
+
+### Active Sprints (Dev_Progress)
+| Sprint | Priority | Est. Time |
+|--------|----------|-----------|
+| [Timeout Strategy](Dev_Progress/01-TIMEOUT-STRATEGY-SPRINT.md) | 🔴 CRITICAL | 2-3 days |
+| [Panic Audit](Dev_Progress/02-PANIC-AUDIT-SPRINT.md) | 🔴 CRITICAL | 3-5 days |
+| [CI Quality](Dev_Progress/03-CI-QUALITY-SPRINT.md) | 🟡 MEDIUM | 1-2 days |
+| [TUI Completion](Dev_Progress/04-TUI-COMPLETION-SPRINT.md) | 🟡 MEDIUM | 3-5 days |
+| [Clippy Fixes](Dev_Progress/CLIPPY-SPRINT.md) | 🟡 MEDIUM | 3-4 hours |
+
+### Reference Documentation
+| Document | Description |
+|----------|-------------|
+| [AUTHENTICATION.md](AUTHENTICATION.md) | Admin authentication system |
+| [RATE_LIMITING.md](RATE_LIMITING.md) | Circuit-based rate limiting |
+| [ROADMAP.md](ROADMAP.md) | Full feature roadmap (Phases 1-9) |
 
 ## Architecture Overview
 
