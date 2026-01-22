@@ -1,14 +1,20 @@
 use crate::{BackendNode, Metrics, ProxyError, Result};
-use hyper::{Body, Client, Request, Response, Uri};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::{Request, Response};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// Type alias for the response body type
+type BoxBody = Full<Bytes>;
+
 /// Proxy a request to a backend node
 pub async fn proxy_request(
-    mut req: Request<Body>,
+    req: Request<Incoming>,
     node: &BackendNode,
     metrics: Arc<Mutex<Metrics>>,
-) -> Result<Response<Body>> {
+) -> Result<Response<BoxBody>> {
     let start = Instant::now();
 
     // Acquire connection slot
@@ -16,28 +22,58 @@ pub async fn proxy_request(
         return Err(ProxyError::BackpressureExceeded);
     }
 
-    // Build backend URI
-    let backend_uri = format!(
-        "{}{}",
-        node.address,
-        req.uri()
-            .path_and_query()
-            .map(|p| p.as_str())
-            .unwrap_or("/")
-    );
-    let uri: Uri = backend_uri
-        .parse()
-        .map_err(|_| ProxyError::BackendUnavailable)?;
+    // Extract all needed info BEFORE consuming the body
+    let path_and_query = req.uri()
+        .path_and_query()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| "/".to_string());
+    let backend_url = format!("{}{}", node.address, path_and_query);
+    
+    let method = match req.method().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
+        "HEAD" => reqwest::Method::HEAD,
+        "OPTIONS" => reqwest::Method::OPTIONS,
+        "PATCH" => reqwest::Method::PATCH,
+        _ => reqwest::Method::GET,
+    };
+    
+    // Collect headers before consuming body
+    let headers: Vec<(String, String)> = req.headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            let name_str = name.as_str().to_lowercase();
+            if !is_hop_by_hop_header(&name_str) {
+                value.to_str().ok().map(|v| (name.as_str().to_string(), v.to_string()))
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    // Update request URI
-    *req.uri_mut() = uri;
+    // Now collect request body (consumes req)
+    let body_bytes = req.collect().await
+        .map_err(|_| {
+            node.release();
+            metrics.lock().unwrap().record_backend_error();
+            ProxyError::BackendUnavailable
+        })?
+        .to_bytes();
 
-    // Remove hop-by-hop headers
-    remove_hop_by_hop_headers(req.headers_mut());
+    // Use reqwest for proxying
+    let client = reqwest::Client::new();
+    let mut request_builder = client.request(method, &backend_url);
+    
+    // Copy saved headers
+    for (name, value) in headers {
+        request_builder = request_builder.header(name, value);
+    }
+    
+    request_builder = request_builder.body(body_bytes.to_vec());
 
-    // Forward request to backend
-    let client = Client::new();
-    let response = client.request(req).await.map_err(|_| {
+    let response = request_builder.send().await.map_err(|_| {
         node.release();
         metrics.lock().unwrap().record_backend_error();
         ProxyError::BackendUnavailable
@@ -49,25 +85,30 @@ pub async fn proxy_request(
     let duration = start.elapsed();
     tracing::debug!("Proxied request to {} in {:?}", node.address, duration);
 
-    Ok(response)
+    // Convert reqwest response to hyper response
+    let status = hyper::StatusCode::from_u16(response.status().as_u16())
+        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+    
+    let mut builder = Response::builder().status(status);
+    
+    for (name, value) in response.headers() {
+        builder = builder.header(name.as_str(), value.as_bytes());
+    }
+    
+    let body_bytes = response.bytes().await
+        .map_err(|_| ProxyError::BackendUnavailable)?;
+    
+    builder.body(Full::new(Bytes::from(body_bytes.to_vec())))
+        .map_err(|_| ProxyError::BackendUnavailable)
 }
 
-/// Remove hop-by-hop headers that shouldn't be forwarded
-fn remove_hop_by_hop_headers(headers: &mut hyper::HeaderMap) {
-    let hop_headers = [
-        "Connection",
-        "Keep-Alive",
-        "Proxy-Authenticate",
-        "Proxy-Authorization",
-        "Te",
-        "Trailers",
-        "Transfer-Encoding",
-        "Upgrade",
-    ];
-
-    for header in &hop_headers {
-        headers.remove(*header);
-    }
+/// Check if a header is a hop-by-hop header
+fn is_hop_by_hop_header(name: &str) -> bool {
+    matches!(name, 
+        "connection" | "keep-alive" | "proxy-authenticate" | 
+        "proxy-authorization" | "te" | "trailers" | 
+        "transfer-encoding" | "upgrade" | "host"
+    )
 }
 
 /// Backpressure controller
@@ -183,21 +224,11 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_hop_by_hop_headers() {
-        let mut headers = hyper::HeaderMap::new();
-        headers.insert("Connection", "keep-alive".parse().unwrap());
-        headers.insert("Keep-Alive", "timeout=5".parse().unwrap());
-        headers.insert("Content-Type", "application/json".parse().unwrap());
-        headers.insert("Upgrade", "websocket".parse().unwrap());
-
-        remove_hop_by_hop_headers(&mut headers);
-
-        // Hop-by-hop headers should be removed
-        assert!(!headers.contains_key("Connection"));
-        assert!(!headers.contains_key("Keep-Alive"));
-        assert!(!headers.contains_key("Upgrade"));
-
-        // Normal headers should remain
-        assert!(headers.contains_key("Content-Type"));
+    fn test_is_hop_by_hop_header() {
+        assert!(is_hop_by_hop_header("connection"));
+        assert!(is_hop_by_hop_header("keep-alive"));
+        assert!(is_hop_by_hop_header("upgrade"));
+        assert!(!is_hop_by_hop_header("content-type"));
+        assert!(!is_hop_by_hop_header("accept"));
     }
 }

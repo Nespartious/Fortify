@@ -5,13 +5,19 @@
 //!
 //! Theme: Retro Synthwave / Outrun with Fortification hints
 
+use bytes::Bytes;
 use fortify_core::{BehaviorConfig, BehaviorStats, KNOWN_ATTACK_PATHS};
 use fortify_gate::{CaptchaConfig, CaptchaType};
-use hyper::{header, Body, Method, Request, Response, StatusCode};
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::{header, Method, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Type alias for the response body type used throughout
+type BoxBody = Full<Bytes>;
 
 /// Secret admin panel path - random 32 char string
 pub const ADMIN_PATH: &str = "/ctrl_8f7k3m9x2n4p1q6w5v0b8c";
@@ -1094,7 +1100,7 @@ pub fn is_admin_request(path: &str) -> bool {
 }
 
 /// Check if request has valid authentication
-fn is_authenticated(req: &Request<Body>, admin_state: &AdminState) -> bool {
+fn is_authenticated(req: &Request<Incoming>, admin_state: &AdminState) -> bool {
     // Check for auth cookie
     if let Some(cookie_header) = req.headers().get(header::COOKIE) {
         if let Ok(cookie_str) = cookie_header.to_str() {
@@ -1112,9 +1118,9 @@ fn is_authenticated(req: &Request<Body>, admin_state: &AdminState) -> bool {
 
 /// Handle admin panel request
 pub async fn handle_admin_request(
-    req: Request<Body>,
+    req: Request<Incoming>,
     admin_state: Arc<AdminState>,
-) -> Response<Body> {
+) -> Response<BoxBody> {
     let path = req.uri().path().to_string();
     let method = req.method().clone();
 
@@ -1170,7 +1176,7 @@ pub async fn handle_admin_request(
 // AUTHENTICATION
 // ============================================================================
 
-fn render_login_page(error: Option<&str>) -> Response<Body> {
+fn render_login_page(error: Option<&str>) -> Response<BoxBody> {
     let error_html = error.map(|msg| format!(r#"<div style="background: var(--crimson); padding: 12px; border-radius: 4px; margin-bottom: 20px; color: white;">{}</div>"#, msg)).unwrap_or_default();
 
     let html = format!(
@@ -1279,13 +1285,13 @@ fn render_login_page(error: Option<&str>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
-async fn handle_login(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body())
-        .await
+async fn handle_login(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
+    let body_bytes = req.collect().await
+        .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
 
@@ -1309,7 +1315,7 @@ async fn handle_login(req: Request<Body>, state: Arc<AdminState>) -> Response<Bo
                     session_id, ADMIN_PATH
                 ),
             )
-            .body(Body::empty())
+            .body(Full::new(Bytes::new()))
             .unwrap()
     } else {
         tracing::warn!("❌ Failed admin login attempt from control panel");
@@ -1317,7 +1323,7 @@ async fn handle_login(req: Request<Body>, state: Arc<AdminState>) -> Response<Bo
     }
 }
 
-async fn handle_logout(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
+async fn handle_logout(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
     // Remove session
     if let Some(cookie_header) = req.headers().get(header::COOKIE) {
         if let Ok(cookie_str) = cookie_header.to_str() {
@@ -1340,7 +1346,7 @@ async fn handle_logout(req: Request<Body>, state: Arc<AdminState>) -> Response<B
             header::SET_COOKIE,
             format!("fortify_admin_session=; Path={}; Max-Age=0", ADMIN_PATH),
         )
-        .body(Body::empty())
+        .body(Full::new(Bytes::new()))
         .unwrap()
 }
 
@@ -1348,7 +1354,7 @@ async fn handle_logout(req: Request<Body>, state: Arc<AdminState>) -> Response<B
 // HTML TEMPLATES
 // ============================================================================
 
-fn html_page(title: &str, content: &str) -> Response<Body> {
+fn html_page(title: &str, content: &str) -> Response<BoxBody> {
     let html = format!(
         r##"<!DOCTYPE html>
 <html>
@@ -1748,11 +1754,11 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
-fn render_dashboard(state: &AdminState) -> Response<Body> {
+fn render_dashboard(state: &AdminState) -> Response<BoxBody> {
     let stats = state.get_stats();
     let traffic_stats = state.get_traffic_stats();
     let time_stats = state.get_time_based_stats();
@@ -1924,7 +1930,7 @@ fn parse_page_from_query(uri: &hyper::Uri) -> usize {
         .max(1) // Minimum page 1
 }
 
-fn render_sessions(state: &AdminState, uri: &hyper::Uri) -> Response<Body> {
+fn render_sessions(state: &AdminState, uri: &hyper::Uri) -> Response<BoxBody> {
     let mut sessions = state.get_sessions();
     let traffic_stats = state.get_traffic_stats();
 
@@ -2056,7 +2062,7 @@ fn render_sessions(state: &AdminState, uri: &hyper::Uri) -> Response<Body> {
     html_page("Sessions", &content)
 }
 
-fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body> {
+fn render_session_detail(state: &AdminState, session_id: &str) -> Response<BoxBody> {
     let session = match state.get_session(session_id) {
         Some(s) => s,
         None => return not_found(),
@@ -2346,7 +2352,7 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
     html_page("Session Detail", &content)
 }
 
-fn render_nodes(state: &AdminState) -> Response<Body> {
+fn render_nodes(state: &AdminState) -> Response<BoxBody> {
     let mut nodes = state.get_nodes();
     let traffic_stats = state.get_traffic_stats();
     let time_stats = state.get_time_based_stats();
@@ -2611,7 +2617,7 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
     html_page("Nodes", &content)
 }
 
-fn render_mirrors(state: &AdminState) -> Response<Body> {
+fn render_mirrors(state: &AdminState) -> Response<BoxBody> {
     // Fetch ALL mirrors with extended info (PoW, standby status) from orchestrator
     #[derive(Debug)]
     struct OrchestratorMirror {
@@ -2914,7 +2920,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
     html_page("Mirrors", &content)
 }
 
-fn render_settings(state: &AdminState) -> Response<Body> {
+fn render_settings(state: &AdminState) -> Response<BoxBody> {
     let config = state.get_behavior_config();
     let captcha_config = state.get_captcha_config();
     let agg_stats = state.get_aggregate_behavior_stats();
@@ -3396,7 +3402,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
     html_page("Settings", &content)
 }
 
-fn render_tutorial() -> Response<Body> {
+fn render_tutorial() -> Response<BoxBody> {
     let content = format!(
         r#"
         <h2>Fortify System Tutorial</h2>
@@ -3730,9 +3736,9 @@ fn render_tutorial() -> Response<Body> {
 // ACTION HANDLERS
 // ============================================================================
 
-async fn handle_session_action(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body())
-        .await
+async fn handle_session_action(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
+    let body_bytes = req.collect().await
+        .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
 
@@ -3767,9 +3773,9 @@ async fn handle_session_action(req: Request<Body>, state: Arc<AdminState>) -> Re
     redirect(&format!("{}/sessions", ADMIN_PATH))
 }
 
-async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body())
-        .await
+async fn handle_node_action(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
+    let body_bytes = req.collect().await
+        .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
 
@@ -3875,9 +3881,9 @@ async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Respo
     redirect(&format!("{}/nodes", ADMIN_PATH))
 }
 
-async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body())
-        .await
+async fn handle_mirror_action(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
+    let body_bytes = req.collect().await
+        .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
 
@@ -4097,9 +4103,9 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
     redirect(&format!("{}/mirrors", ADMIN_PATH))
 }
 
-async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body())
-        .await
+async fn handle_behavior_settings(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
+    let body_bytes = req.collect().await
+        .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
 
@@ -4270,9 +4276,9 @@ fn parse_captcha_type(s: &str) -> CaptchaType {
     }
 }
 
-async fn handle_captcha_settings(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body())
-        .await
+async fn handle_captcha_settings(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
+    let body_bytes = req.collect().await
+        .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
 
@@ -4380,19 +4386,19 @@ fn parse_form_data(body: &[u8]) -> HashMap<String, String> {
     params
 }
 
-fn redirect(location: &str) -> Response<Body> {
+fn redirect(location: &str) -> Response<BoxBody> {
     Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header("Location", location)
-        .body(Body::empty())
+        .body(Full::new(Bytes::new()))
         .unwrap()
 }
 
-fn not_found() -> Response<Body> {
+fn not_found() -> Response<BoxBody> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .header("Content-Type", "text/plain")
-        .body(Body::from("Not Found"))
+        .body(Full::new(Bytes::from("Not Found")))
         .unwrap()
 }
 
