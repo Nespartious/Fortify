@@ -1,3 +1,4 @@
+use fortify_core::safe_lock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -1318,7 +1319,7 @@ impl CaptchaPoolManager {
                             .collect();
 
                         let valid_count = valid.len();
-                        *self.pool.lock().unwrap() = valid;
+                        *safe_lock(&self.pool) = valid;
 
                         if valid_count < count {
                             tracing::info!(
@@ -1344,7 +1345,7 @@ impl CaptchaPoolManager {
         let rotation_file = self.pool_dir.join("last_rotation.txt");
         if let Ok(data) = std::fs::read_to_string(&rotation_file) {
             if let Ok(ts) = data.trim().parse::<u64>() {
-                *self.last_rotation.lock().unwrap() = ts;
+                *safe_lock(&self.last_rotation) = ts;
                 tracing::debug!("Loaded last rotation timestamp: {}", ts);
             }
         }
@@ -1352,7 +1353,7 @@ impl CaptchaPoolManager {
 
     /// Save CAPTCHA pool to disk
     pub fn save_pool(&self) {
-        let pool = self.pool.lock().unwrap();
+        let pool = safe_lock(&self.pool);
         let pool_file = self.pool_dir.join("captcha_pool.json");
 
         match serde_json::to_string(&*pool) {
@@ -1368,13 +1369,13 @@ impl CaptchaPoolManager {
 
         // Save rotation timestamp
         let rotation_file = self.pool_dir.join("last_rotation.txt");
-        let ts = *self.last_rotation.lock().unwrap();
+        let ts = *safe_lock(&self.last_rotation);
         let _ = std::fs::write(&rotation_file, ts.to_string());
     }
 
     /// Get the current pool size
     pub fn pool_size(&self) -> usize {
-        self.pool.lock().unwrap().len()
+        safe_lock(&self.pool).len()
     }
 
     /// Check if pool needs refilling
@@ -1384,7 +1385,7 @@ impl CaptchaPoolManager {
 
     /// Take a pre-generated CAPTCHA from the pool
     pub fn take_captcha(&self) -> Option<PregenCaptcha> {
-        let mut pool = self.pool.lock().unwrap();
+        let mut pool = safe_lock(&self.pool);
         if pool.is_empty() {
             None
         } else {
@@ -1397,7 +1398,7 @@ impl CaptchaPoolManager {
 
     /// Add a pre-generated CAPTCHA to the pool
     pub fn add_captcha(&self, captcha: PregenCaptcha) {
-        let mut pool = self.pool.lock().unwrap();
+        let mut pool = safe_lock(&self.pool);
         if pool.len() < self.config.max_pool_size {
             self.total_generated
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1465,7 +1466,7 @@ impl CaptchaPoolManager {
             .unwrap()
             .as_secs();
 
-        let last = *self.last_rotation.lock().unwrap();
+        let last = *safe_lock(&self.last_rotation);
         let rotation_interval_secs = self.config.rotation_interval_days * 24 * 3600;
 
         now - last >= rotation_interval_secs
@@ -1473,7 +1474,7 @@ impl CaptchaPoolManager {
 
     /// Rotate the pool: remove oldest N% and regenerate
     pub fn rotate_pool(&self) {
-        let mut pool = self.pool.lock().unwrap();
+        let mut pool = safe_lock(&self.pool);
         let remove_count = (pool.len() * self.config.rotation_percent as usize) / 100;
 
         // Remove oldest (from front) and track as expired
@@ -1490,7 +1491,7 @@ impl CaptchaPoolManager {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        *self.last_rotation.lock().unwrap() = now;
+        *safe_lock(&self.last_rotation) = now;
 
         tracing::info!(
             "CAPTCHA pool rotated: removed {} old CAPTCHAs, {} remaining",
@@ -1501,7 +1502,7 @@ impl CaptchaPoolManager {
 
     /// Get pool statistics
     pub fn stats(&self) -> CaptchaPoolStats {
-        let pool = self.pool.lock().unwrap();
+        let pool = safe_lock(&self.pool);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -1670,7 +1671,7 @@ impl MultiDaemonManager {
     /// Initialize all daemons (does not start them)
     pub fn initialize_daemons(&self) {
         let count = self.daemon_count();
-        let mut daemons = self.daemons.lock().unwrap();
+        let mut daemons = safe_lock(&self.daemons);
         daemons.clear();
 
         for i in 0..count {
@@ -1688,7 +1689,7 @@ impl MultiDaemonManager {
 
     /// Start a specific daemon
     pub async fn start_daemon(&self, daemon_id: usize) -> anyhow::Result<u32> {
-        let mut daemons = self.daemons.lock().unwrap();
+        let mut daemons = safe_lock(&self.daemons);
         let daemon = daemons
             .get_mut(daemon_id)
             .ok_or_else(|| anyhow::anyhow!("Daemon {} not found", daemon_id))?;
@@ -1759,7 +1760,7 @@ CookieAuthentication 1
     pub async fn check_daemon_health(&self, daemon_id: usize) -> DaemonHealth {
         // Get daemon info without holding lock across await
         let (pid, control_port, max_failures) = {
-            let daemons = self.daemons.lock().unwrap();
+            let daemons = safe_lock(&self.daemons);
             match daemons.get(daemon_id) {
                 Some(d) => (d.pid, d.control_port, self.config.max_health_failures),
                 None => return DaemonHealth::Dead,
@@ -1775,7 +1776,7 @@ CookieAuthentication 1
             match connect_result {
                 Ok(_) => {
                     // Can connect, daemon is healthy
-                    let mut daemons = self.daemons.lock().unwrap();
+                    let mut daemons = safe_lock(&self.daemons);
                     if let Some(d) = daemons.get_mut(daemon_id) {
                         d.health = DaemonHealth::Healthy;
                         d.health_failures = 0;
@@ -1787,7 +1788,7 @@ CookieAuthentication 1
                     let sys = sysinfo::System::new_all();
                     let process_exists = sys.process(sysinfo::Pid::from_u32(pid)).is_some();
 
-                    let mut daemons = self.daemons.lock().unwrap();
+                    let mut daemons = safe_lock(&self.daemons);
                     if let Some(d) = daemons.get_mut(daemon_id) {
                         if process_exists {
                             d.health_failures += 1;
@@ -1814,7 +1815,7 @@ CookieAuthentication 1
 
     /// Assign a mirror to the best available daemon
     pub fn assign_mirror(&self, mirror_id: &str) -> Option<usize> {
-        let mut daemons = self.daemons.lock().unwrap();
+        let mut daemons = safe_lock(&self.daemons);
 
         // Find daemon with fewest mirrors that's healthy
         let best = daemons
@@ -1834,7 +1835,7 @@ CookieAuthentication 1
 
     /// Remove a mirror from its assigned daemon
     pub fn unassign_mirror(&self, mirror_id: &str) {
-        let mut daemons = self.daemons.lock().unwrap();
+        let mut daemons = safe_lock(&self.daemons);
         for daemon in daemons.iter_mut() {
             daemon.assigned_mirrors.retain(|m| m != mirror_id);
         }
@@ -1842,7 +1843,7 @@ CookieAuthentication 1
 
     /// Get daemon info for a specific mirror
     pub fn get_daemon_for_mirror(&self, mirror_id: &str) -> Option<TorDaemon> {
-        let daemons = self.daemons.lock().unwrap();
+        let daemons = safe_lock(&self.daemons);
         daemons
             .iter()
             .find(|d| d.assigned_mirrors.contains(&mirror_id.to_string()))
@@ -1851,12 +1852,12 @@ CookieAuthentication 1
 
     /// Get all daemon statuses
     pub fn get_daemon_statuses(&self) -> Vec<TorDaemon> {
-        self.daemons.lock().unwrap().clone()
+        safe_lock(&self.daemons).clone()
     }
 
     /// Stop a specific daemon
     pub fn stop_daemon(&self, daemon_id: usize) -> anyhow::Result<()> {
-        let mut daemons = self.daemons.lock().unwrap();
+        let mut daemons = safe_lock(&self.daemons);
         let daemon = daemons
             .get_mut(daemon_id)
             .ok_or_else(|| anyhow::anyhow!("Daemon {} not found", daemon_id))?;
@@ -2191,11 +2192,11 @@ impl Orchestrator {
 
             // Add to map
             {
-                let mut mirrors = self.mirrors.lock().unwrap();
+                let mut mirrors = safe_lock(&self.mirrors);
 
                 // Only count as active if not standby
                 if !mirror.is_standby && mirror.state == MirrorState::Active {
-                    let mut count = self.active_count.lock().unwrap();
+                    let mut count = safe_lock(&self.active_count);
                     *count += 1;
                 }
 
@@ -2212,7 +2213,7 @@ impl Orchestrator {
 
         // First ensure active mirrors
         let active_needed = {
-            let mirrors = self.mirrors.lock().unwrap();
+            let mirrors = safe_lock(&self.mirrors);
             let in_memory_active = mirrors
                 .values()
                 .filter(|m| m.state == MirrorState::Active)
@@ -2229,7 +2230,7 @@ impl Orchestrator {
 
         // Then ensure standby mirrors
         let standby_needed = {
-            let mirrors = self.mirrors.lock().unwrap();
+            let mirrors = safe_lock(&self.mirrors);
             let in_memory_standby = mirrors
                 .values()
                 .filter(|m| m.is_standby && m.state == MirrorState::Paused)
@@ -2317,7 +2318,7 @@ impl Orchestrator {
 
         // Store mirror
         {
-            let mut mirrors = self.mirrors.lock().unwrap();
+            let mut mirrors = safe_lock(&self.mirrors);
             mirrors.insert(mirror_id.clone(), mirror);
         }
 
@@ -2344,12 +2345,12 @@ impl Orchestrator {
 
         // Store mirror
         {
-            let mut mirrors = self.mirrors.lock().unwrap();
+            let mut mirrors = safe_lock(&self.mirrors);
             mirrors.insert(mirror_id.clone(), mirror);
         }
 
         {
-            let mut count = self.active_count.lock().unwrap();
+            let mut count = safe_lock(&self.active_count);
             *count += 1;
         }
 
@@ -2362,7 +2363,7 @@ impl Orchestrator {
     pub async fn burn_mirror(&self, mirror_id: &str) -> Result<()> {
         // Scope lock to release before await
         {
-            let mut mirrors = self.mirrors.lock().unwrap();
+            let mut mirrors = safe_lock(&self.mirrors);
             let mirror = mirrors
                 .get_mut(mirror_id)
                 .ok_or_else(|| OrchestratorError::MirrorNotFound(mirror_id.to_string()))?;
@@ -2378,7 +2379,7 @@ impl Orchestrator {
         self.spawn_mirror().await?;
 
         // Complete burn process
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
         if let Some(mirror) = mirrors.get_mut(mirror_id) {
             if let Err(err) = self.tor_service.remove_hidden_service(mirror) {
                 tracing::error!("Failed to remove hidden service for {}: {}", mirror_id, err);
@@ -2391,7 +2392,7 @@ impl Orchestrator {
 
     /// Pause a mirror (stop accepting new traffic but don't destroy)
     pub async fn pause_mirror(&self, onion_address: &str) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
 
         // Find mirror by onion address
         let mirror = mirrors
@@ -2411,7 +2412,7 @@ impl Orchestrator {
 
     /// Retire a mirror gracefully (drain -> retirement page -> dormant)
     pub async fn retire_mirror(&self, onion_address: &str, reason: RetirementReason) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
 
         // Find mirror by onion address
         let mirror = mirrors
@@ -2459,7 +2460,7 @@ impl Orchestrator {
 
     /// Force resurrect a dormant mirror (admin override)
     pub async fn force_resurrect_mirror(&self, onion_address: &str) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
 
         let mirror = mirrors
             .values_mut()
@@ -2482,7 +2483,7 @@ impl Orchestrator {
 
     /// Permanently destroy a dormant mirror (wipe keys forever)
     pub async fn permanently_destroy_mirror(&self, onion_address: &str) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
 
         let mirror = mirrors
             .values_mut()
@@ -2534,7 +2535,7 @@ impl Orchestrator {
 
     /// Get list of mirrors visible for discovery bar
     pub fn get_discovery_mirrors(&self) -> Vec<MirrorInfo> {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors
             .values()
             .filter(|m| m.state.visible_in_discovery())
@@ -2552,7 +2553,7 @@ impl Orchestrator {
 
     /// Get list of dormant mirrors (for admin panel)
     pub fn get_dormant_mirrors(&self) -> Vec<MirrorInfo> {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors
             .values()
             .filter(|m| m.state == MirrorState::Dormant)
@@ -2570,7 +2571,7 @@ impl Orchestrator {
 
     /// Resume a paused mirror
     pub async fn resume_mirror(&self, onion_address: &str) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
 
         // Find mirror by onion address
         let mirror = mirrors
@@ -2590,7 +2591,7 @@ impl Orchestrator {
 
     /// Activate a standby mirror (change from paused standby to active)
     pub async fn activate_standby(&self, onion_address: &str) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
 
         // Find mirror by onion address
         let mirror = mirrors
@@ -2619,7 +2620,7 @@ impl Orchestrator {
 
     /// Check if a mirror is paused by onion address
     pub fn is_mirror_paused(&self, onion_address: &str) -> bool {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors
             .values()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
@@ -2630,7 +2631,7 @@ impl Orchestrator {
     /// Destroy a mirror permanently
     pub async fn destroy_mirror(&self, onion_address: &str) -> Result<()> {
         let mirror_id = {
-            let mirrors = self.mirrors.lock().unwrap();
+            let mirrors = safe_lock(&self.mirrors);
             mirrors
                 .values()
                 .find(|m| m.onion_address.as_deref() == Some(onion_address))
@@ -2642,7 +2643,7 @@ impl Orchestrator {
 
         // Remove the hidden service from Tor
         {
-            let mut mirrors = self.mirrors.lock().unwrap();
+            let mut mirrors = safe_lock(&self.mirrors);
             if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                 if let Err(err) = self.tor_service.remove_hidden_service(mirror) {
                     tracing::error!("Failed to remove hidden service for {}: {}", mirror_id, err);
@@ -2661,10 +2662,10 @@ impl Orchestrator {
 
         // Remove from active map
         {
-            let mut mirrors = self.mirrors.lock().unwrap();
+            let mut mirrors = safe_lock(&self.mirrors);
             mirrors.remove(&mirror_id);
 
-            let mut count = self.active_count.lock().unwrap();
+            let mut count = safe_lock(&self.active_count);
             if *count > 0 {
                 *count -= 1;
             }
@@ -2680,7 +2681,7 @@ impl Orchestrator {
 
     /// Get list of active mirror addresses
     pub fn get_active_mirrors(&self) -> Vec<String> {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors
             .values()
             .filter(|m| m.state == MirrorState::Active)
@@ -2690,7 +2691,7 @@ impl Orchestrator {
 
     /// Get all mirrors with extended status info (for admin panel)
     pub fn get_all_mirrors_extended(&self) -> Vec<MirrorInfo> {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors
             .values()
             .filter(|m| m.onion_address.is_some() && m.state != MirrorState::Burned)
@@ -2707,7 +2708,7 @@ impl Orchestrator {
 
     /// Get all mirrors with their status (for admin panel) - legacy format
     pub fn get_all_mirrors(&self) -> Vec<(String, String, String)> {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors
             .values()
             .filter(|m| m.onion_address.is_some() && m.state != MirrorState::Burned)
@@ -2743,13 +2744,13 @@ impl Orchestrator {
 
     /// Get mirror by ID
     pub fn get_mirror(&self, mirror_id: &str) -> Option<Mirror> {
-        let mirrors = self.mirrors.lock().unwrap();
+        let mirrors = safe_lock(&self.mirrors);
         mirrors.get(mirror_id).cloned()
     }
 
     /// Report compromise signal
     pub fn report_signal(&self, mirror_id: &str, signal: CompromiseSignal) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
+        let mut mirrors = safe_lock(&self.mirrors);
         let mirror = mirrors
             .get_mut(mirror_id)
             .ok_or_else(|| OrchestratorError::MirrorNotFound(mirror_id.to_string()))?;
@@ -2789,7 +2790,7 @@ impl Orchestrator {
 
                 // Find oldest active mirror
                 let oldest = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Active)
@@ -2823,7 +2824,7 @@ impl Orchestrator {
                 }
 
                 let mirrors_to_burn: Vec<String> = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Burning)
@@ -2865,7 +2866,7 @@ impl Orchestrator {
 
                 // Find mirrors that should transition from Retiring -> Dormant
                 let mirrors_to_dormant: Vec<String> = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Retiring)
@@ -2882,7 +2883,7 @@ impl Orchestrator {
 
                 // Transition them to dormant
                 {
-                    let mut mirrors = mirrors.lock().unwrap();
+                    let mut mirrors = safe_lock(&mirrors);
                     for mirror_id in mirrors_to_dormant {
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             tracing::info!(
@@ -2896,7 +2897,7 @@ impl Orchestrator {
 
                 // Log retirement status periodically
                 let retiring_count = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Retiring)
@@ -2933,7 +2934,7 @@ impl Orchestrator {
 
                 // Process dormant mirrors - check if evaluation window has passed
                 let dormant_to_evaluate: Vec<String> = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Dormant)
@@ -2962,7 +2963,7 @@ impl Orchestrator {
                 // Evaluate each dormant mirror
                 for mirror_id in dormant_to_evaluate {
                     let should_restore = {
-                        let mut mirrors = mirrors.lock().unwrap();
+                        let mut mirrors = safe_lock(&mirrors);
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             if let Some(ref mut info) = mirror.resurrection_info {
                                 // Check connection attempts during evaluation window
@@ -2997,7 +2998,7 @@ impl Orchestrator {
                     };
 
                     if should_restore {
-                        let mut mirrors = mirrors.lock().unwrap();
+                        let mut mirrors = safe_lock(&mirrors);
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             mirror.begin_restoration();
                         }
@@ -3009,7 +3010,7 @@ impl Orchestrator {
 
                 let restoring_updates: Vec<(String, bool, bool)> = {
                     // (mirror_id, should_advance, should_complete)
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Restoring)
@@ -3057,7 +3058,7 @@ impl Orchestrator {
 
                 // Apply updates
                 {
-                    let mut mirrors = mirrors.lock().unwrap();
+                    let mut mirrors = safe_lock(&mirrors);
                     for (mirror_id, should_advance, should_complete) in restoring_updates {
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             if should_complete {
@@ -3085,7 +3086,7 @@ impl Orchestrator {
 
                 // Check for mirrors that have been dormant too long (auto-destroy)
                 let dormant_too_long: Vec<String> = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Dormant)
@@ -3102,7 +3103,7 @@ impl Orchestrator {
                 };
 
                 {
-                    let mut mirrors = mirrors.lock().unwrap();
+                    let mut mirrors = safe_lock(&mirrors);
                     for mirror_id in dormant_too_long {
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             tracing::warn!(
@@ -3151,7 +3152,7 @@ impl Orchestrator {
 
                 // Gather current state
                 let (active_count, standby_count, total_count) = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     let active = mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Active)
@@ -3182,7 +3183,7 @@ impl Orchestrator {
                             cpu_usage,
                             config.max_cpu_percent
                         );
-                        let mut rl = rate_limiter.lock().unwrap();
+                        let mut rl = safe_lock(&rate_limiter);
                         rl.record_resource_limit();
                         false
                     } else if memory_percent >= config.max_memory_percent {
@@ -3191,7 +3192,7 @@ impl Orchestrator {
                             memory_percent,
                             config.max_memory_percent
                         );
-                        let mut rl = rate_limiter.lock().unwrap();
+                        let mut rl = safe_lock(&rate_limiter);
                         rl.record_resource_limit();
                         false
                     } else if memory_available < config.min_memory_available_mb {
@@ -3200,7 +3201,7 @@ impl Orchestrator {
                             memory_available,
                             config.min_memory_available_mb
                         );
-                        let mut rl = rate_limiter.lock().unwrap();
+                        let mut rl = safe_lock(&rate_limiter);
                         rl.record_resource_limit();
                         false
                     } else {
@@ -3212,7 +3213,7 @@ impl Orchestrator {
 
                 // Check rate limits (self-DDOS protection)
                 let spawn_allowed = {
-                    let rl = rate_limiter.lock().unwrap();
+                    let rl = safe_lock(&rate_limiter);
                     rl.can_spawn(&config)
                 };
 
@@ -3232,7 +3233,7 @@ impl Orchestrator {
 
                     // Record the spawn attempt
                     {
-                        let mut rl = rate_limiter.lock().unwrap();
+                        let mut rl = safe_lock(&rate_limiter);
                         rl.record_spawn();
                     }
 
@@ -3254,7 +3255,7 @@ impl Orchestrator {
                             // Mark as standby (paused but ready)
                             mirror.activate_as_standby(onion_address);
 
-                            let mut mirrors = mirrors.lock().unwrap();
+                            let mut mirrors = safe_lock(&mirrors);
                             mirrors.insert(mirror_id.clone(), mirror);
 
                             tracing::info!("Standby mirror ready: {}", mirror_id);
@@ -3276,7 +3277,7 @@ impl Orchestrator {
                     let excess = standby_count - config.max_standby;
                     let mut removed = 0;
 
-                    let mut mirrors = mirrors.lock().unwrap();
+                    let mut mirrors = safe_lock(&mirrors);
                     let standby_ids: Vec<String> = mirrors
                         .values()
                         .filter(|m| m.is_standby && m.state == MirrorState::Paused)
@@ -3306,7 +3307,7 @@ impl Orchestrator {
 
                     // Try to activate a standby
                     let standby_to_activate: Option<String> = {
-                        let mirrors = mirrors.lock().unwrap();
+                        let mirrors = safe_lock(&mirrors);
                         mirrors
                             .values()
                             .filter(|m| m.is_standby && m.state == MirrorState::Paused)
@@ -3317,17 +3318,17 @@ impl Orchestrator {
                     if let Some(mirror_id) = standby_to_activate {
                         // Check activation rate limit
                         let activate_allowed = {
-                            let rl = rate_limiter.lock().unwrap();
+                            let rl = safe_lock(&rate_limiter);
                             rl.can_activate(&config)
                         };
 
                         if activate_allowed {
-                            let mut mirrors = mirrors.lock().unwrap();
+                            let mut mirrors = safe_lock(&mirrors);
                             if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                                 mirror.is_standby = false;
                                 mirror.state = MirrorState::Active;
 
-                                let mut rl = rate_limiter.lock().unwrap();
+                                let mut rl = safe_lock(&rate_limiter);
                                 rl.record_activation();
 
                                 tracing::info!(
@@ -3383,7 +3384,7 @@ impl Orchestrator {
 
                 // 1. Clean up burned mirrors that have exceeded retention
                 let burned_to_remove: Vec<String> = {
-                    let mirrors = mirrors.lock().unwrap();
+                    let mirrors = safe_lock(&mirrors);
                     mirrors
                         .values()
                         .filter(|m| m.state == MirrorState::Burned)
@@ -3401,7 +3402,7 @@ impl Orchestrator {
                 };
 
                 if !burned_to_remove.is_empty() {
-                    let mut mirrors = mirrors.lock().unwrap();
+                    let mut mirrors = safe_lock(&mirrors);
                     for mirror_id in burned_to_remove {
                         tracing::info!(
                             "Self-cleaning: Removing burned mirror {} (retention exceeded)",
@@ -3422,7 +3423,7 @@ impl Orchestrator {
                         // Check if this directory belongs to a known mirror
                         let dir_name = path.file_name().unwrap().to_string_lossy().to_string();
                         let is_known = {
-                            let mirrors = mirrors.lock().unwrap();
+                            let mirrors = safe_lock(&mirrors);
                             mirrors.contains_key(&dir_name)
                         };
 
@@ -3507,7 +3508,7 @@ impl Orchestrator {
                 }
 
                 // 5. Log cleanup stats periodically
-                let mirror_count = mirrors.lock().unwrap().len();
+                let mirror_count = safe_lock(&mirrors).len();
                 let active_count = mirrors
                     .lock()
                     .unwrap()
