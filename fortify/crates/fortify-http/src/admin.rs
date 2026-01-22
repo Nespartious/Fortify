@@ -1290,7 +1290,9 @@ fn render_login_page(error: Option<&str>) -> Response<BoxBody> {
 }
 
 async fn handle_login(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
-    let body_bytes = req.collect().await
+    let body_bytes = req
+        .collect()
+        .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
@@ -3736,8 +3738,13 @@ fn render_tutorial() -> Response<BoxBody> {
 // ACTION HANDLERS
 // ============================================================================
 
-async fn handle_session_action(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
-    let body_bytes = req.collect().await
+async fn handle_session_action(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
@@ -3774,7 +3781,9 @@ async fn handle_session_action(req: Request<Incoming>, state: Arc<AdminState>) -
 }
 
 async fn handle_node_action(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
-    let body_bytes = req.collect().await
+    let body_bytes = req
+        .collect()
+        .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
@@ -3882,7 +3891,9 @@ async fn handle_node_action(req: Request<Incoming>, state: Arc<AdminState>) -> R
 }
 
 async fn handle_mirror_action(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
-    let body_bytes = req.collect().await
+    let body_bytes = req
+        .collect()
+        .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
@@ -4103,8 +4114,13 @@ async fn handle_mirror_action(req: Request<Incoming>, state: Arc<AdminState>) ->
     redirect(&format!("{}/mirrors", ADMIN_PATH))
 }
 
-async fn handle_behavior_settings(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
-    let body_bytes = req.collect().await
+async fn handle_behavior_settings(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
@@ -4276,8 +4292,13 @@ fn parse_captcha_type(s: &str) -> CaptchaType {
     }
 }
 
-async fn handle_captcha_settings(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
-    let body_bytes = req.collect().await
+async fn handle_captcha_settings(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
     let params = parse_form_data(&body_bytes);

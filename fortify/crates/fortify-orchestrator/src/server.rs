@@ -550,7 +550,10 @@ async fn activate_standby_mirror(
 }
 
 /// Pause a mirror (triggered by admin panel)
-async fn pause_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
+async fn pause_mirror(
+    req: Request<Incoming>,
+    orchestrator: Arc<Orchestrator>,
+) -> Response<BoxBody> {
     let body_bytes = match req.collect().await {
         Ok(b) => b.to_bytes(),
         Err(_) => {
@@ -616,7 +619,10 @@ async fn pause_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -
 }
 
 /// Resume a paused mirror (triggered by admin panel)
-async fn resume_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
+async fn resume_mirror(
+    req: Request<Incoming>,
+    orchestrator: Arc<Orchestrator>,
+) -> Response<BoxBody> {
     let body_bytes = match req.collect().await {
         Ok(b) => b.to_bytes(),
         Err(_) => {
@@ -682,7 +688,10 @@ async fn resume_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) 
 }
 
 /// Destroy a mirror permanently (triggered by admin panel)
-async fn destroy_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
+async fn destroy_mirror(
+    req: Request<Incoming>,
+    orchestrator: Arc<Orchestrator>,
+) -> Response<BoxBody> {
     let body_bytes = match req.collect().await {
         Ok(b) => b.to_bytes(),
         Err(_) => {
@@ -864,9 +873,7 @@ async fn proxy_to_gate(req: Request<Incoming>, gate_address: String) -> Response
         }
     };
 
-    let mut builder = Request::builder()
-        .method(parts.method)
-        .uri(uri);
+    let mut builder = Request::builder().method(parts.method).uri(uri);
 
     // Copy headers
     for (key, value) in parts.headers.iter() {

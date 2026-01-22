@@ -32,14 +32,9 @@ impl NodeServer {
             let node = Arc::clone(&self.node);
 
             tokio::spawn(async move {
-                let service = service_fn(move |req| {
-                    handle_request(req, Arc::clone(&node))
-                });
+                let service = service_fn(move |req| handle_request(req, Arc::clone(&node)));
 
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .await
-                {
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
                     tracing::error!("Error serving connection: {:?}", err);
                 }
             });

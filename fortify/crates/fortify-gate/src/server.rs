@@ -1614,7 +1614,10 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
 }
 
 /// Handle admin request to update captcha configuration
-async fn handle_update_captcha_config(req: Request<Incoming>, gate: Arc<Gate>) -> Response<BoxBody> {
+async fn handle_update_captcha_config(
+    req: Request<Incoming>,
+    gate: Arc<Gate>,
+) -> Response<BoxBody> {
     // Read request body
     let body_bytes = match req.collect().await {
         Ok(b) => b.to_bytes(),

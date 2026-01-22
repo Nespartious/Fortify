@@ -544,10 +544,7 @@ impl HttpProxy {
                     )
                 });
 
-                if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .await
-                {
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
                     tracing::error!("Error serving connection: {:?}", err);
                 }
             });
@@ -1167,7 +1164,9 @@ async fn process_request(
                         "Set-Cookie",
                         "fortify_demoted=1; Path=/; Max-Age=300; HttpOnly",
                     )
-                    .body(Full::new(Bytes::from("Session blacklisted - please verify again")))
+                    .body(Full::new(Bytes::from(
+                        "Session blacklisted - please verify again",
+                    )))
                     .unwrap();
             }
         }
@@ -1568,7 +1567,7 @@ async fn proxy_to_gate(
 
     // Use reqwest for simpler HTTP proxying
     let client = reqwest::Client::new();
-    
+
     // Build the request
     let method = match req.method().as_str() {
         "GET" => reqwest::Method::GET,
@@ -1580,9 +1579,9 @@ async fn proxy_to_gate(
         "PATCH" => reqwest::Method::PATCH,
         _ => reqwest::Method::GET,
     };
-    
+
     let mut request_builder = client.request(method, &gate_url);
-    
+
     // Copy safe headers
     for (name, value) in req.headers() {
         let name_str = name.as_str().to_lowercase();
@@ -1600,31 +1599,36 @@ async fn proxy_to_gate(
     }
 
     // Collect request body
-    let body_bytes = req.collect().await
+    let body_bytes = req
+        .collect()
+        .await
         .map_err(|e| format!("Failed to read request body: {}", e))?
         .to_bytes();
-    
+
     request_builder = request_builder.body(body_bytes.to_vec());
 
     let response = request_builder
         .send()
         .await
         .map_err(|e| format!("Gate request failed: {}", e))?;
-    
+
     // Convert reqwest response to hyper response
     let status = StatusCode::from_u16(response.status().as_u16())
         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    
+
     let mut builder = Response::builder().status(status);
-    
+
     for (name, value) in response.headers() {
         builder = builder.header(name.as_str(), value.as_bytes());
     }
-    
-    let body_bytes = response.bytes().await
+
+    let body_bytes = response
+        .bytes()
+        .await
         .map_err(|e| format!("Failed to read gate response body: {}", e))?;
-    
-    builder.body(Full::new(Bytes::from(body_bytes.to_vec())))
+
+    builder
+        .body(Full::new(Bytes::from(body_bytes.to_vec())))
         .map_err(|e| format!("Failed to build response: {}", e))
 }
 
@@ -1672,7 +1676,7 @@ async fn route_to_backend(
 
     // Use reqwest for backend proxying
     let client = reqwest::Client::new();
-    
+
     let method = match req.method().as_str() {
         "GET" => reqwest::Method::GET,
         "POST" => reqwest::Method::POST,
@@ -1683,9 +1687,9 @@ async fn route_to_backend(
         "PATCH" => reqwest::Method::PATCH,
         _ => reqwest::Method::GET,
     };
-    
+
     let mut request_builder = client.request(method, &backend_url);
-    
+
     // Copy headers and inject session token
     for (name, value) in req.headers() {
         let name_str = name.as_str().to_lowercase();
@@ -1700,21 +1704,23 @@ async fn route_to_backend(
             }
         }
     }
-    
+
     // Inject X-Session-ID header if we have a verified session token
     if let Some(ref token) = session_token {
         request_builder = request_builder.header("X-Session-ID", token);
     }
-    
+
     // Collect request body
-    let body_bytes = req.collect().await
+    let body_bytes = req
+        .collect()
+        .await
         .map_err(|e| {
             node.release();
             admin_state.release_node_connection(&node_id);
             format!("Failed to read request body: {}", e)
         })?
         .to_bytes();
-    
+
     request_builder = request_builder.body(body_bytes.to_vec());
 
     let result = request_builder.send().await;
@@ -1724,32 +1730,38 @@ async fn route_to_backend(
     admin_state.release_node_connection(&node_id);
 
     let response = result.map_err(|e| format!("Backend request failed: {}", e))?;
-    
+
     // Convert reqwest response to hyper response
     let status = StatusCode::from_u16(response.status().as_u16())
         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    
+
     let mut builder = Response::builder().status(status);
-    
+
     // Check for demotion header
     let demote = response.headers().get("X-Fortify-Demote").is_some();
-    
+
     for (name, value) in response.headers() {
         if name.as_str() != "x-fortify-demote" {
             builder = builder.header(name.as_str(), value.as_bytes());
         }
     }
-    
+
     // Handle demotion
     if demote {
         tracing::warn!("Session demoted by Node, clearing cookie");
-        builder = builder.header("Set-Cookie", "fortify_session=; Path=/; Max-Age=0; HttpOnly");
+        builder = builder.header(
+            "Set-Cookie",
+            "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+        );
     }
-    
-    let body_bytes = response.bytes().await
+
+    let body_bytes = response
+        .bytes()
+        .await
         .map_err(|e| format!("Failed to read backend response body: {}", e))?;
-    
-    let response = builder.body(Full::new(Bytes::from(body_bytes.to_vec())))
+
+    let response = builder
+        .body(Full::new(Bytes::from(body_bytes.to_vec())))
         .map_err(|e| format!("Failed to build response: {}", e))?;
 
     Ok((response, node_id))

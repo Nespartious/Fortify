@@ -623,7 +623,9 @@ impl Node {
                     .bytes()
                     .await
                     .map_err(|e| format!("Failed to read body: {}", e))?;
-                Ok(response.body(Full::new(Bytes::from(body_bytes.to_vec()))).unwrap())
+                Ok(response
+                    .body(Full::new(Bytes::from(body_bytes.to_vec())))
+                    .unwrap())
             }
             Err(e) => {
                 tracing::warn!("Backend request failed: {}", e);

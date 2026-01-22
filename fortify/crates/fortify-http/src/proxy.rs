@@ -23,12 +23,13 @@ pub async fn proxy_request(
     }
 
     // Extract all needed info BEFORE consuming the body
-    let path_and_query = req.uri()
+    let path_and_query = req
+        .uri()
         .path_and_query()
         .map(|p| p.as_str().to_string())
         .unwrap_or_else(|| "/".to_string());
     let backend_url = format!("{}{}", node.address, path_and_query);
-    
+
     let method = match req.method().as_str() {
         "GET" => reqwest::Method::GET,
         "POST" => reqwest::Method::POST,
@@ -39,14 +40,18 @@ pub async fn proxy_request(
         "PATCH" => reqwest::Method::PATCH,
         _ => reqwest::Method::GET,
     };
-    
+
     // Collect headers before consuming body
-    let headers: Vec<(String, String)> = req.headers()
+    let headers: Vec<(String, String)> = req
+        .headers()
         .iter()
         .filter_map(|(name, value)| {
             let name_str = name.as_str().to_lowercase();
             if !is_hop_by_hop_header(&name_str) {
-                value.to_str().ok().map(|v| (name.as_str().to_string(), v.to_string()))
+                value
+                    .to_str()
+                    .ok()
+                    .map(|v| (name.as_str().to_string(), v.to_string()))
             } else {
                 None
             }
@@ -54,7 +59,9 @@ pub async fn proxy_request(
         .collect();
 
     // Now collect request body (consumes req)
-    let body_bytes = req.collect().await
+    let body_bytes = req
+        .collect()
+        .await
         .map_err(|_| {
             node.release();
             metrics.lock().unwrap().record_backend_error();
@@ -65,12 +72,12 @@ pub async fn proxy_request(
     // Use reqwest for proxying
     let client = reqwest::Client::new();
     let mut request_builder = client.request(method, &backend_url);
-    
+
     // Copy saved headers
     for (name, value) in headers {
         request_builder = request_builder.header(name, value);
     }
-    
+
     request_builder = request_builder.body(body_bytes.to_vec());
 
     let response = request_builder.send().await.map_err(|_| {
@@ -88,26 +95,36 @@ pub async fn proxy_request(
     // Convert reqwest response to hyper response
     let status = hyper::StatusCode::from_u16(response.status().as_u16())
         .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-    
+
     let mut builder = Response::builder().status(status);
-    
+
     for (name, value) in response.headers() {
         builder = builder.header(name.as_str(), value.as_bytes());
     }
-    
-    let body_bytes = response.bytes().await
+
+    let body_bytes = response
+        .bytes()
+        .await
         .map_err(|_| ProxyError::BackendUnavailable)?;
-    
-    builder.body(Full::new(Bytes::from(body_bytes.to_vec())))
+
+    builder
+        .body(Full::new(Bytes::from(body_bytes.to_vec())))
         .map_err(|_| ProxyError::BackendUnavailable)
 }
 
 /// Check if a header is a hop-by-hop header
 fn is_hop_by_hop_header(name: &str) -> bool {
-    matches!(name, 
-        "connection" | "keep-alive" | "proxy-authenticate" | 
-        "proxy-authorization" | "te" | "trailers" | 
-        "transfer-encoding" | "upgrade" | "host"
+    matches!(
+        name,
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailers"
+            | "transfer-encoding"
+            | "upgrade"
+            | "host"
     )
 }
 
