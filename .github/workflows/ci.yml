@@ -164,16 +164,17 @@ jobs:
 
   #############################################################################
   # MINIMUM SUPPORTED RUST VERSION
+  # Note: MSRV 1.85 required for ratatui 0.30+ which uses Rust 2024 edition
   #############################################################################
   msrv:
-    name: Minimum Rust Version (1.75)
+    name: Minimum Rust Version (1.85)
     runs-on: ${{ vars.PREFER_SELF_HOSTED == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust 1.75
-        uses: dtolnay/rust-toolchain@1.75
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@1.85
 
       - name: Install system dependencies
         run: |
