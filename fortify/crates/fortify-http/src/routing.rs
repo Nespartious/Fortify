@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_least_connections_selection() {
-        let mut nodes = create_test_nodes(3, 10);
+        let nodes = create_test_nodes(3, 10);
 
         // Simulate different connection loads
         {
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_no_available_backends() {
-        let mut nodes = create_test_nodes(2, 1);
+        let nodes = create_test_nodes(2, 1);
 
         // Fill up all backends
         for node in &nodes {
