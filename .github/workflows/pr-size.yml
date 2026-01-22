@@ -129,7 +129,7 @@ jobs:
           echo "Large PRs are allowed but may take longer to review." >> $GITHUB_STEP_SUMMARY
 
       - name: Add size label
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
