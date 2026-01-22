@@ -14,6 +14,7 @@ use hyper_util::rt::TokioIo;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 
 type BoxBody = Full<Bytes>;
@@ -48,7 +49,15 @@ impl GateServer {
                     handle_request(req, Arc::clone(&gate), static_dir.clone())
                 });
 
-                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                // Gate server with timeouts to protect against slow-loris attacks
+                // 30s header timeout accommodates Tor latency
+                let result = http1::Builder::new()
+                    .header_read_timeout(Duration::from_secs(30))
+                    .max_buf_size(16 * 1024)
+                    .serve_connection(io, service)
+                    .await;
+                    
+                if let Err(err) = result {
                     tracing::error!("Error serving connection: {:?}", err);
                 }
             });

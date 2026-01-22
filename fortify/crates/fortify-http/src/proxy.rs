@@ -6,6 +6,13 @@ use hyper::{Request, Response};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// Timeout for backend proxy requests (60 seconds)
+/// Accommodates Tor latency while preventing slow-loris exhaustion
+const BACKEND_REQUEST_TIMEOUT_SECS: u64 = 60;
+
+/// Timeout for establishing connection to backend (10 seconds)
+const BACKEND_CONNECT_TIMEOUT_SECS: u64 = 10;
+
 /// Type alias for the response body type
 type BoxBody = Full<Bytes>;
 
@@ -69,8 +76,18 @@ pub async fn proxy_request(
         })?
         .to_bytes();
 
-    // Use reqwest for proxying
-    let client = reqwest::Client::new();
+    // Use reqwest for proxying with explicit timeouts
+    // Connect timeout prevents slow-loris on connection phase
+    // Request timeout prevents hanging on slow/malicious backends
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(BACKEND_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(BACKEND_REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| {
+            tracing::error!("Failed to build HTTP client: {}", e);
+            node.release();
+            ProxyError::BackendUnavailable
+        })?;
     let mut request_builder = client.request(method, &backend_url);
 
     // Copy saved headers
@@ -80,10 +97,29 @@ pub async fn proxy_request(
 
     request_builder = request_builder.body(body_bytes.to_vec());
 
-    let response = request_builder.send().await.map_err(|_| {
+    let response = request_builder.send().await.map_err(|e| {
         node.release();
         metrics.lock().unwrap().record_backend_error();
-        ProxyError::BackendUnavailable
+        
+        // Distinguish timeout errors for better observability
+        if e.is_timeout() {
+            tracing::warn!(
+                "Backend request to {} timed out after {}s",
+                node.address,
+                BACKEND_REQUEST_TIMEOUT_SECS
+            );
+            ProxyError::BackendTimeout(BACKEND_REQUEST_TIMEOUT_SECS)
+        } else if e.is_connect() {
+            tracing::warn!(
+                "Failed to connect to backend {}: {}",
+                node.address,
+                e
+            );
+            ProxyError::BackendUnavailable
+        } else {
+            tracing::warn!("Backend request error: {}", e);
+            ProxyError::BackendUnavailable
+        }
     })?;
 
     // Release connection slot
