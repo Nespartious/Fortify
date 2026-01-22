@@ -1,6 +1,6 @@
 # Fortify Technical Debt & Development Priorities
 
-> Last Updated: January 21, 2026
+> Last Updated: January 22, 2026
 
 This document tracks known technical debt, security improvements, and development priorities for the Fortify project.
 
@@ -10,13 +10,41 @@ This document tracks known technical debt, security improvements, and developmen
 
 ### 1. reqwest 0.11 → 0.12+ Migration (hyper 0.14 → 1.x)
 
-**Status:** Not Started  
+**Status:** Ready to Begin  
+**Branch:** `feature/hyper-1x-migration` (to be created)  
 **Effort Estimate:** Large (2-3 days)  
 **Risk Level:** Medium - Security advisory on transitive dependency
 
 #### Problem
 
 The project uses `reqwest = "0.11"` which depends on `rustls-pemfile` (unmaintained, RUSTSEC-2025-0134). Upgrading to reqwest 0.12+ requires migrating from hyper 0.14 to hyper 1.x, which has significant breaking changes.
+
+#### Pre-Migration Audit Results (January 22, 2026)
+
+**Dependabot PRs Reviewed:**
+| PR | Title | Status | Relevance |
+|----|-------|--------|-----------|
+| #5 | hyper 0.14 → 1.8 | Closed (deferred) | ✅ Direct - requires this migration |
+| #14 | http 0.2 → 1.4 | Closed (deferred) | ✅ Direct - coupled with hyper |
+| #15 | reqwest 0.11 → 0.13 | Closed (conflict) | ✅ Direct - triggers migration |
+| #16 | hyper-staticfile 0.9 → 0.10 | Closed (deferred) | ✅ Direct - needs hyper 1.x |
+
+**Security Workflow Results:** ✅ All checks passing
+- cargo-audit: PASS
+- cargo-deny: PASS  
+- Semgrep SAST: PASS
+- Gitleaks: PASS
+- cargo-geiger: PASS
+- cargo-vet: PASS
+
+**Additional Findings from Pre-Migration Sweep:**
+1. **Dead dependency:** `hyper-staticfile = "0.9"` in fortify-gate (never used in code)
+2. **Direct http crate:** `http = "0.2"` in fortify-http must upgrade to 1.x
+3. **reqwest breaking changes in 0.13:**
+   - `rustls-tls` renamed to `rustls`
+   - `rustls` is now default TLS (was `native-tls`)
+   - aws-lc-rs crypto provider (was ring)
+4. **~33 tests** require updates post-migration
 
 #### Current Usage Analysis
 
@@ -28,14 +56,14 @@ The project uses `reqwest = "0.11"` which depends on `rustls-pemfile` (unmaintai
 | `fortify-tui` | json, rustls-tls | Deployment verification |
 | `fortify-http` | rustls-tls, blocking, json | Admin panel HTTP requests |
 
-**hyper usage (5 crates, ~40 occurrences):**
-| Crate | Purpose |
-|-------|---------|
-| `fortify-node` | HTTP server for node, request/response proxying |
-| `fortify-gate` | Captcha gate server, form parsing |
-| `fortify-controller` | Internal HTTP API |
-| `fortify-orchestrator` | Mirror management HTTP, health proxying |
-| `fortify-http` | Main HTTP server, admin panel, proxy routing |
+**hyper usage (5 crates, ~80 occurrences of `hyper::Body`):**
+| Crate | Files | Key Patterns |
+|-------|-------|--------------|
+| `fortify-node` | 4 files | Server, Body, to_bytes (6 occurrences) |
+| `fortify-gate` | 1 file | Server, Body, form parsing (18 occurrences) |
+| `fortify-controller` | 1 file | Server, Body (8 occurrences) |
+| `fortify-orchestrator` | 1 file | Server, Client, Body (35+ occurrences) |
+| `fortify-http` | 4 files | Server, Client, proxy, admin (50+ occurrences) |
 
 #### Breaking Changes in hyper 1.x
 
@@ -60,6 +88,11 @@ From the [hyper upgrade guide](https://hyper.rs/guides/1/upgrading/):
 #### Migration Plan
 
 ```
+Phase 0: Pre-Migration Cleanup (NEW)
+  ├── Create feature branch: feature/hyper-1x-migration
+  ├── Remove unused hyper-staticfile from fortify-gate/Cargo.toml
+  └── Commit baseline
+
 Phase 1: Preparation
   ├── Add hyper features: ["backports", "deprecated"]
   ├── Update http-body to 0.4.6+
@@ -68,19 +101,31 @@ Phase 1: Preparation
 Phase 2: Dependencies
   ├── Add hyper-util = "0.1"
   ├── Add http-body-util = "0.1"  
+  ├── Add bytes = "1" (explicit)
   └── Keep hyper 0.14 temporarily for backports
 
-Phase 3: Code Migration (per crate)
-  ├── Replace Body with appropriate http-body-util type
-  ├── Replace Server with hyper-util server builder
-  ├── Replace Client with hyper-util legacy client
-  └── Update error types (hyper::Error changes)
+Phase 3: Code Migration (per crate, priority order)
+  ├── fortify-tui (reqwest only - simplest)
+  ├── fortify-controller (server + reqwest)
+  ├── fortify-node (server + client + reqwest)
+  ├── fortify-gate (server + form parsing)
+  ├── fortify-orchestrator (server + client)
+  └── fortify-http (COMPLEX: server + client + proxy + http crate)
 
 Phase 4: Finalize
-  ├── Upgrade hyper = "1.0"
-  ├── Upgrade reqwest = "0.12"
+  ├── Upgrade hyper = "1.6"
+  ├── Upgrade reqwest = "0.12" (use "rustls" feature, not "rustls-tls")
+  ├── Upgrade http = "1.0" (fortify-http only)
+  ├── Upgrade hyper-staticfile = "0.10" (if keeping, else remove)
   ├── Remove ignore for RUSTSEC-2025-0134
   └── Set unmaintained = "warn" in deny.toml
+
+Phase 5: Post-Migration Validation
+  ├── Update ~33 tests for new body/server types
+  ├── Verify SOCKS proxy works for .onion backends
+  ├── Verify blocking client works in fortify-http
+  ├── Run full CI pipeline
+  └── Merge to main
 ```
 
 ---
