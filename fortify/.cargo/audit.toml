@@ -7,4 +7,5 @@ ignore = [
     # Will be resolved when we upgrade to reqwest 0.12+ (requires hyper 1.x migration)
     "RUSTSEC-2025-0134",
 ]
-unmaintained = "warn"
+# Set informational warnings to false to suppress unmaintained warnings
+informational_warnings = []
