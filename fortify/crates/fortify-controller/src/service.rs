@@ -119,7 +119,7 @@ impl ServiceInstance {
     fn mode_hint(&self) -> Option<String> {
         self.lookup_env(&["NODE_MODE"])
     }
-    
+
     fn onion_hint(&self) -> Option<String> {
         self.lookup_env(&["ONION_ADDRESS"])
     }
@@ -164,7 +164,11 @@ impl ServiceManager {
 
         // Find the binary path
         let binary_path = Self::find_binary(service_type.binary_name())?;
-        tracing::debug!("Found binary for {}: {}", service_type.binary_name(), binary_path.display());
+        tracing::debug!(
+            "Found binary for {}: {}",
+            service_type.binary_name(),
+            binary_path.display()
+        );
 
         // Build command
         let mut cmd = Command::new(&binary_path);
@@ -229,7 +233,7 @@ impl ServiceManager {
             PathBuf::from(format!("/usr/local/bin/{}", name)),
             PathBuf::from(format!("/usr/bin/{}", name)),
         ];
-        
+
         // Also check ~/.cargo/bin
         if let Ok(home) = std::env::var("HOME") {
             let cargo_bin = PathBuf::from(format!("{}/.cargo/bin/{}", home, name));
@@ -238,7 +242,7 @@ impl ServiceManager {
                 return Ok(cargo_bin);
             }
         }
-        
+
         for p in &paths {
             if p.exists() {
                 tracing::debug!("Found {} at {}", name, p.display());
@@ -248,10 +252,7 @@ impl ServiceManager {
 
         // Fall back to PATH lookup - Command::new will resolve it
         // But first check if it's actually in PATH using `which`
-        if let Ok(output) = std::process::Command::new("which")
-            .arg(name)
-            .output()
-        {
+        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path.is_empty() {

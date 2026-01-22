@@ -1,5 +1,5 @@
 //! Behavioral Analysis Engine for Fortify
-//! 
+//!
 //! Detects suspicious request patterns without JavaScript or fingerprinting.
 //! Designed for Tor Browser "safest" mode compatibility.
 
@@ -145,7 +145,7 @@ impl BehaviorStats {
     pub fn record_violation(&mut self, violation: BehaviorViolation) {
         let type_key = violation.violation_type.as_str().to_string();
         *self.violations_by_type.entry(type_key).or_insert(0) += 1;
-        
+
         self.recent_violations.push_back(violation);
         while self.recent_violations.len() > 50 {
             self.recent_violations.pop_front();
@@ -157,7 +157,10 @@ impl BehaviorStats {
     }
 
     pub fn severity_score(&self) -> u64 {
-        self.recent_violations.iter().map(|v| v.severity as u64).sum()
+        self.recent_violations
+            .iter()
+            .map(|v| v.severity as u64)
+            .sum()
     }
 }
 
@@ -187,19 +190,19 @@ pub struct BehaviorConfig {
     pub min_post_payload_size: usize,
     /// Sequential path threshold (paths in numeric sequence)
     pub sequential_path_threshold: u32,
-    
+
     /// Whitelisted paths that won't trigger attack path violations
     /// Supports exact matches and prefix matches (ending with *)
     /// DEPRECATED: Use disabled_attack_paths and custom_whitelist_paths instead
     pub whitelisted_paths: Vec<String>,
-    
+
     /// Attack path patterns that are DISABLED (won't trigger violations)
     /// Contains patterns from KNOWN_ATTACK_PATHS that the admin has turned off
     pub disabled_attack_paths: HashSet<String>,
-    
+
     /// Custom whitelist paths added by admin (prefix matching with *)
     pub custom_whitelist_paths: Vec<String>,
-    
+
     /// Violation threshold to trigger threat node demotion (total violations)
     pub threat_demotion_threshold: u32,
     /// Severity score threshold to trigger threat node demotion
@@ -225,7 +228,7 @@ impl Default for BehaviorConfig {
         violation_type_thresholds.insert("Suspicious Referer".to_string(), 10);
         violation_type_thresholds.insert("Oversized Payload".to_string(), 5);
         violation_type_thresholds.insert("Undersized Payload".to_string(), 10);
-        
+
         Self {
             ua_analysis_enabled: true,
             referer_analysis_enabled: true,
@@ -238,16 +241,16 @@ impl Default for BehaviorConfig {
             max_payload_size: 10 * 1024 * 1024, // 10MB
             min_post_payload_size: 1,
             sequential_path_threshold: 5,
-            whitelisted_paths: vec![],  // Deprecated - use disabled_attack_paths
-            disabled_attack_paths: HashSet::new(),  // All attack paths enabled by default
+            whitelisted_paths: vec![], // Deprecated - use disabled_attack_paths
+            disabled_attack_paths: HashSet::new(), // All attack paths enabled by default
             custom_whitelist_paths: vec![
-                "/api/*".to_string(),      // API prefix
-                "/static/*".to_string(),   // Static files
+                "/api/*".to_string(),    // API prefix
+                "/static/*".to_string(), // Static files
             ],
-            threat_demotion_threshold: 10,   // 10 total violations triggers demotion
-            threat_severity_threshold: 15,   // severity score of 15 triggers demotion
+            threat_demotion_threshold: 10, // 10 total violations triggers demotion
+            threat_severity_threshold: 15, // severity score of 15 triggers demotion
             violation_type_thresholds,
-            max_demotions_before_kill: 3,    // Kill session after 3 demotion cycles
+            max_demotions_before_kill: 3, // Kill session after 3 demotion cycles
         }
     }
 }
@@ -257,7 +260,7 @@ impl BehaviorConfig {
     pub fn is_attack_path_enabled(&self, pattern: &str) -> bool {
         !self.disabled_attack_paths.contains(pattern)
     }
-    
+
     /// Check if a path matches custom whitelist patterns
     pub fn is_custom_whitelisted(&self, path: &str) -> bool {
         for pattern in &self.custom_whitelist_paths {
@@ -287,24 +290,24 @@ impl BehaviorConfig {
         }
         false
     }
-    
+
     /// Check if a path is whitelisted (legacy - use is_custom_whitelisted instead)
     pub fn is_path_whitelisted(&self, path: &str) -> bool {
         self.is_custom_whitelisted(path)
     }
-    
+
     /// Check if a session should be demoted based on their stats
     pub fn should_demote_to_threat(&self, stats: &BehaviorStats) -> bool {
         // Check total violations threshold
         if stats.total_violations() >= self.threat_demotion_threshold as u64 {
             return true;
         }
-        
+
         // Check severity score threshold
         if stats.severity_score() >= self.threat_severity_threshold as u64 {
             return true;
         }
-        
+
         // Check individual violation type thresholds
         for (vtype, count) in &stats.violations_by_type {
             if let Some(&threshold) = self.violation_type_thresholds.get(vtype) {
@@ -313,7 +316,7 @@ impl BehaviorConfig {
                 }
             }
         }
-        
+
         false
     }
 }
@@ -399,22 +402,22 @@ pub struct EarlyBehaviorAnalysis {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EarlySignalType {
     // Positive signals (+1 each)
-    ReasonablePacing,      // Requests spaced naturally (not instant)
-    HumanLikeNavigation,   // Clicks around like a human
-    ValidUserAgent,        // Has a real browser UA
-    HasReferer,            // Proper navigation flow
-    PostWithContent,       // Forms with real content
-    ReadingTime,           // Stayed on page reasonable time
-    InteractivePattern,    // Mouse/click patterns suggest human
-    
+    ReasonablePacing,    // Requests spaced naturally (not instant)
+    HumanLikeNavigation, // Clicks around like a human
+    ValidUserAgent,      // Has a real browser UA
+    HasReferer,          // Proper navigation flow
+    PostWithContent,     // Forms with real content
+    ReadingTime,         // Stayed on page reasonable time
+    InteractivePattern,  // Mouse/click patterns suggest human
+
     // Negative signals (-1 each)
-    InstantSequence,       // Requests too fast (<100ms)
-    NoUserAgent,           // Missing UA header
-    BotUserAgent,          // Known bot UA patterns
-    LinearNavigation,      // Sequential paths (scraping)
-    EmptyPosts,            // POST with no/tiny content
-    NoReferer,             // Direct access patterns
-    EnumerationPattern,    // ID/path enumeration
+    InstantSequence,    // Requests too fast (<100ms)
+    NoUserAgent,        // Missing UA header
+    BotUserAgent,       // Known bot UA patterns
+    LinearNavigation,   // Sequential paths (scraping)
+    EmptyPosts,         // POST with no/tiny content
+    NoReferer,          // Direct access patterns
+    EnumerationPattern, // ID/path enumeration
 }
 
 /// An individual early signal event
@@ -422,7 +425,7 @@ pub enum EarlySignalType {
 pub struct EarlySignal {
     pub signal_type: EarlySignalType,
     pub timestamp: u64,
-    pub score_delta: i32,  // +1 for good, -1 for bad
+    pub score_delta: i32, // +1 for good, -1 for bad
     pub context: Option<String>,
 }
 
@@ -458,23 +461,23 @@ impl EarlyBehaviorAnalysis {
             signals: Vec::with_capacity(50),
         }
     }
-    
+
     /// Check if still in early analysis window
     pub fn in_window(&self, now: u64) -> bool {
         !self.window_closed && (now - self.created_at) < self.window_seconds
     }
-    
+
     /// Record a positive signal (+1)
     pub fn record_good_signal(&mut self, signal_type: EarlySignalType, context: Option<String>) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-            
+
         if !self.in_window(now) {
             return;
         }
-        
+
         self.soft_score = (self.soft_score + 1).min(100);
         self.good_signals += 1;
         self.signals.push(EarlySignal {
@@ -484,18 +487,18 @@ impl EarlyBehaviorAnalysis {
             context,
         });
     }
-    
+
     /// Record a negative signal (-1)
     pub fn record_bad_signal(&mut self, signal_type: EarlySignalType, context: Option<String>) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-            
+
         if !self.in_window(now) {
             return;
         }
-        
+
         self.soft_score = (self.soft_score - 1).max(-100);
         self.bad_signals += 1;
         self.signals.push(EarlySignal {
@@ -505,15 +508,17 @@ impl EarlyBehaviorAnalysis {
             context,
         });
     }
-    
+
     /// Close the window and determine recommendation
     pub fn close_window(&mut self) -> EarlyRecommendation {
         if self.window_closed {
-            return self.recommendation.unwrap_or(EarlyRecommendation::StandardFlow);
+            return self
+                .recommendation
+                .unwrap_or(EarlyRecommendation::StandardFlow);
         }
-        
+
         self.window_closed = true;
-        
+
         // Determine recommendation based on soft score
         let recommendation = if self.soft_score >= 10 {
             // Strong positive signals - likely human
@@ -531,11 +536,11 @@ impl EarlyBehaviorAnalysis {
             // Very negative - likely malicious
             EarlyRecommendation::BurnSession
         };
-        
+
         self.recommendation = Some(recommendation);
         recommendation
     }
-    
+
     /// Get time remaining in window (seconds)
     pub fn time_remaining(&self) -> u64 {
         if self.window_closed {
@@ -578,11 +583,12 @@ impl SessionBehavior {
         self.analyze_early_behavior(req);
 
         // Track path
-        self.path_history.push_back((req.path.clone(), req.timestamp));
+        self.path_history
+            .push_back((req.path.clone(), req.timestamp));
         while self.path_history.len() > 100 {
             self.path_history.pop_front();
         }
-        
+
         // Track unique paths
         let is_new_path = self.unique_paths.insert(req.path.clone());
         if is_new_path {
@@ -651,14 +657,41 @@ impl SessionBehavior {
 
         // Known bot/scraper patterns
         let bot_patterns = [
-            "curl", "wget", "python-requests", "python-urllib", "httpie",
-            "scrapy", "bot", "crawler", "spider", "scraper",
-            "googlebot", "bingbot", "yandex", "baidu", "duckduck",
-            "facebookexternalhit", "twitterbot", "linkedinbot",
-            "slurp", "msnbot", "teoma", "gigabot",
-            "java/", "perl", "ruby", "go-http-client", "axios",
-            "node-fetch", "undici", "libwww", "lwp-",
-            "mechanize", "httpclient", "okhttp", "apache-httpclient",
+            "curl",
+            "wget",
+            "python-requests",
+            "python-urllib",
+            "httpie",
+            "scrapy",
+            "bot",
+            "crawler",
+            "spider",
+            "scraper",
+            "googlebot",
+            "bingbot",
+            "yandex",
+            "baidu",
+            "duckduck",
+            "facebookexternalhit",
+            "twitterbot",
+            "linkedinbot",
+            "slurp",
+            "msnbot",
+            "teoma",
+            "gigabot",
+            "java/",
+            "perl",
+            "ruby",
+            "go-http-client",
+            "axios",
+            "node-fetch",
+            "undici",
+            "libwww",
+            "lwp-",
+            "mechanize",
+            "httpclient",
+            "okhttp",
+            "apache-httpclient",
         ];
 
         for pattern in &bot_patterns {
@@ -685,7 +718,11 @@ impl SessionBehavior {
     }
 
     /// Analyze Referer header
-    fn analyze_referer(&self, referer: &Option<String>, _current_path: &str) -> Option<BehaviorViolation> {
+    fn analyze_referer(
+        &self,
+        referer: &Option<String>,
+        _current_path: &str,
+    ) -> Option<BehaviorViolation> {
         let referer_str = match referer {
             Some(s) => s,
             None => {
@@ -696,9 +733,15 @@ impl SessionBehavior {
 
         // Suspicious external referers that shouldn't link to an onion
         let suspicious_referers = [
-            "google.com", "bing.com", "yahoo.com", "yandex.",
-            "baidu.com", "duckduckgo.com", // Search engines shouldn't have onion in referer
-            "facebook.com", "twitter.com", "reddit.com", // Social media as referer is sus
+            "google.com",
+            "bing.com",
+            "yahoo.com",
+            "yandex.",
+            "baidu.com",
+            "duckduckgo.com", // Search engines shouldn't have onion in referer
+            "facebook.com",
+            "twitter.com",
+            "reddit.com", // Social media as referer is sus
         ];
 
         let referer_lower = referer_str.to_lowercase();
@@ -712,9 +755,10 @@ impl SessionBehavior {
         }
 
         // Check for referer injection attempts
-        if referer_lower.contains("<script") || 
-           referer_lower.contains("javascript:") ||
-           referer_lower.contains("data:") {
+        if referer_lower.contains("<script")
+            || referer_lower.contains("javascript:")
+            || referer_lower.contains("data:")
+        {
             return Some(BehaviorViolation::new(
                 ViolationType::SuspiciousReferer,
                 "Potential injection in referer".to_string(),
@@ -730,7 +774,8 @@ impl SessionBehavior {
         let path_lower = path.to_lowercase();
 
         // Check custom whitelist first - whitelisted paths don't trigger attack violations
-        if self.config.is_custom_whitelisted(path) || self.config.is_custom_whitelisted(&path_lower) {
+        if self.config.is_custom_whitelisted(path) || self.config.is_custom_whitelisted(&path_lower)
+        {
             // Still check for sequential enumeration even on whitelisted paths
             if self.path_history.len() >= self.config.sequential_path_threshold as usize {
                 if self.detect_sequential_paths() {
@@ -749,7 +794,7 @@ impl SessionBehavior {
             if !self.config.is_attack_path_enabled(pattern) {
                 continue;
             }
-            
+
             if path_lower.contains(pattern) {
                 violations.push(BehaviorViolation::new(
                     ViolationType::AttackPathAccess,
@@ -819,8 +864,10 @@ impl SessionBehavior {
         if paths_per_minute > self.config.max_unique_paths_per_minute {
             return Some(BehaviorViolation::new(
                 ViolationType::ResourceEnumeration,
-                format!("{} unique paths in last minute (limit: {})", 
-                    paths_per_minute, self.config.max_unique_paths_per_minute),
+                format!(
+                    "{} unique paths in last minute (limit: {})",
+                    paths_per_minute, self.config.max_unique_paths_per_minute
+                ),
             ));
         }
 
@@ -842,8 +889,10 @@ impl SessionBehavior {
         if submissions_per_minute > self.config.max_form_submissions_per_minute {
             return Some(BehaviorViolation::new(
                 ViolationType::FormSubmissionFlood,
-                format!("{} form submissions in last minute (limit: {})",
-                    submissions_per_minute, self.config.max_form_submissions_per_minute),
+                format!(
+                    "{} form submissions in last minute (limit: {})",
+                    submissions_per_minute, self.config.max_form_submissions_per_minute
+                ),
             ));
         }
 
@@ -858,8 +907,10 @@ impl SessionBehavior {
         if size > self.config.max_payload_size {
             violations.push(BehaviorViolation::new(
                 ViolationType::OversizedPayload,
-                format!("Payload size {} bytes exceeds limit {}", 
-                    size, self.config.max_payload_size),
+                format!(
+                    "Payload size {} bytes exceeds limit {}",
+                    size, self.config.max_payload_size
+                ),
             ));
         }
 
@@ -889,7 +940,7 @@ impl SessionBehavior {
         // Check request pacing (time since last request)
         if let Some((_, last_timestamp)) = self.path_history.back() {
             let gap_ms = (req.timestamp - last_timestamp) * 1000;
-            
+
             if gap_ms < 100 {
                 // Instant sequence - bot-like
                 self.early_analysis.record_bad_signal(
@@ -898,10 +949,8 @@ impl SessionBehavior {
                 );
             } else if gap_ms > 500 && gap_ms < 30000 {
                 // Reasonable pacing (0.5s to 30s) - human-like
-                self.early_analysis.record_good_signal(
-                    EarlySignalType::ReasonablePacing,
-                    None,
-                );
+                self.early_analysis
+                    .record_good_signal(EarlySignalType::ReasonablePacing, None);
             }
         }
 
@@ -909,44 +958,34 @@ impl SessionBehavior {
         match &req.user_agent {
             Some(ua) if ua.len() >= 50 => {
                 // Reasonable UA length - likely real browser
-                self.early_analysis.record_good_signal(
-                    EarlySignalType::ValidUserAgent,
-                    None,
-                );
+                self.early_analysis
+                    .record_good_signal(EarlySignalType::ValidUserAgent, None);
             }
             Some(ua) => {
                 // Check for bot patterns
                 let ua_lower = ua.to_lowercase();
                 let bot_patterns = ["curl", "wget", "python", "bot", "crawler", "spider"];
                 if bot_patterns.iter().any(|p| ua_lower.contains(p)) {
-                    self.early_analysis.record_bad_signal(
-                        EarlySignalType::BotUserAgent,
-                        Some(ua.clone()),
-                    );
+                    self.early_analysis
+                        .record_bad_signal(EarlySignalType::BotUserAgent, Some(ua.clone()));
                 }
             }
             None => {
                 // Missing UA - slight negative but not conclusive (Tor safest mode)
-                self.early_analysis.record_bad_signal(
-                    EarlySignalType::NoUserAgent,
-                    None,
-                );
+                self.early_analysis
+                    .record_bad_signal(EarlySignalType::NoUserAgent, None);
             }
         }
 
         // Analyze Referer
         if req.referer.is_some() {
             // Has proper navigation flow
-            self.early_analysis.record_good_signal(
-                EarlySignalType::HasReferer,
-                None,
-            );
+            self.early_analysis
+                .record_good_signal(EarlySignalType::HasReferer, None);
         } else if self.stats.requests_analyzed > 2 {
             // No referer after multiple requests - slightly suspicious
-            self.early_analysis.record_bad_signal(
-                EarlySignalType::NoReferer,
-                None,
-            );
+            self.early_analysis
+                .record_bad_signal(EarlySignalType::NoReferer, None);
         }
 
         // Analyze POST requests
@@ -959,22 +998,21 @@ impl SessionBehavior {
                 );
             } else if req.content_length == 0 {
                 // Empty POST - probing
-                self.early_analysis.record_bad_signal(
-                    EarlySignalType::EmptyPosts,
-                    None,
-                );
+                self.early_analysis
+                    .record_bad_signal(EarlySignalType::EmptyPosts, None);
             }
         }
 
         // Check for enumeration patterns (sequential paths)
         if self.path_history.len() >= 3 {
-            let recent_paths: Vec<&str> = self.path_history
+            let recent_paths: Vec<&str> = self
+                .path_history
                 .iter()
                 .rev()
                 .take(5)
                 .map(|(p, _)| p.as_str())
                 .collect();
-            
+
             // Check if paths look like enumeration (e.g., /user/1, /user/2, /user/3)
             if self.looks_like_enumeration(&recent_paths) {
                 self.early_analysis.record_bad_signal(
@@ -983,41 +1021,41 @@ impl SessionBehavior {
                 );
             } else if recent_paths.len() >= 3 {
                 // Natural navigation pattern
-                self.early_analysis.record_good_signal(
-                    EarlySignalType::HumanLikeNavigation,
-                    None,
-                );
+                self.early_analysis
+                    .record_good_signal(EarlySignalType::HumanLikeNavigation, None);
             }
         }
     }
-    
+
     /// Check if a series of paths looks like enumeration
     fn looks_like_enumeration(&self, paths: &[&str]) -> bool {
         if paths.len() < 3 {
             return false;
         }
-        
+
         // Extract numbers from paths
         let numbers: Vec<i64> = paths
             .iter()
             .filter_map(|p| extract_trailing_number(p))
             .collect();
-        
+
         if numbers.len() < 3 {
             return false;
         }
-        
+
         // Check for sequential pattern
         let diffs: Vec<i64> = numbers.windows(2).map(|w| (w[0] - w[1]).abs()).collect();
         diffs.iter().all(|&d| d == 1) // All consecutive
     }
-    
+
     /// Get early analysis recommendation (closes window if still open)
     pub fn get_early_recommendation(&mut self) -> EarlyRecommendation {
         if !self.early_analysis.window_closed {
             self.early_analysis.close_window()
         } else {
-            self.early_analysis.recommendation.unwrap_or(EarlyRecommendation::StandardFlow)
+            self.early_analysis
+                .recommendation
+                .unwrap_or(EarlyRecommendation::StandardFlow)
         }
     }
 
@@ -1030,7 +1068,7 @@ impl SessionBehavior {
     pub fn is_likely_automated(&self) -> bool {
         let total_violations = self.stats.total_violations();
         let severity_score = self.stats.severity_score();
-        
+
         // Multiple high-severity violations suggest automation
         total_violations >= 5 || severity_score >= 10
     }
@@ -1050,7 +1088,7 @@ impl SessionBehavior {
 fn extract_trailing_number(path: &str) -> Option<i64> {
     let path = path.trim_end_matches('/');
     let mut num_str = String::new();
-    
+
     for c in path.chars().rev() {
         if c.is_ascii_digit() {
             num_str.insert(0, c);
@@ -1058,7 +1096,7 @@ fn extract_trailing_number(path: &str) -> Option<i64> {
             break;
         }
     }
-    
+
     if num_str.is_empty() {
         None
     } else {
@@ -1111,17 +1149,21 @@ impl BehaviorAnalyzer {
             let session = SessionBehavior::new(session_id.to_string(), self.config.clone());
             self.sessions.insert(session_id.to_string(), session);
         }
-        
+
         let session = self.sessions.get_mut(session_id).unwrap();
         let violations = session.analyze(req);
         let is_automated = session.is_likely_automated();
-        
+
         // Now update global stats (no longer borrowing session)
         self.global_stats.total_requests_analyzed += 1;
         for v in &violations {
             self.global_stats.total_violations += 1;
             let type_key = v.violation_type.as_str().to_string();
-            *self.global_stats.violations_by_type.entry(type_key).or_insert(0) += 1;
+            *self
+                .global_stats
+                .violations_by_type
+                .entry(type_key)
+                .or_insert(0) += 1;
         }
 
         if is_automated {
@@ -1153,9 +1195,8 @@ impl BehaviorAnalyzer {
             .unwrap()
             .as_secs();
 
-        self.sessions.retain(|_, session| {
-            now - session.stats.last_activity < max_idle_seconds
-        });
+        self.sessions
+            .retain(|_, session| now - session.stats.last_activity < max_idle_seconds);
     }
 
     /// Update global config and propagate to sessions
@@ -1199,7 +1240,9 @@ mod tests {
 
         let violations = session.analyze(&req);
         assert!(!violations.is_empty());
-        assert!(violations.iter().any(|v| v.violation_type == ViolationType::SuspiciousUserAgent));
+        assert!(violations
+            .iter()
+            .any(|v| v.violation_type == ViolationType::SuspiciousUserAgent));
     }
 
     #[test]
@@ -1216,7 +1259,9 @@ mod tests {
         );
 
         let violations = session.analyze(&req);
-        assert!(violations.iter().any(|v| v.violation_type == ViolationType::AttackPathAccess));
+        assert!(violations
+            .iter()
+            .any(|v| v.violation_type == ViolationType::AttackPathAccess));
     }
 
     #[test]
@@ -1227,16 +1272,12 @@ mod tests {
 
         // Submit forms rapidly
         for i in 0..5 {
-            let req = RequestMeta::new(
-                "/submit".to_string(),
-                "POST".to_string(),
-                None,
-                None,
-                100,
-            );
+            let req = RequestMeta::new("/submit".to_string(), "POST".to_string(), None, None, 100);
             let violations = session.analyze(&req);
             if i >= 3 {
-                assert!(violations.iter().any(|v| v.violation_type == ViolationType::FormSubmissionFlood));
+                assert!(violations
+                    .iter()
+                    .any(|v| v.violation_type == ViolationType::FormSubmissionFlood));
             }
         }
     }
@@ -1250,13 +1291,18 @@ mod tests {
         let req = RequestMeta::new(
             "/page".to_string(),
             "GET".to_string(),
-            Some("Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0".to_string()),
+            Some(
+                "Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0".to_string(),
+            ),
             None, // No referer is normal for Tor
             0,
         );
 
         let violations = session.analyze(&req);
-        assert!(violations.is_empty(), "Normal Tor request should not trigger violations");
+        assert!(
+            violations.is_empty(),
+            "Normal Tor request should not trigger violations"
+        );
     }
 
     #[test]
@@ -1275,16 +1321,12 @@ mod tests {
 
         // Access many unique paths
         for i in 0..10 {
-            let req = RequestMeta::new(
-                format!("/path{}", i),
-                "GET".to_string(),
-                None,
-                None,
-                0,
-            );
+            let req = RequestMeta::new(format!("/path{}", i), "GET".to_string(), None, None, 0);
             let violations = session.analyze(&req);
             if i >= 5 {
-                assert!(violations.iter().any(|v| v.violation_type == ViolationType::ResourceEnumeration));
+                assert!(violations
+                    .iter()
+                    .any(|v| v.violation_type == ViolationType::ResourceEnumeration));
             }
         }
     }

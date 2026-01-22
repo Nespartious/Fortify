@@ -107,7 +107,7 @@ pub fn start_resource_logger(service_name: &'static str, interval: Duration) {
         let mut sys = System::new();
         let mut peak_cpu: f32 = 0.0;
         let mut sample_count = 0u32;
-        
+
         loop {
             if let Ok(pid) = sysinfo::get_current_pid() {
                 sys.refresh_process(pid);
@@ -117,14 +117,14 @@ pub fn start_resource_logger(service_name: &'static str, interval: Duration) {
                     let cpu = proc.cpu_usage();
                     let mem = proc.memory();
                     let virt = proc.virtual_memory();
-                    
+
                     // Track peak CPU between log intervals
                     if cpu > peak_cpu {
                         peak_cpu = cpu;
                     }
-                    
+
                     sample_count += 1;
-                    
+
                     // Log every 5 samples (15 seconds at 3s interval)
                     if sample_count >= 5 {
                         tracing::info!(
@@ -136,7 +136,7 @@ pub fn start_resource_logger(service_name: &'static str, interval: Duration) {
                             virtual_kb = virt,
                             "resource-usage"
                         );
-                        
+
                         // Reset peak tracker
                         peak_cpu = 0.0;
                         sample_count = 0;

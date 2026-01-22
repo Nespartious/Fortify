@@ -1,5 +1,5 @@
 //! Vanguards addon management for Fortify
-//! 
+//!
 //! Vanguards provides additional guard layers to protect against
 //! guard discovery and deanonymization attacks.
 
@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Instant;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Vanguards process status
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,11 +56,23 @@ impl Default for VanguardsConfig {
         } else {
             std::path::PathBuf::from("/tmp/fortify")
         };
-        
+
         Self {
-            config_path: base_dir.join("config").join("vanguards.conf").to_string_lossy().to_string(),
-            state_path: base_dir.join("vanguards").join("vanguards.state").to_string_lossy().to_string(),
-            log_path: base_dir.join("log").join("vanguards.log").to_string_lossy().to_string(),
+            config_path: base_dir
+                .join("config")
+                .join("vanguards.conf")
+                .to_string_lossy()
+                .to_string(),
+            state_path: base_dir
+                .join("vanguards")
+                .join("vanguards.state")
+                .to_string_lossy()
+                .to_string(),
+            log_path: base_dir
+                .join("log")
+                .join("vanguards.log")
+                .to_string_lossy()
+                .to_string(),
             tor_control_addr: "127.0.0.1".to_string(),
             tor_control_port: 9151,
             enabled: true,
@@ -117,7 +129,7 @@ impl VanguardsManager {
             "/usr/local/bin/vanguards",
             "/usr/bin/vanguards",
         ];
-        
+
         for path in paths {
             if Command::new(path)
                 .arg("--help")
@@ -168,7 +180,7 @@ impl VanguardsManager {
                 return Some((venv_path.to_string_lossy().to_string(), vec![]));
             }
         }
-        
+
         // Also check legacy /tmp location
         let legacy_venv = "/tmp/fortify/venv/bin/vanguards";
         if Path::new(legacy_venv).exists() {
@@ -192,7 +204,10 @@ impl VanguardsManager {
                 .status()
                 .is_ok()
             {
-                return Some((python.to_string(), vec!["-m".to_string(), "vanguards".to_string()]));
+                return Some((
+                    python.to_string(),
+                    vec!["-m".to_string(), "vanguards".to_string()],
+                ));
             }
         }
 
@@ -208,7 +223,7 @@ impl VanguardsManager {
     /// Generate vanguards config file
     pub fn generate_config(&self) -> Result<(), String> {
         let config_content = format!(
-r#"# Vanguards Configuration for Fortify
+            r#"# Vanguards Configuration for Fortify
 # Auto-generated - do not edit manually
 
 [Global]
@@ -278,27 +293,29 @@ cbt_circuits_for_timeout = 1000
         self.generate_config()?;
 
         // Find vanguards binary/module
-        let (cmd_path, extra_args) = Self::find_vanguards_path()
-            .ok_or_else(|| "Vanguards not found. Install with: pip3 install vanguards".to_string())?;
+        let (cmd_path, extra_args) = Self::find_vanguards_path().ok_or_else(|| {
+            "Vanguards not found. Install with: pip3 install vanguards".to_string()
+        })?;
 
         info!("Starting vanguards: {} {:?}", cmd_path, extra_args);
         self.status = VanguardsStatus::Starting;
 
         // Build command
         let mut cmd = Command::new(&cmd_path);
-        
+
         // Add any module args (e.g., "-m vanguards" for Python module mode)
         for arg in &extra_args {
             cmd.arg(arg);
         }
-        
+
         // Add config argument
         cmd.args(["--config", &self.config.config_path]);
         cmd.stdout(Stdio::null());
         cmd.stderr(Stdio::null());
 
         // Spawn process
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| format!("Failed to spawn vanguards: {}", e))?;
 
         self.process = Some(child);
@@ -312,7 +329,8 @@ cbt_circuits_for_timeout = 1000
     /// Stop vanguards process
     pub fn stop(&mut self) -> Result<(), String> {
         if let Some(mut child) = self.process.take() {
-            child.kill()
+            child
+                .kill()
                 .map_err(|e| format!("Failed to kill vanguards: {}", e))?;
             self.status = VanguardsStatus::Stopped;
             info!("Vanguards stopped");
@@ -428,13 +446,13 @@ mod tests {
         let mut config = VanguardsConfig::default();
         config.config_path = "/tmp/test_vanguards.conf".to_string();
         config.state_path = "/tmp/test_vanguards.state".to_string();
-        
+
         let manager = VanguardsManager::new(config);
-        
+
         // This should succeed (creates the config file)
         let result = manager.generate_config();
         assert!(result.is_ok());
-        
+
         // Cleanup
         let _ = fs::remove_file("/tmp/test_vanguards.conf");
     }

@@ -13,11 +13,14 @@ async fn main() -> anyhow::Result<()> {
     let config = ControllerConfig::from_env()?;
     info!(
         "Configuration: orchestrators={}-{}, healthy_nodes={}-{}, threat_nodes={}-{}",
-        config.min_orchestrators, config.max_orchestrators,
-        config.min_healthy_nodes, config.max_healthy_nodes,
-        config.min_threat_nodes, config.max_threat_nodes
+        config.min_orchestrators,
+        config.max_orchestrators,
+        config.min_healthy_nodes,
+        config.max_healthy_nodes,
+        config.min_threat_nodes,
+        config.max_threat_nodes
     );
-    
+
     // Log vanity config for mirrors
     info!(
         "Vanity config (for mirrors): enabled={}, prefix='{}', timeout={}s",

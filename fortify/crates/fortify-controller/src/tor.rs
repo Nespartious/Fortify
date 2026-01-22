@@ -1,8 +1,8 @@
 //! Tor hidden service management for nodes
-//! 
+//!
 //! Note: Vanity addresses are NOT used for nodes (healthy/threat).
 //! Vanity addresses are only for mirrors and are handled by the orchestrator.
-//! 
+//!
 //! Deployment Strategy:
 //! 1. PRIMARY: Static file deployment (HiddenServiceDir) - supports PoW defense
 //! 2. FALLBACK: ADD_ONION ephemeral services - no PoW until future Tor release
@@ -37,7 +37,7 @@ impl Default for PowConfig {
 }
 
 /// Tor manager for node hidden services
-/// 
+///
 /// Note: Nodes do NOT use vanity addresses. Vanity is only for mirrors.
 pub struct TorManager {
     control_addr: String,
@@ -57,7 +57,7 @@ impl TorManager {
             .parent()
             .unwrap_or(Path::new("/tmp/fortify/tor/data"))
             .to_path_buf();
-        
+
         Self {
             control_addr,
             cookie_path,
@@ -66,13 +66,13 @@ impl TorManager {
             hs_counter: std::sync::atomic::AtomicUsize::new(0),
         }
     }
-    
+
     /// Set PoW configuration
     pub fn with_pow(mut self, config: PowConfig) -> Self {
         self.pow_config = config;
         self
     }
-    
+
     /// Set data directory for hidden services
     pub fn with_data_dir(mut self, dir: PathBuf) -> Self {
         self.data_dir = dir;
@@ -81,9 +81,9 @@ impl TorManager {
 
     /// Create a new hidden service for a node listening on the given port
     /// Returns the .onion address
-    /// 
+    ///
     /// Note: Node addresses are always random - vanity is for mirrors only.
-    /// 
+    ///
     /// Strategy:
     /// 1. Try static file deployment with PoW (preferred)
     /// 2. Fall back to ADD_ONION if static deployment fails
@@ -91,29 +91,37 @@ impl TorManager {
         // First, try static file deployment with PoW support
         match self.create_static_hidden_service(target_port) {
             Ok(onion) => {
-                tracing::info!("Created static hidden service with PoW for port {}: {}", target_port, onion);
+                tracing::info!(
+                    "Created static hidden service with PoW for port {}: {}",
+                    target_port,
+                    onion
+                );
                 return Ok(onion);
             }
             Err(e) => {
-                tracing::warn!("Static HS deployment failed ({}), falling back to ADD_ONION", e);
+                tracing::warn!(
+                    "Static HS deployment failed ({}), falling back to ADD_ONION",
+                    e
+                );
             }
         }
-        
+
         // Fallback: Use ADD_ONION (no PoW support in current Tor)
         // Note: When future Tor supports ADD_ONION with PoW, we can add flags here
         self.create_ephemeral_hidden_service(target_port)
     }
-    
+
     /// Create hidden service using static files (supports PoW)
     /// Note: Nodes always use random addresses - vanity is for mirrors only
     fn create_static_hidden_service(&self, target_port: u16) -> Result<String, String> {
-        let hs_num = self.hs_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let hs_num = self
+            .hs_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let hs_dir = self.data_dir.join(format!("hs_{}", hs_num));
-        
+
         // Create hidden service directory
-        fs::create_dir_all(&hs_dir)
-            .map_err(|e| format!("Failed to create HS dir: {}", e))?;
-        
+        fs::create_dir_all(&hs_dir).map_err(|e| format!("Failed to create HS dir: {}", e))?;
+
         // Set proper permissions (700)
         #[cfg(unix)]
         {
@@ -121,56 +129,56 @@ impl TorManager {
             fs::set_permissions(&hs_dir, fs::Permissions::from_mode(0o700))
                 .map_err(|e| format!("Failed to set HS dir permissions: {}", e))?;
         }
-        
+
         // Signal Tor to load the new hidden service via SETCONF
         // Tor will generate random keys for the node
         self.configure_static_service(&hs_dir, target_port)
     }
-    
+
     /// Configure Tor to load a static hidden service with PoW
     /// CRITICAL: SETCONF replaces ALL hidden services, so we must include existing ones
     fn configure_static_service(&self, hs_dir: &Path, target_port: u16) -> Result<String, String> {
         let mut stream = TcpStream::connect(&self.control_addr)
             .map_err(|e| format!("Failed to connect to Tor control: {}", e))?;
         stream.set_nodelay(true).ok();
-        
+
         self.authenticate(&mut stream)?;
-        
+
         // CRITICAL FIX: Get existing hidden service configurations
         // SETCONF replaces ALL HiddenServiceDir entries, so we must include existing ones
         let getconf_response = self.run_command(&mut stream, "GETCONF HiddenServiceDir")?;
-        
+
         // Parse existing hidden services from GETCONF response
         // Format: "250 HiddenServiceDir=/path/to/dir" or "250 OK" if none
         let mut existing_services: Vec<(String, Vec<String>)> = Vec::new();
-        
+
         if !getconf_response.contains("250 OK\r\n") {
             // Parse each line that starts with "250 HiddenServiceDir"
             for line in getconf_response.lines() {
                 if let Some(dir) = line.strip_prefix("250 HiddenServiceDir=") {
                     // Remove quotes if present
                     let dir_clean = dir.trim().trim_matches('"').to_string();
-                    
+
                     // Get the port configuration for this service
                     let port_cmd = format!("GETCONF HiddenServicePort");
                     let port_response = self.run_command(&mut stream, &port_cmd)?;
-                    
+
                     let mut ports = Vec::new();
                     for port_line in port_response.lines() {
                         if let Some(port_val) = port_line.strip_prefix("250 HiddenServicePort=") {
                             ports.push(port_val.trim().trim_matches('"').to_string());
                         }
                     }
-                    
+
                     existing_services.push((dir_clean, ports));
                 }
             }
         }
-        
+
         // Build SETCONF command for ALL hidden services (existing + new)
         // Note: Values containing spaces must be quoted in Tor control protocol
         let mut setconf_parts = Vec::new();
-        
+
         // Add existing hidden services first
         for (dir, ports) in &existing_services {
             setconf_parts.push(format!("HiddenServiceDir=\"{}\"", dir));
@@ -178,42 +186,63 @@ impl TorManager {
                 setconf_parts.push(format!("HiddenServicePort=\"{}\"", port));
             }
             setconf_parts.push("HiddenServiceVersion=3".to_string());
-            
+
             // Add PoW configuration if enabled
             if self.pow_config.enabled {
                 setconf_parts.push("HiddenServicePoWDefensesEnabled=1".to_string());
-                setconf_parts.push(format!("HiddenServicePoWQueueRate={}", self.pow_config.queue_rate));
-                setconf_parts.push(format!("HiddenServicePoWQueueBurst={}", self.pow_config.queue_burst));
+                setconf_parts.push(format!(
+                    "HiddenServicePoWQueueRate={}",
+                    self.pow_config.queue_rate
+                ));
+                setconf_parts.push(format!(
+                    "HiddenServicePoWQueueBurst={}",
+                    self.pow_config.queue_burst
+                ));
             }
         }
-        
+
         // Add the new hidden service
         let hs_dir_str = hs_dir.to_string_lossy();
         setconf_parts.push(format!("HiddenServiceDir=\"{}\"", hs_dir_str));
-        setconf_parts.push(format!("HiddenServicePort=\"80 127.0.0.1:{}\"", target_port));
+        setconf_parts.push(format!(
+            "HiddenServicePort=\"80 127.0.0.1:{}\"",
+            target_port
+        ));
         setconf_parts.push("HiddenServiceVersion=3".to_string());
-        
+
         // Add PoW configuration if enabled
         if self.pow_config.enabled {
             setconf_parts.push("HiddenServicePoWDefensesEnabled=1".to_string());
-            setconf_parts.push(format!("HiddenServicePoWQueueRate={}", self.pow_config.queue_rate));
-            setconf_parts.push(format!("HiddenServicePoWQueueBurst={}", self.pow_config.queue_burst));
+            setconf_parts.push(format!(
+                "HiddenServicePoWQueueRate={}",
+                self.pow_config.queue_rate
+            ));
+            setconf_parts.push(format!(
+                "HiddenServicePoWQueueBurst={}",
+                self.pow_config.queue_burst
+            ));
         }
-        
+
         let cmd = format!("SETCONF {}", setconf_parts.join(" "));
-        tracing::debug!("Configuring {} hidden services (including new one)", existing_services.len() + 1);
+        tracing::debug!(
+            "Configuring {} hidden services (including new one)",
+            existing_services.len() + 1
+        );
         let response = self.run_command(&mut stream, &cmd)?;
-        
+
         if !response.contains("250 OK") {
             return Err(format!("SETCONF failed: {}", response.trim()));
         }
-        
+
         // Save config to make it persistent
         let save_response = self.run_command(&mut stream, "SAVECONF")?;
         if !save_response.contains("250 OK") {
-            tracing::warn!("SAVECONF failed, service may not persist: {}", save_response.trim());
+            tracing::warn!(
+                "SAVECONF failed, service may not persist: {}",
+                save_response.trim()
+            );
         }
-        
+
         // Wait for hostname file to be created
         let hostname_path = hs_dir.join("hostname");
         for _ in 0..10 {
@@ -224,10 +253,10 @@ impl TorManager {
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        
+
         Err("Timeout waiting for hostname file".into())
     }
-    
+
     /// Create hidden service using ADD_ONION (fallback, no PoW in current Tor)
     /// Note: Nodes always use random addresses - vanity is for mirrors only
     fn create_ephemeral_hidden_service(&self, target_port: u16) -> Result<String, String> {
@@ -236,7 +265,7 @@ impl TorManager {
         stream.set_nodelay(true).ok();
 
         self.authenticate(&mut stream)?;
-        
+
         // Build ADD_ONION command with random key
         // Note: When future Tor supports PoW with ADD_ONION, add flags here:
         // e.g., "ADD_ONION NEW:ED25519-V3 Port=80,... Flags=Detach,PoW"
@@ -244,12 +273,15 @@ impl TorManager {
             "ADD_ONION NEW:ED25519-V3 Port=80,127.0.0.1:{} Flags=Detach",
             target_port
         );
-        
+
         let response = self.run_command(&mut stream, &cmd)?;
         let service_id = Self::extract_service_id(&response)?;
         let onion = format!("{}.onion", service_id);
 
-        tracing::warn!("Created ephemeral hidden service (NO PoW protection): {}", onion);
+        tracing::warn!(
+            "Created ephemeral hidden service (NO PoW protection): {}",
+            onion
+        );
         Ok(onion)
     }
 
@@ -262,7 +294,7 @@ impl TorManager {
         self.authenticate(&mut stream)?;
 
         let service_id = onion.trim_end_matches(".onion");
-        
+
         // Try DEL_ONION first (for ephemeral services)
         let cmd = format!("DEL_ONION {}", service_id);
         match self.run_command(&mut stream, &cmd) {
@@ -272,17 +304,17 @@ impl TorManager {
             }
             _ => {}
         }
-        
+
         // For static services, we need to remove the config
         // This is more complex and may require finding and removing the HiddenServiceDir
         tracing::warn!("DEL_ONION failed for {}, may be a static service", onion);
-        
+
         Ok(())
     }
 
     fn authenticate(&self, stream: &mut TcpStream) -> Result<(), String> {
-        let cookie = fs::read(&self.cookie_path)
-            .map_err(|e| format!("Failed to read Tor cookie: {}", e))?;
+        let cookie =
+            fs::read(&self.cookie_path).map_err(|e| format!("Failed to read Tor cookie: {}", e))?;
         let cookie_hex = hex::encode(&cookie);
 
         let cmd = format!("AUTHENTICATE {}", cookie_hex);

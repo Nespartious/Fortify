@@ -1,4 +1,7 @@
-use fortify_core::{logging::{init_logging, start_resource_logger}, SessionManager};
+use fortify_core::{
+    logging::{init_logging, start_resource_logger},
+    SessionManager,
+};
 use fortify_http::{BackendNode, HttpProxy};
 use std::env;
 use std::net::SocketAddr;
@@ -36,7 +39,11 @@ fn parse_onion_list(source: Option<String>) -> Vec<Option<String>> {
                 .split(',')
                 .map(|s| {
                     let s = s.trim();
-                    if s.is_empty() { None } else { Some(s.to_string()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
                 })
                 .collect()
         })
@@ -70,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
         max_connections_per_node,
     );
     let healthy_onions = parse_onion_list(env::var("HEALTHY_ONIONS").ok());
-    
+
     let threat_nodes = parse_backend_list(
         env::var("THREAT_NODES").ok(),
         &["http://127.0.0.1:8084"],
@@ -80,8 +87,8 @@ async fn main() -> anyhow::Result<()> {
     let threat_onions = parse_onion_list(env::var("THREAT_ONIONS").ok());
 
     // Gate address for redirecting unknown users
-    let gate_address = env::var("GATE_ADDRESS")
-        .unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+    let gate_address =
+        env::var("GATE_ADDRESS").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
 
     if healthy_nodes.is_empty() && threat_nodes.is_empty() {
         anyhow::bail!("No backend nodes configured for Fortify HTTP proxy");

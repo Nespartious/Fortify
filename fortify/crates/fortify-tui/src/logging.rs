@@ -1,8 +1,8 @@
 //! Log entry types and buffer management
 
-use std::collections::VecDeque;
 use chrono::{DateTime, Utc};
 use ratatui::style::Color;
+use std::collections::VecDeque;
 
 // ============================================================================
 // Status Dashboard Types
@@ -124,7 +124,7 @@ impl SecurityLevel {
             SecurityLevel::Normal => Color::Rgb(144, 238, 144), // Pale green
             SecurityLevel::Elevated => Color::Yellow,
             SecurityLevel::Suspicious => Color::Rgb(255, 165, 0), // Orange
-            SecurityLevel::Warning => Color::Rgb(255, 100, 100), // Pale red
+            SecurityLevel::Warning => Color::Rgb(255, 100, 100),  // Pale red
             SecurityLevel::Attack => Color::Red,
         }
     }
@@ -153,7 +153,13 @@ impl SecurityLevel {
 
     /// Returns true if security level is elevated or higher
     pub fn is_elevated(&self) -> bool {
-        matches!(self, SecurityLevel::Elevated | SecurityLevel::Suspicious | SecurityLevel::Warning | SecurityLevel::Attack)
+        matches!(
+            self,
+            SecurityLevel::Elevated
+                | SecurityLevel::Suspicious
+                | SecurityLevel::Warning
+                | SecurityLevel::Attack
+        )
     }
 }
 
@@ -252,27 +258,33 @@ impl SecurityStatus {
     /// Get new sessions per minute (estimated from buckets)
     pub fn new_sessions_per_minute(&self) -> u32 {
         // Sum both buckets (represents ~1 minute of data)
-        self.new_sessions_current.saturating_add(self.new_sessions_previous)
+        self.new_sessions_current
+            .saturating_add(self.new_sessions_previous)
     }
 
     /// Get unverified requests per minute (estimated from buckets)
     pub fn unverified_requests_per_minute(&self) -> u32 {
-        self.unverified_requests_current.saturating_add(self.unverified_requests_previous)
+        self.unverified_requests_current
+            .saturating_add(self.unverified_requests_previous)
     }
 
     /// Compute the security level based on current metrics
     pub fn compute_level(&mut self) {
         self.maybe_swap_buckets();
-        
+
         let sessions_per_min = self.new_sessions_per_minute();
         let unverified_per_min = self.unverified_requests_per_minute();
         let failed_captcha = self.failed_captcha_attempts;
         let has_suspicious_flags = !self.suspicious_flags.is_empty();
-        
+
         // Thresholds (these could be configurable)
         self.level = if sessions_per_min > 100 || unverified_per_min > 500 || failed_captcha > 20 {
             SecurityLevel::Attack
-        } else if sessions_per_min > 60 || unverified_per_min > 300 || failed_captcha > 10 || has_suspicious_flags {
+        } else if sessions_per_min > 60
+            || unverified_per_min > 300
+            || failed_captcha > 10
+            || has_suspicious_flags
+        {
             SecurityLevel::Warning
         } else if sessions_per_min > 30 || unverified_per_min > 100 || failed_captcha > 5 {
             SecurityLevel::Suspicious
@@ -341,11 +353,11 @@ impl HttpMethod {
 /// HTTP response status category
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponseStatus {
-    Success,      // 2xx
-    Redirect,     // 3xx
-    ClientError,  // 4xx
-    ServerError,  // 5xx
-    Pending,      // In progress
+    Success,     // 2xx
+    Redirect,    // 3xx
+    ClientError, // 4xx
+    ServerError, // 5xx
+    Pending,     // In progress
 }
 
 impl ResponseStatus {
@@ -374,9 +386,9 @@ impl ResponseStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SessionTrust {
     #[default]
-    Unknown,    // Not yet determined
-    Verified,   // Passed verification, trusted
-    Threat,     // Failed verification or suspicious
+    Unknown, // Not yet determined
+    Verified, // Passed verification, trusted
+    Threat,   // Failed verification or suspicious
 }
 
 /// Session entry with trust level and last seen time
@@ -437,9 +449,8 @@ pub struct NetworkEvent {
 
 /// Static asset file extensions to aggregate
 const ASSET_EXTENSIONS: &[&str] = &[
-    ".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".bmp", ".avif",
-    ".woff", ".woff2", ".ttf", ".eot", ".otf",
-    ".css", ".map",
+    ".webp", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".bmp", ".avif", ".woff", ".woff2",
+    ".ttf", ".eot", ".otf", ".css", ".map",
 ];
 
 impl NetworkEvent {
@@ -470,24 +481,24 @@ impl NetworkEvent {
     pub fn merge_asset(&mut self, other: &NetworkEvent) {
         self.is_asset_bundle = true;
         self.asset_count += other.asset_count;
-        
+
         // Sum sizes
         match (self.size_bytes, other.size_bytes) {
             (Some(a), Some(b)) => self.size_bytes = Some(a + b),
             (None, Some(b)) => self.size_bytes = Some(b),
             _ => {}
         }
-        
+
         // Take max duration (parallel loads)
         match (self.duration_ms, other.duration_ms) {
             (Some(a), Some(b)) => self.duration_ms = Some(a.max(b)),
             (None, Some(b)) => self.duration_ms = Some(b),
             _ => {}
         }
-        
+
         // Update path to show bundle info
         self.path = format!("[{} assets]", self.asset_count);
-        
+
         // Use most recent timestamp
         if other.timestamp > self.timestamp {
             self.timestamp = other.timestamp;
@@ -524,7 +535,9 @@ impl NetworkEvent {
     /// Format size for display
     pub fn display_size(&self) -> String {
         match self.size_bytes {
-            Some(bytes) if bytes >= 1024 * 1024 => format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0)),
+            Some(bytes) if bytes >= 1024 * 1024 => {
+                format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+            }
             Some(bytes) if bytes >= 1024 => format!("{:.1}KB", bytes as f64 / 1024.0),
             Some(bytes) => format!("{}B", bytes),
             None => "---".to_string(),
@@ -551,14 +564,14 @@ impl NetworkEventBuffer {
         // Deduplicate: skip if we have same (session_id, path) within last 2 seconds
         // This prevents duplicate entries from session activity + routing logs
         let dominated = self.events.iter().rev().take(10).any(|e| {
-            e.session_id == event.session_id 
-                && e.path == event.path 
+            e.session_id == event.session_id
+                && e.path == event.path
                 && (event.timestamp - e.timestamp).num_seconds().abs() < 2
         });
         if dominated {
             return; // Skip duplicate
         }
-        
+
         // Check if this is a static asset that should be bundled with the previous event
         if event.is_static_asset() {
             // Look for an existing asset bundle from the same session in recent events
@@ -566,7 +579,7 @@ impl NetworkEventBuffer {
             let bundle_idx = self.events.iter().rev().take(5).position(|e| {
                 e.session_id == event.session_id && (e.is_asset_bundle || e.is_static_asset())
             });
-            
+
             if let Some(rev_idx) = bundle_idx {
                 // Convert reverse index to forward index
                 let idx = self.events.len() - 1 - rev_idx;
@@ -576,7 +589,7 @@ impl NetworkEventBuffer {
                 }
             }
         }
-        
+
         // Not an asset or no bundle to merge with - add as new event
         if self.events.len() >= self.capacity {
             self.events.pop_front();
@@ -756,14 +769,14 @@ impl LogBuffer {
     pub fn scroll(&self, offset: usize, count: usize, min_level: LogLevel) -> Vec<&LogEntry> {
         let filtered: Vec<_> = self.filtered(min_level);
         let len = filtered.len();
-        
+
         if len == 0 || offset >= len {
             return vec![];
         }
 
         let start = len.saturating_sub(offset + count);
         let end = len.saturating_sub(offset);
-        
+
         filtered[start..end].to_vec()
     }
 
@@ -780,13 +793,13 @@ fn strip_ansi_codes(s: &str) -> String {
     // Also handles bare [0m, [2m, [32m etc. that may appear without ESC
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         if c == '\x1b' || c == '\u{001b}' {
             // Skip escape sequence: ESC [ ... m
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                // Skip until 'm' or end of string
+                              // Skip until 'm' or end of string
                 while let Some(c) = chars.next() {
                     if c == 'm' {
                         break;
@@ -797,7 +810,7 @@ fn strip_ansi_codes(s: &str) -> String {
             // Check if this is a bare ANSI code like [0m or [32m
             let mut is_ansi = true;
             let mut peek_chars: Vec<char> = Vec::new();
-            
+
             // Peek ahead to check pattern: digits followed by 'm'
             loop {
                 match chars.peek() {
@@ -822,7 +835,7 @@ fn strip_ansi_codes(s: &str) -> String {
                     }
                 }
             }
-            
+
             if !is_ansi {
                 // Not ANSI, output the '[' and any peeked chars
                 result.push('[');
@@ -841,16 +854,16 @@ fn strip_ansi_codes(s: &str) -> String {
 pub fn parse_log_line(line: &str) -> Option<LogEntry> {
     // Try to parse structured log format: "2026-01-16T16:49:29.506004Z  INFO fortify_orchestrator: Message"
     // Also handles: "Jan 16 18:25:26.605 [notice] Bootstrapped 100%"
-    
+
     // First strip any ANSI escape codes
     let line = strip_ansi_codes(line);
     let line = line.trim();
     if line.is_empty() {
         return None;
     }
-    
+
     // Skip very short lines that are just fragments from ANSI formatting
-    // These are typically bare values like "true", "sigilll", "30" 
+    // These are typically bare values like "true", "sigilll", "30"
     if line.len() < 10 {
         // Allow Tor percentage lines like "10%" and status messages
         if !line.ends_with('%') && !line.contains("OK") && !line.contains("Done") {
@@ -872,12 +885,12 @@ pub fn parse_log_line(line: &str) -> Option<LogEntry> {
     } else {
         LogLevel::Info
     };
-    
+
     // Skip DEBUG and TRACE level logs to reduce noise in TUI
     if level == LogLevel::Debug || level == LogLevel::Trace {
         return None;
     }
-    
+
     // Skip noisy patterns that don't provide useful info
     let noisy_patterns = [
         "Found binary",
@@ -885,7 +898,7 @@ pub fn parse_log_line(line: &str) -> Option<LogEntry> {
         "target/debug/",
         "enabled=false, prefix=''",
         "OrchestratorConfig {",
-        "resource-usage",  // Filter out periodic resource monitoring logs
+        "resource-usage", // Filter out periodic resource monitoring logs
     ];
     for pattern in noisy_patterns {
         if line.contains(pattern) {
@@ -919,14 +932,14 @@ fn extract_message(line: &str) -> String {
             return line[idx + colon_idx + 2..].to_string();
         }
     }
-    
+
     // Try to find message after "[notice] ", "[warn] ", etc.
     for marker in &["[notice] ", "[warn] ", "[err] ", "[debug] "] {
         if let Some(idx) = line.find(marker) {
             return line[idx + marker.len()..].to_string();
         }
     }
-    
+
     // Try to find message after " INFO ", " WARN ", etc.
     for marker in &[" INFO ", " WARN ", " ERROR ", " DEBUG ", " TRACE "] {
         if let Some(idx) = line.find(marker) {
@@ -938,7 +951,7 @@ fn extract_message(line: &str) -> String {
             return rest.to_string();
         }
     }
-    
+
     // If line starts with timestamp pattern, try to strip it
     // Pattern: "Jan 16 18:25:26.605" or "2026-01-16T18:25:26"
     if line.len() > 24 {
@@ -952,10 +965,23 @@ fn extract_message(line: &str) -> String {
                 }
             }
         }
-        // Check for "Mon DD HH:MM:SS" format  
+        // Check for "Mon DD HH:MM:SS" format
         let first_word: String = line.chars().take_while(|c| c.is_alphabetic()).collect();
-        if matches!(first_word.as_str(), "Jan" | "Feb" | "Mar" | "Apr" | "May" | "Jun" | 
-                                          "Jul" | "Aug" | "Sep" | "Oct" | "Nov" | "Dec") {
+        if matches!(
+            first_word.as_str(),
+            "Jan"
+                | "Feb"
+                | "Mar"
+                | "Apr"
+                | "May"
+                | "Jun"
+                | "Jul"
+                | "Aug"
+                | "Sep"
+                | "Oct"
+                | "Nov"
+                | "Dec"
+        ) {
             // Find the space after the time (after .NNN or after SS)
             // "Jan 16 18:25:26.605 [notice] message"
             if let Some(bracket_idx) = line.find('[') {
@@ -972,7 +998,7 @@ fn extract_message(line: &str) -> String {
             }
         }
     }
-    
+
     // Fallback: return the original line
     line.to_string()
 }
@@ -988,7 +1014,7 @@ mod tests {
         buf.push(LogEntry::info("two"));
         buf.push(LogEntry::info("three"));
         buf.push(LogEntry::info("four"));
-        
+
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.entries.front().unwrap().message, "two");
     }

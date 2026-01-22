@@ -1,32 +1,31 @@
+use chrono::{DateTime, Duration, Utc};
 use fortify_core::{SessionManager, SessionToken, TrustTier};
+use hmac::{Hmac, Mac};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use chrono::{DateTime, Utc, Duration};
-use serde::{Deserialize, Serialize};
-use hmac::{Hmac, Mac};
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub mod server;
 pub mod bitmap;
-pub mod captcha_types;
 pub mod captcha_html;
+pub mod captcha_types;
+pub mod server;
 
 pub use bitmap::CaptchaDifficulty;
-pub use captcha_types::{
-    CaptchaType, CaptchaConfig, CaptchaTypeConfig, CaptchaData,
-    EmojiChallenge, DirectionChallenge, SequenceChallenge,
-    WordUnscrambleChallenge, ImageRotationChallenge, SilhouetteChallenge,
-};
 pub use captcha_html::{
-    render_captcha_page, render_captcha_page_with_timer, 
-    render_captcha_page_with_reason, render_captcha_page_with_timer_and_reason
+    render_captcha_page, render_captcha_page_with_reason, render_captcha_page_with_timer,
+    render_captcha_page_with_timer_and_reason,
+};
+pub use captcha_types::{
+    CaptchaConfig, CaptchaData, CaptchaType, CaptchaTypeConfig, DirectionChallenge, EmojiChallenge,
+    ImageRotationChallenge, SequenceChallenge, SilhouetteChallenge, WordUnscrambleChallenge,
 };
 
 /// Single-use verification token issued after CAPTCHA solve
@@ -47,7 +46,7 @@ impl VerificationToken {
         let now = Utc::now();
         let user_id = Uuid::new_v4().to_string();
         let user_agent_hash = Self::hash_user_agent(user_agent);
-        
+
         Self {
             user_id,
             issued_at: now,
@@ -57,57 +56,57 @@ impl VerificationToken {
             signature: String::new(),
         }
     }
-    
+
     /// Check if token is valid (not expired, has uses remaining)
     pub fn is_valid(&self) -> bool {
         let now = Utc::now();
         now < self.expires_at && self.uses_remaining > 0
     }
-    
+
     /// Mark token as used
     pub fn mark_used(&mut self) {
         self.uses_remaining = 0;
     }
-    
+
     /// Hash User-Agent for binding (Tor-stable within session)
     fn hash_user_agent(ua: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(ua.as_bytes());
         format!("{:x}", hasher.finalize())
     }
-    
+
     /// Encode token to string (JWT-like format)
     pub fn encode(&self) -> String {
         // Serialize token without signature
         let payload = serde_json::to_string(&self).unwrap();
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         let encoded = general_purpose::STANDARD.encode(payload);
         let signature = Self::sign(&encoded);
         format!("{}.{}", encoded, signature)
     }
-    
+
     /// Decode token from string
     pub fn decode(token_str: &str) -> Result<Self> {
         let parts: Vec<&str> = token_str.split('.').collect();
         if parts.len() != 2 {
             return Err(GateError::InvalidCaptcha);
         }
-        
+
         // Verify signature
         let expected_sig = Self::sign(parts[0]);
         if parts[1] != expected_sig {
             return Err(GateError::InvalidCaptcha);
         }
-        
+
         // Decode payload
-        use base64::{Engine as _, engine::general_purpose};
-        let payload = general_purpose::STANDARD.decode(parts[0])
+        use base64::{engine::general_purpose, Engine as _};
+        let payload = general_purpose::STANDARD
+            .decode(parts[0])
             .map_err(|_| GateError::InvalidCaptcha)?;
-        
-        serde_json::from_slice(&payload)
-            .map_err(|_| GateError::InvalidCaptcha)
+
+        serde_json::from_slice(&payload).map_err(|_| GateError::InvalidCaptcha)
     }
-    
+
     /// Sign data with HMAC-SHA256
     fn sign(data: &str) -> String {
         // TODO: Load secret from config
@@ -116,7 +115,7 @@ impl VerificationToken {
         mac.update(data.as_bytes());
         format!("{:x}", mac.finalize().into_bytes())
     }
-    
+
     /// Validate User-Agent matches token binding
     pub fn validate_user_agent(&self, current_ua: &str) -> bool {
         let current_hash = Self::hash_user_agent(current_ua);
@@ -127,7 +126,7 @@ impl VerificationToken {
 // Global cache of verification tokens (user_id -> token)
 // Used to prevent replay attacks
 lazy_static::lazy_static! {
-    pub static ref VERIFICATION_TOKEN_CACHE: Arc<Mutex<HashMap<String, VerificationToken>>> = 
+    pub static ref VERIFICATION_TOKEN_CACHE: Arc<Mutex<HashMap<String, VerificationToken>>> =
         Arc::new(Mutex::new(HashMap::new()));
 }
 
@@ -177,7 +176,7 @@ impl CaptchaChallenge {
     pub fn generate() -> Self {
         Self::generate_with_difficulty(CaptchaDifficulty::Medium)
     }
-    
+
     /// Generate a new captcha challenge with specified difficulty
     pub fn generate_with_difficulty(difficulty: CaptchaDifficulty) -> Self {
         let text = Self::generate_text(6);
@@ -328,7 +327,7 @@ impl VerificationState {
             pow_solved: false,
             created_at,
             is_threat: false,
-            captchas_remaining: 1,  // Default: 1 captcha needed
+            captchas_remaining: 1, // Default: 1 captcha needed
             captchas_solved: 0,
         }
     }
@@ -425,17 +424,17 @@ impl Gate {
             captcha_config: Arc::new(Mutex::new(CaptchaConfig::default())),
         }
     }
-    
+
     /// Get the current captcha configuration
     pub fn get_captcha_config(&self) -> CaptchaConfig {
         self.captcha_config.lock().unwrap().clone()
     }
-    
+
     /// Update the captcha configuration
     pub fn update_captcha_config(&self, config: CaptchaConfig) {
         *self.captcha_config.lock().unwrap() = config;
     }
-    
+
     /// Get verification timeout in seconds
     pub fn get_verification_timeout(&self) -> u64 {
         self.verification_timeout
@@ -458,16 +457,20 @@ impl Gate {
     pub fn create_verification(&self, session_id: String) -> Result<VerificationState> {
         self.create_verification_with_difficulty(session_id, CaptchaDifficulty::Medium)
     }
-    
+
     /// Create a new verification session with specified captcha difficulty
-    pub fn create_verification_with_difficulty(&self, session_id: String, difficulty: CaptchaDifficulty) -> Result<VerificationState> {
+    pub fn create_verification_with_difficulty(
+        &self,
+        session_id: String,
+        difficulty: CaptchaDifficulty,
+    ) -> Result<VerificationState> {
         self.create_verification_with_type(session_id, CaptchaType::BmpText, difficulty, false)
     }
-    
+
     /// Create a new verification session with specified captcha type
     pub fn create_verification_with_type(
-        &self, 
-        session_id: String, 
+        &self,
+        session_id: String,
         captcha_type: CaptchaType,
         difficulty: CaptchaDifficulty,
         is_threat: bool,
@@ -475,10 +478,13 @@ impl Gate {
         // Rate limit verification creation (10 per minute per IP)
         // This prevents attackers from flooding the Gate with verification requests
         if let Err(_) = self.rate_limiter.check_rate_limit(&session_id) {
-            tracing::warn!("Rate limit exceeded for verification creation: {}", session_id);
+            tracing::warn!(
+                "Rate limit exceeded for verification creation: {}",
+                session_id
+            );
             return Err(GateError::RateLimitExceeded);
         }
-        
+
         let mut states = self.verification_states.lock().unwrap();
 
         // Check if we're at capacity
@@ -492,12 +498,14 @@ impl Gate {
         // Threat sessions (demoted users) need 2 captchas, regular users need 1
         state.captchas_remaining = if is_threat { 2 } else { 1 };
         state.captchas_solved = 0;
-        
+
         tracing::info!(
             "Created verification session {}: is_threat={}, captchas_remaining={}",
-            session_id, is_threat, state.captchas_remaining
+            session_id,
+            is_threat,
+            state.captchas_remaining
         );
-        
+
         // Generate the appropriate captcha based on type
         let config = CaptchaTypeConfig::default_for(captcha_type);
         match captcha_type {
@@ -508,40 +516,40 @@ impl Gate {
                     image_data: challenge.image_data.clone(),
                 });
                 state.captcha_challenge = Some(challenge);
-            },
+            }
             CaptchaType::Emoji => {
-                state.captcha_data = Some(CaptchaData::Emoji(
-                    EmojiChallenge::generate(config.option_count)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Emoji(EmojiChallenge::generate(
+                    config.option_count,
+                )));
+            }
             CaptchaType::Direction => {
                 let include_diagonals = config.difficulty >= 2;
-                state.captcha_data = Some(CaptchaData::Direction(
-                    DirectionChallenge::generate(include_diagonals)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Direction(DirectionChallenge::generate(
+                    include_diagonals,
+                )));
+            }
             CaptchaType::Sequence => {
-                state.captcha_data = Some(CaptchaData::Sequence(
-                    SequenceChallenge::generate(config.option_count)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Sequence(SequenceChallenge::generate(
+                    config.option_count,
+                )));
+            }
             CaptchaType::WordUnscramble => {
                 state.captcha_data = Some(CaptchaData::WordUnscramble(
-                    WordUnscrambleChallenge::generate(config.difficulty)
+                    WordUnscrambleChallenge::generate(config.difficulty),
                 ));
-            },
+            }
             CaptchaType::ImageRotation => {
                 state.captcha_data = Some(CaptchaData::ImageRotation(
-                    ImageRotationChallenge::generate()
+                    ImageRotationChallenge::generate(),
                 ));
-            },
+            }
             CaptchaType::Silhouette => {
-                state.captcha_data = Some(CaptchaData::Silhouette(
-                    SilhouetteChallenge::generate(config.option_count)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Silhouette(SilhouetteChallenge::generate(
+                    config.option_count,
+                )));
+            }
         }
-        
+
         state.pow_challenge = Some(ProofOfWorkChallenge::new(self.pow_difficulty));
 
         states.insert(session_id, state.clone());
@@ -552,22 +560,29 @@ impl Gate {
         let states = self.verification_states.lock().unwrap();
         states.get(session_id).cloned()
     }
-    
+
     pub fn get_captcha_challenge(&self, session_id: &str) -> Option<CaptchaChallenge> {
         let states = self.verification_states.lock().unwrap();
-        states.get(session_id).and_then(|s| s.captcha_challenge.clone())
+        states
+            .get(session_id)
+            .and_then(|s| s.captcha_challenge.clone())
     }
 
     /// Verify full submission and issue token
-    pub fn verify_submission(&self, session_id: &str, captcha: &str, pow_nonce: u64) -> Result<String> {
+    pub fn verify_submission(
+        &self,
+        session_id: &str,
+        captcha: &str,
+        pow_nonce: u64,
+    ) -> Result<String> {
         // verify_captcha and verify_pow update state in place.
         // We need to call them sequentially.
-        
+
         self.verify_captcha(session_id, captcha)?;
         self.verify_pow(session_id, pow_nonce)?;
-        
+
         let token = self.issue_token(session_id, &self.secret_key)?;
-        
+
         // Return full encoded token
         token.encode().map_err(|_| GateError::InvalidCaptcha)
     }
@@ -583,11 +598,11 @@ impl Gate {
 
         // Check for timeout based on captcha type
         let is_expired = match &state.captcha_data {
-            Some(CaptchaData::BmpText { .. }) => {
-                state.captcha_challenge.as_ref()
-                    .map(|c| c.is_expired(self.verification_timeout))
-                    .unwrap_or(true)
-            },
+            Some(CaptchaData::BmpText { .. }) => state
+                .captcha_challenge
+                .as_ref()
+                .map(|c| c.is_expired(self.verification_timeout))
+                .unwrap_or(true),
             Some(CaptchaData::Emoji(c)) => c.is_expired(timeout),
             Some(CaptchaData::Direction(c)) => c.is_expired(timeout),
             Some(CaptchaData::Sequence(c)) => c.is_expired(timeout),
@@ -596,21 +611,21 @@ impl Gate {
             Some(CaptchaData::Silhouette(c)) => c.is_expired(timeout),
             None => {
                 // Legacy fallback - check old captcha_challenge field
-                state.captcha_challenge.as_ref()
+                state
+                    .captcha_challenge
+                    .as_ref()
                     .map(|c| c.is_expired(self.verification_timeout))
                     .unwrap_or(true)
             }
         };
-        
+
         if is_expired {
             return Err(GateError::ChallengeExpired);
         }
 
         // Verify based on captcha type
         let is_valid = match &state.captcha_data {
-            Some(CaptchaData::BmpText { text, .. }) => {
-                solution.eq_ignore_ascii_case(text)
-            },
+            Some(CaptchaData::BmpText { text, .. }) => solution.eq_ignore_ascii_case(text),
             Some(CaptchaData::Emoji(c)) => c.verify(solution),
             Some(CaptchaData::Direction(c)) => c.verify(solution),
             Some(CaptchaData::Sequence(c)) => c.verify(solution),
@@ -619,12 +634,14 @@ impl Gate {
             Some(CaptchaData::Silhouette(c)) => c.verify(solution),
             None => {
                 // Legacy fallback - check old captcha_challenge field
-                state.captcha_challenge.as_ref()
+                state
+                    .captcha_challenge
+                    .as_ref()
                     .map(|c| c.verify(solution))
                     .unwrap_or(false)
             }
         };
-        
+
         if !is_valid {
             // Track failed attempt for progressive delay
             if let Some(captcha) = state.captcha_challenge.as_mut() {
@@ -638,12 +655,15 @@ impl Gate {
         if state.captchas_remaining > 0 {
             state.captchas_remaining -= 1;
         }
-        
+
         tracing::info!(
             "Session {} captcha verified: is_threat={}, captchas_remaining={}, captchas_solved={}",
-            session_id, state.is_threat, state.captchas_remaining, state.captchas_solved
+            session_id,
+            state.is_threat,
+            state.captchas_remaining,
+            state.captchas_solved
         );
-        
+
         // Only mark fully solved if no more captchas remain
         if state.captchas_remaining == 0 {
             state.captcha_solved = true;
@@ -654,110 +674,114 @@ impl Gate {
             Err(GateError::AdditionalCaptchaRequired)
         }
     }
-    
+
     /// Get the number of failed attempts for a session
     pub fn get_failed_attempts(&self, session_id: &str) -> u32 {
         let states = self.verification_states.lock().unwrap();
-        states.get(session_id)
+        states
+            .get(session_id)
             .and_then(|s| s.captcha_challenge.as_ref())
             .map(|c| c.failed_attempts)
             .unwrap_or(0)
     }
-    
+
     /// Get the number of captchas remaining for a session
     pub fn get_captchas_remaining(&self, session_id: &str) -> u8 {
         let states = self.verification_states.lock().unwrap();
-        states.get(session_id)
+        states
+            .get(session_id)
             .map(|s| s.captchas_remaining)
             .unwrap_or(0)
     }
-    
+
     /// Get the number of captchas already solved for a session
     pub fn get_captchas_solved(&self, session_id: &str) -> u8 {
         let states = self.verification_states.lock().unwrap();
-        states.get(session_id)
+        states
+            .get(session_id)
             .map(|s| s.captchas_solved)
             .unwrap_or(0)
     }
-    
+
     /// Check if session is a threat/demoted session
     pub fn is_threat_session(&self, session_id: &str) -> bool {
         let states = self.verification_states.lock().unwrap();
-        states.get(session_id)
-            .map(|s| s.is_threat)
-            .unwrap_or(false)
+        states.get(session_id).map(|s| s.is_threat).unwrap_or(false)
     }
-    
+
     /// Generate a new captcha for an existing session (used for second captcha in threat verification)
     pub fn regenerate_captcha(&self, session_id: &str, captcha_type: CaptchaType) -> Result<()> {
         let mut states = self.verification_states.lock().unwrap();
-        let state = states.get_mut(session_id).ok_or(GateError::ChallengeNotFound)?;
-        
+        let state = states
+            .get_mut(session_id)
+            .ok_or(GateError::ChallengeNotFound)?;
+
         // Update captcha type for the new challenge
         state.captcha_type = captcha_type;
-        
+
         // Generate the appropriate captcha based on type
         let config = CaptchaTypeConfig::default_for(captcha_type);
         match captcha_type {
             CaptchaType::BmpText => {
-                let challenge = CaptchaChallenge::generate_with_difficulty(CaptchaDifficulty::Medium);
+                let challenge =
+                    CaptchaChallenge::generate_with_difficulty(CaptchaDifficulty::Medium);
                 state.captcha_data = Some(CaptchaData::BmpText {
                     text: challenge.text.clone(),
                     image_data: challenge.image_data.clone(),
                 });
                 state.captcha_challenge = Some(challenge);
-            },
+            }
             CaptchaType::Emoji => {
-                state.captcha_data = Some(CaptchaData::Emoji(
-                    EmojiChallenge::generate(config.option_count)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Emoji(EmojiChallenge::generate(
+                    config.option_count,
+                )));
+            }
             CaptchaType::Direction => {
                 let include_diagonals = config.difficulty >= 2;
-                state.captcha_data = Some(CaptchaData::Direction(
-                    DirectionChallenge::generate(include_diagonals)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Direction(DirectionChallenge::generate(
+                    include_diagonals,
+                )));
+            }
             CaptchaType::Sequence => {
-                state.captcha_data = Some(CaptchaData::Sequence(
-                    SequenceChallenge::generate(config.option_count)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Sequence(SequenceChallenge::generate(
+                    config.option_count,
+                )));
+            }
             CaptchaType::WordUnscramble => {
                 state.captcha_data = Some(CaptchaData::WordUnscramble(
-                    WordUnscrambleChallenge::generate(config.difficulty)
+                    WordUnscrambleChallenge::generate(config.difficulty),
                 ));
-            },
+            }
             CaptchaType::ImageRotation => {
                 state.captcha_data = Some(CaptchaData::ImageRotation(
-                    ImageRotationChallenge::generate()
+                    ImageRotationChallenge::generate(),
                 ));
-            },
+            }
             CaptchaType::Silhouette => {
-                state.captcha_data = Some(CaptchaData::Silhouette(
-                    SilhouetteChallenge::generate(config.option_count)
-                ));
-            },
+                state.captcha_data = Some(CaptchaData::Silhouette(SilhouetteChallenge::generate(
+                    config.option_count,
+                )));
+            }
         }
-        
+
         // Reset the created_at for the new captcha timeout
         state.created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Ok(())
     }
-    
+
     /// Calculate progressive delay based on failed attempts (in seconds)
     pub fn calculate_delay(&self, failed_attempts: u32) -> u64 {
         match failed_attempts {
             0 => 0,
-            1 => 2,   // 2 seconds after 1st fail
-            2 => 5,   // 5 seconds after 2nd fail
-            3 => 10,  // 10 seconds after 3rd fail
-            4 => 20,  // 20 seconds after 4th fail
-            _ => 30,  // 30 seconds cap for 5+ fails
+            1 => 2,  // 2 seconds after 1st fail
+            2 => 5,  // 5 seconds after 2nd fail
+            3 => 10, // 10 seconds after 3rd fail
+            4 => 20, // 20 seconds after 4th fail
+            _ => 30, // 30 seconds cap for 5+ fails
         }
     }
 
@@ -800,7 +824,7 @@ impl Gate {
         let mut token = SessionToken::new(
             session_id.to_string(),
             TrustTier::Verified,
-            3600, // 1 hour
+            3600,      // 1 hour
             "unknown", // Backward compatibility: old flow doesn't have UA
         );
 
@@ -812,7 +836,12 @@ impl Gate {
     }
 
     /// Create a session token directly (for token upgrade flow)
-    pub fn create_session_token(&self, session_id: &str, tier: TrustTier, user_agent: &str) -> String {
+    pub fn create_session_token(
+        &self,
+        session_id: &str,
+        tier: TrustTier,
+        user_agent: &str,
+    ) -> String {
         let mut token = SessionToken::new(
             session_id.to_string(),
             tier,
@@ -893,7 +922,7 @@ mod tests {
 
         state.pow_solved = true;
         assert!(!state.is_complete()); // Still need to solve captchas
-        
+
         state.captchas_remaining = 0;
         assert!(state.is_complete()); // Now complete
     }
@@ -976,7 +1005,7 @@ mod tests {
 /// Background task to clean up expired verification tokens
 pub async fn start_token_cleanup_task() {
     use tokio::time::{interval, Duration};
-    
+
     tokio::spawn(async {
         let mut interval = interval(Duration::from_secs(30));
         loop {
@@ -986,7 +1015,7 @@ pub async fn start_token_cleanup_task() {
             let before_count = cache.len();
             cache.retain(|_, token| now < token.expires_at);
             let after_count = cache.len();
-            
+
             if before_count != after_count {
                 tracing::info!(
                     "Token cleanup: removed {} expired tokens, {} active verification tokens remaining",

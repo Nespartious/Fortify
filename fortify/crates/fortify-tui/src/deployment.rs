@@ -1,16 +1,16 @@
 //! Deployment management - starting, stopping, monitoring
 
 use anyhow::Result;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, Mutex, broadcast};
-use chrono::Local;
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 use crate::config::FortifyConfig;
-use crate::logging::{LogEntry, LogLevel, parse_log_line};
+use crate::logging::{parse_log_line, LogEntry, LogLevel};
 
 /// Deployment state tracking (persisted to disk)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,14 +35,14 @@ impl DeploymentStateFile {
         let content = std::fs::read_to_string(path)?;
         Ok(serde_json::from_str(&content)?)
     }
-    
+
     /// Save to disk
     pub fn save(&self, path: &std::path::Path) -> Result<()> {
         let content = serde_json::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
     }
-    
+
     /// Get default path (persistent location)
     pub fn default_path() -> std::path::PathBuf {
         if let Some(home) = std::env::var_os("HOME") {
@@ -191,7 +191,7 @@ pub fn check_dependencies() -> Vec<DependencyCheckResult> {
             } else {
                 format!("{} {}", dep.install_cmd, dep.install_args.join(" "))
             };
-            
+
             DependencyCheckResult {
                 name: dep.name.to_string(),
                 available: dep.is_available(),
@@ -274,55 +274,64 @@ impl DeploymentManager {
     pub async fn get_state(&self) -> DeploymentState {
         self.state.lock().await.clone()
     }
-    
+
     /// Check dependencies and log results
     pub async fn check_and_log_dependencies(&self) -> Vec<DependencyCheckResult> {
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "deps",
-            "Checking system dependencies..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "deps",
+                "Checking system dependencies...",
+            ))
+            .await
+            .ok();
+
         let results = check_dependencies();
-        
+
         for result in &results {
             let status = if result.available { "✓" } else { "✗" };
-            let level = if result.available { 
-                LogLevel::Info 
-            } else if result.required { 
-                LogLevel::Error 
-            } else { 
-                LogLevel::Warn 
+            let level = if result.available {
+                LogLevel::Info
+            } else if result.required {
+                LogLevel::Error
+            } else {
+                LogLevel::Warn
             };
-            
-            self.log_tx.send(LogEntry::from_source(
-                level,
-                "deps",
-                &format!("[{}] {} - {}", status, result.name, result.description)
-            )).await.ok();
+
+            self.log_tx
+                .send(LogEntry::from_source(
+                    level,
+                    "deps",
+                    &format!("[{}] {} - {}", status, result.name, result.description),
+                ))
+                .await
+                .ok();
         }
-        
+
         results
     }
-    
+
     /// Install a specific dependency
     pub async fn install_dependency(&self, dep: &Dependency) -> Result<bool> {
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            &format!("Installing {}...", dep.name)
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                &format!("Installing {}...", dep.name),
+            ))
+            .await
+            .ok();
+
         // Special handling for mkp224o (needs to be built from source)
         if dep.name == "mkp224o" {
             return self.install_mkp224o().await;
         }
-        
+
         // Special handling for vanguards (pip can be tricky on modern Ubuntu)
         if dep.name == "vanguards" {
             return self.install_vanguards().await;
         }
-        
+
         // Build command with or without sudo
         let (cmd, args) = if dep.needs_sudo {
             ("sudo", {
@@ -333,50 +342,62 @@ impl DeploymentManager {
         } else {
             (dep.install_cmd, dep.install_args.to_vec())
         };
-        
+
         let output = Command::new(cmd)
             .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await?;
-        
+
         if output.status.success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Info,
-                "install",
-                &format!("Successfully installed {}", dep.name)
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Info,
+                    "install",
+                    &format!("Successfully installed {}", dep.name),
+                ))
+                .await
+                .ok();
             Ok(true)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Error,
-                "install",
-                &format!("Failed to install {}: {}", dep.name, stderr.trim())
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Error,
+                    "install",
+                    &format!("Failed to install {}: {}", dep.name, stderr.trim()),
+                ))
+                .await
+                .ok();
             Ok(false)
         }
     }
-    
+
     /// Install mkp224o from source
     async fn install_mkp224o(&self) -> Result<bool> {
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Building mkp224o from source..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Building mkp224o from source...",
+            ))
+            .await
+            .ok();
+
         let temp_dir = std::env::temp_dir().join("mkp224o-build");
         let _ = std::fs::remove_dir_all(&temp_dir);
-        
+
         // Clone repository
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Cloning mkp224o repository..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Cloning mkp224o repository...",
+            ))
+            .await
+            .ok();
+
         let clone = Command::new("git")
             .args(&["clone", "https://github.com/cathugger/mkp224o.git"])
             .arg(&temp_dir)
@@ -384,69 +405,87 @@ impl DeploymentManager {
             .stderr(Stdio::piped())
             .output()
             .await?;
-        
+
         if !clone.status.success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Error,
-                "install",
-                "Failed to clone mkp224o repository"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Error,
+                    "install",
+                    "Failed to clone mkp224o repository",
+                ))
+                .await
+                .ok();
             return Ok(false);
         }
-        
+
         // Run autogen.sh
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Running autogen.sh..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Running autogen.sh...",
+            ))
+            .await
+            .ok();
+
         let autogen = Command::new("./autogen.sh")
             .current_dir(&temp_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await;
-        
+
         if autogen.is_err() || !autogen.as_ref().unwrap().status.success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Error,
-                "install",
-                "autogen.sh failed"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Error,
+                    "install",
+                    "autogen.sh failed",
+                ))
+                .await
+                .ok();
             return Ok(false);
         }
-        
+
         // Run configure
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Running configure..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Running configure...",
+            ))
+            .await
+            .ok();
+
         let configure = Command::new("./configure")
             .current_dir(&temp_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await?;
-        
+
         if !configure.status.success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Error,
-                "install",
-                "configure failed - you may need libsodium-dev"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Error,
+                    "install",
+                    "configure failed - you may need libsodium-dev",
+                ))
+                .await
+                .ok();
             return Ok(false);
         }
-        
+
         // Run make
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Compiling mkp224o..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Compiling mkp224o...",
+            ))
+            .await
+            .ok();
+
         let make = Command::new("make")
             .args(&["-j4"])
             .current_dir(&temp_dir)
@@ -454,23 +493,29 @@ impl DeploymentManager {
             .stderr(Stdio::piped())
             .output()
             .await?;
-        
+
         if !make.status.success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Error,
-                "install",
-                "make failed"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Error,
+                    "install",
+                    "make failed",
+                ))
+                .await
+                .ok();
             return Ok(false);
         }
-        
+
         // Copy to /usr/local/bin
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Installing mkp224o to /usr/local/bin (requires sudo)..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Installing mkp224o to /usr/local/bin (requires sudo)...",
+            ))
+            .await
+            .ok();
+
         let install = Command::new("sudo")
             .args(&["cp", "mkp224o", "/usr/local/bin/"])
             .current_dir(&temp_dir)
@@ -478,35 +523,44 @@ impl DeploymentManager {
             .stderr(Stdio::piped())
             .output()
             .await?;
-        
+
         // Cleanup
         let _ = std::fs::remove_dir_all(&temp_dir);
-        
+
         if install.status.success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Info,
-                "install",
-                "mkp224o installed successfully"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Info,
+                    "install",
+                    "mkp224o installed successfully",
+                ))
+                .await
+                .ok();
             Ok(true)
         } else {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Error,
-                "install",
-                "Failed to copy mkp224o to /usr/local/bin"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Error,
+                    "install",
+                    "Failed to copy mkp224o to /usr/local/bin",
+                ))
+                .await
+                .ok();
             Ok(false)
         }
     }
-    
+
     /// Install vanguards via pip (handles multiple pip configurations)
     async fn install_vanguards(&self) -> Result<bool> {
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "install",
-            "Installing vanguards via pip..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "install",
+                "Installing vanguards via pip...",
+            ))
+            .await
+            .ok();
+
         // First, check if pip3 is available - if not, install it
         let pip_check = Command::new("which")
             .arg("pip3")
@@ -514,53 +568,71 @@ impl DeploymentManager {
             .stderr(Stdio::null())
             .status()
             .await;
-        
+
         if pip_check.is_err() || !pip_check.unwrap().success() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Info,
-                "install",
-                "pip3 not found, installing python3-pip first..."
-            )).await.ok();
-            
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Info,
+                    "install",
+                    "pip3 not found, installing python3-pip first...",
+                ))
+                .await
+                .ok();
+
             let pip_install = Command::new("sudo")
                 .args(&["apt-get", "install", "-y", "python3-pip"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .await;
-            
+
             match pip_install {
                 Ok(result) if result.status.success() => {
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Info,
-                        "install",
-                        "python3-pip installed successfully"
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Info,
+                            "install",
+                            "python3-pip installed successfully",
+                        ))
+                        .await
+                        .ok();
                 }
                 Ok(result) => {
                     let stderr = String::from_utf8_lossy(&result.stderr);
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Error,
-                        "install",
-                        &format!("Failed to install python3-pip: {}", stderr.lines().next().unwrap_or("unknown error"))
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Error,
+                            "install",
+                            &format!(
+                                "Failed to install python3-pip: {}",
+                                stderr.lines().next().unwrap_or("unknown error")
+                            ),
+                        ))
+                        .await
+                        .ok();
                     return Ok(false);
                 }
                 Err(e) => {
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Error,
-                        "install",
-                        &format!("Failed to run apt-get: {}", e)
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Error,
+                            "install",
+                            &format!("Failed to run apt-get: {}", e),
+                        ))
+                        .await
+                        .ok();
                     return Ok(false);
                 }
             }
         }
-        
+
         // Try multiple methods in order of preference
         let methods = [
             // Method 1: pip3 with --break-system-packages (Ubuntu 23.04+)
-            ("pip3", vec!["install", "--break-system-packages", "vanguards"]),
+            (
+                "pip3",
+                vec!["install", "--break-system-packages", "vanguards"],
+            ),
             // Method 2: pip3 with --user flag
             ("pip3", vec!["install", "--user", "vanguards"]),
             // Method 3: pipx (if available)
@@ -568,73 +640,91 @@ impl DeploymentManager {
             // Method 4: Plain pip3 (older systems)
             ("pip3", vec!["install", "vanguards"]),
         ];
-        
+
         for (cmd, args) in &methods {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Info,
-                "install",
-                &format!("Trying: {} {}", cmd, args.join(" "))
-            )).await.ok();
-            
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Info,
+                    "install",
+                    &format!("Trying: {} {}", cmd, args.join(" ")),
+                ))
+                .await
+                .ok();
+
             let output = Command::new(cmd)
                 .args(args)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .await;
-            
+
             match output {
                 Ok(result) if result.status.success() => {
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Info,
-                        "install",
-                        "vanguards installed successfully"
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Info,
+                            "install",
+                            "vanguards installed successfully",
+                        ))
+                        .await
+                        .ok();
                     return Ok(true);
                 }
                 Ok(result) => {
                     let stderr = String::from_utf8_lossy(&result.stderr);
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Warn,
-                        "install",
-                        &format!("Method failed: {}", stderr.lines().next().unwrap_or("unknown error"))
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Warn,
+                            "install",
+                            &format!(
+                                "Method failed: {}",
+                                stderr.lines().next().unwrap_or("unknown error")
+                            ),
+                        ))
+                        .await
+                        .ok();
                 }
                 Err(_) => {
                     // Command not found, try next method
                 }
             }
         }
-        
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Error,
-            "install",
-            "Failed to install vanguards - all methods failed"
-        )).await.ok();
+
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Error,
+                "install",
+                "Failed to install vanguards - all methods failed",
+            ))
+            .await
+            .ok();
         Ok(false)
     }
-    
+
     /// Install all missing dependencies
     pub async fn install_missing_dependencies(&self) -> Result<(usize, usize)> {
         let missing = get_missing_dependencies();
         let mut installed = 0;
         let mut failed = 0;
-        
+
         for dep in &missing {
             match self.install_dependency(dep).await {
                 Ok(true) => installed += 1,
                 Ok(false) => failed += 1,
                 Err(e) => {
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Error,
-                        "install",
-                        &format!("Error installing {}: {}", dep.name, e)
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Error,
+                            "install",
+                            &format!("Error installing {}: {}", dep.name, e),
+                        ))
+                        .await
+                        .ok();
                     failed += 1;
                 }
             }
         }
-        
+
         Ok((installed, failed))
     }
 
@@ -657,7 +747,9 @@ impl DeploymentManager {
         self.shutdown_tx = Some(shutdown_tx);
 
         // Save config to expected location
-        let config_path = config.config_path.clone()
+        let config_path = config
+            .config_path
+            .clone()
             .unwrap_or_else(FortifyConfig::default_path);
         config.save_to(&config_path)?;
 
@@ -669,7 +761,9 @@ impl DeploymentManager {
                 "config",
                 &format!("Backend address is still the default ({}). If you intended to proxy to a .onion service, please update the Network settings.", default_backend)
             )).await.ok();
-        } else if !config.network.backend_address.contains(".onion") && !config.network.backend_address.starts_with("http://127.") {
+        } else if !config.network.backend_address.contains(".onion")
+            && !config.network.backend_address.starts_with("http://127.")
+        {
             self.log_tx.send(LogEntry::from_source(
                 LogLevel::Warn,
                 "config",
@@ -679,14 +773,18 @@ impl DeploymentManager {
 
         // Log vanity config status
         if config.vanity.enabled {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Info,
-                "deploy",
-                &format!("Vanity generation enabled: prefix='{}', timeout={}s", 
-                    config.vanity.prefix, 
-                    config.vanity.safety_net_timeout_seconds)
-            )).await.ok();
-            
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Info,
+                    "deploy",
+                    &format!(
+                        "Vanity generation enabled: prefix='{}', timeout={}s",
+                        config.vanity.prefix, config.vanity.safety_net_timeout_seconds
+                    ),
+                ))
+                .await
+                .ok();
+
             let prefix_len = config.vanity.prefix.len();
             if prefix_len > 5 {
                 // Each additional character increases time by ~32x
@@ -699,64 +797,95 @@ impl DeploymentManager {
                 self.log_tx.send(LogEntry::from_source(
                     LogLevel::Warn,
                     "vanity",
-                    &format!("Prefix '{}' ({} chars) estimated generation time: {} per mirror. Consider using 4-5 chars.", 
-                        config.vanity.prefix, 
+                    &format!("Prefix '{}' ({} chars) estimated generation time: {} per mirror. Consider using 4-5 chars.",
+                        config.vanity.prefix,
                         prefix_len,
                         estimated)
                 )).await.ok();
             }
         }
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "deploy",
-            "Initializing Tor daemon..."
-        )).await.ok();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "deploy",
+                "Initializing Tor daemon...",
+            ))
+            .await
+            .ok();
 
         // CRITICAL FIX: Clean up stale processes and files before starting
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "cleanup",
-            "Cleaning up any stale processes and data from previous deployments..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "cleanup",
+                "Cleaning up any stale processes and data from previous deployments...",
+            ))
+            .await
+            .ok();
+
         // Delete stale mirror-addresses.txt to prevent confusion
         // This file will be regenerated when user exports mirrors after deployment
-        let mirror_addresses_file = std::path::PathBuf::from(&config.network.data_dir).join("mirror-addresses.txt");
+        let mirror_addresses_file =
+            std::path::PathBuf::from(&config.network.data_dir).join("mirror-addresses.txt");
         if mirror_addresses_file.exists() {
             if let Err(e) = tokio::fs::remove_file(&mirror_addresses_file).await {
-                self.log_tx.send(LogEntry::from_source(
-                    LogLevel::Warn,
-                    "cleanup",
-                    &format!("Could not delete stale mirror-addresses.txt: {}", e)
-                )).await.ok();
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Warn,
+                        "cleanup",
+                        &format!("Could not delete stale mirror-addresses.txt: {}", e),
+                    ))
+                    .await
+                    .ok();
             } else {
-                self.log_tx.send(LogEntry::from_source(
-                    LogLevel::Debug,
-                    "cleanup",
-                    "Deleted stale mirror-addresses.txt"
-                )).await.ok();
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Debug,
+                        "cleanup",
+                        "Deleted stale mirror-addresses.txt",
+                    ))
+                    .await
+                    .ok();
             }
         }
-        
+
         // Kill any existing Fortify processes
-        let _ = tokio::process::Command::new("pkill").args(&["-9", "-f", "fortify-controller"]).status().await;
-        let _ = tokio::process::Command::new("pkill").args(&["-9", "-f", "fortify-orchestrator"]).status().await;
-        let _ = tokio::process::Command::new("pkill").args(&["-9", "-f", "fortify-node"]).status().await;
-        let _ = tokio::process::Command::new("pkill").args(&["-9", "-f", "fortify-gate"]).status().await;
-        let _ = tokio::process::Command::new("pkill").args(&["-9", "-f", "fortify-http"]).status().await;
-        
+        let _ = tokio::process::Command::new("pkill")
+            .args(&["-9", "-f", "fortify-controller"])
+            .status()
+            .await;
+        let _ = tokio::process::Command::new("pkill")
+            .args(&["-9", "-f", "fortify-orchestrator"])
+            .status()
+            .await;
+        let _ = tokio::process::Command::new("pkill")
+            .args(&["-9", "-f", "fortify-node"])
+            .status()
+            .await;
+        let _ = tokio::process::Command::new("pkill")
+            .args(&["-9", "-f", "fortify-gate"])
+            .status()
+            .await;
+        let _ = tokio::process::Command::new("pkill")
+            .args(&["-9", "-f", "fortify-http"])
+            .status()
+            .await;
+
         // Give processes time to terminate
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         // Start Tor daemon
         self.start_tor(config).await?;
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "deploy",
-            "Tor ready, starting Fortify controller..."
-        )).await.ok();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "deploy",
+                "Tor ready, starting Fortify controller...",
+            ))
+            .await
+            .ok();
 
         // Start controller (which manages all other services)
         self.start_controller(config).await?;
@@ -765,68 +894,95 @@ impl DeploymentManager {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         // Verify orchestrator and mirrors are responding
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "health",
-            "Verifying deployment health..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "health",
+                "Verifying deployment health...",
+            ))
+            .await
+            .ok();
+
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()?;
-        
+
         match client.get("http://127.0.0.1:8080/mirrors").send().await {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     if let Some(mirrors) = json.get("mirrors").and_then(|m| m.as_array()) {
-                        self.log_tx.send(LogEntry::from_source(
-                            LogLevel::Info,
-                            "health",
-                            &format!("✓ Orchestrator healthy, {} mirrors configured", mirrors.len())
-                        )).await.ok();
-                        
+                        self.log_tx
+                            .send(LogEntry::from_source(
+                                LogLevel::Info,
+                                "health",
+                                &format!(
+                                    "✓ Orchestrator healthy, {} mirrors configured",
+                                    mirrors.len()
+                                ),
+                            ))
+                            .await
+                            .ok();
+
                         // Collect mirror addresses for export
                         let mut mirror_addresses = Vec::new();
                         for mirror in mirrors {
                             if let Some(addr) = mirror.as_str() {
-                                self.log_tx.send(LogEntry::from_source(
-                                    LogLevel::Info,
-                                    "mirror",
-                                    &format!("Mirror: {}", addr)
-                                )).await.ok();
+                                self.log_tx
+                                    .send(LogEntry::from_source(
+                                        LogLevel::Info,
+                                        "mirror",
+                                        &format!("Mirror: {}", addr),
+                                    ))
+                                    .await
+                                    .ok();
                                 mirror_addresses.push(addr.to_string());
                             }
                         }
-                        
+
                         // Auto-export mirror addresses to file
                         if !mirror_addresses.is_empty() {
                             let export_path = std::path::PathBuf::from(&config.network.data_dir)
                                 .join("mirror-addresses.txt");
-                            
+
                             let mut content = String::new();
                             content.push_str("# Fortify Mirror Addresses\n");
-                            content.push_str(&format!("# Auto-exported: {}\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")));
-                            content.push_str(&format!("# Backend: {}\n\n", config.network.backend_address));
+                            content.push_str(&format!(
+                                "# Auto-exported: {}\n",
+                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+                            ));
+                            content.push_str(&format!(
+                                "# Backend: {}\n\n",
+                                config.network.backend_address
+                            ));
                             content.push_str("## LIVE MIRRORS:\n");
                             for addr in &mirror_addresses {
                                 content.push_str(&format!("http://{}\n", addr));
                             }
-                            
+
                             if let Err(e) = tokio::fs::write(&export_path, &content).await {
-                                self.log_tx.send(LogEntry::from_source(
-                                    LogLevel::Warn,
-                                    "export",
-                                    &format!("Failed to export mirror addresses: {}", e)
-                                )).await.ok();
+                                self.log_tx
+                                    .send(LogEntry::from_source(
+                                        LogLevel::Warn,
+                                        "export",
+                                        &format!("Failed to export mirror addresses: {}", e),
+                                    ))
+                                    .await
+                                    .ok();
                             } else {
-                                self.log_tx.send(LogEntry::from_source(
-                                    LogLevel::Info,
-                                    "export",
-                                    &format!("Mirror addresses exported to {}", export_path.display())
-                                )).await.ok();
+                                self.log_tx
+                                    .send(LogEntry::from_source(
+                                        LogLevel::Info,
+                                        "export",
+                                        &format!(
+                                            "Mirror addresses exported to {}",
+                                            export_path.display()
+                                        ),
+                                    ))
+                                    .await
+                                    .ok();
                             }
                         }
-                        
+
                         self.log_tx.send(LogEntry::from_source(
                             LogLevel::Info,
                             "health",
@@ -836,28 +992,37 @@ impl DeploymentManager {
                 }
             }
             Ok(resp) => {
-                self.log_tx.send(LogEntry::from_source(
-                    LogLevel::Warn,
-                    "health",
-                    &format!("⚠ Orchestrator responded with status {}", resp.status())
-                )).await.ok();
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Warn,
+                        "health",
+                        &format!("⚠ Orchestrator responded with status {}", resp.status()),
+                    ))
+                    .await
+                    .ok();
             }
             Err(e) => {
-                self.log_tx.send(LogEntry::from_source(
-                    LogLevel::Error,
-                    "health",
-                    &format!("✗ Cannot reach orchestrator: {}. Check logs for errors.", e)
-                )).await.ok();
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Error,
+                        "health",
+                        &format!("✗ Cannot reach orchestrator: {}. Check logs for errors.", e),
+                    ))
+                    .await
+                    .ok();
             }
         }
 
         *self.state.lock().await = DeploymentState::Running;
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "deploy",
-            "✓ Deployment ready - monitor logs for mirror status"
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "deploy",
+                "✓ Deployment ready - monitor logs for mirror status",
+            ))
+            .await
+            .ok();
+
         // Save deployment state to disk
         let state_file = DeploymentStateFile {
             active: true,
@@ -867,24 +1032,30 @@ impl DeploymentManager {
             mirror_addresses: Vec::new(), // Will be populated by orchestrator API
             node_addresses: Vec::new(),
         };
-        
+
         let state_path = DeploymentStateFile::default_path();
         if let Some(parent) = state_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        
+
         if let Err(e) = state_file.save(&state_path) {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Warn,
-                "state",
-                &format!("Failed to save deployment state: {}", e)
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Warn,
+                    "state",
+                    &format!("Failed to save deployment state: {}", e),
+                ))
+                .await
+                .ok();
         } else {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Debug,
-                "state",
-                "Deployment state saved"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Debug,
+                    "state",
+                    "Deployment state saved",
+                ))
+                .await
+                .ok();
         }
 
         Ok(())
@@ -896,11 +1067,14 @@ impl DeploymentManager {
         let tor_dir = data_dir.join("tor");
         std::fs::create_dir_all(&tor_dir)?;
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Debug,
-            "tor",
-            &format!("Tor data directory: {}", tor_dir.display())
-        )).await.ok();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Debug,
+                "tor",
+                &format!("Tor data directory: {}", tor_dir.display()),
+            ))
+            .await
+            .ok();
 
         // Kill any existing Tor process that might be using our ports
         let _ = tokio::process::Command::new("pkill")
@@ -908,29 +1082,35 @@ impl DeploymentManager {
             .arg(format!("tor.*{}", tor_dir.display()))
             .status()
             .await;
-        
+
         // Remove stale lock file if it exists (prevents startup failures)
         let lock_file = tor_dir.join("data").join("lock");
         if lock_file.exists() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Debug,
-                "tor",
-                "Removing stale lock file"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Debug,
+                    "tor",
+                    "Removing stale lock file",
+                ))
+                .await
+                .ok();
             let _ = std::fs::remove_file(&lock_file);
         }
 
         // Create torrc if needed
         let torrc_path = tor_dir.join("torrc");
         let torrc_inc_path = tor_dir.join("torrc.inc");
-        
+
         if !torrc_path.exists() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Debug,
-                "tor",
-                &format!("Creating torrc at {}", torrc_path.display())
-            )).await.ok();
-            
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Debug,
+                    "tor",
+                    &format!("Creating torrc at {}", torrc_path.display()),
+                ))
+                .await
+                .ok();
+
             // Create a main torrc with basic settings
             // Tor will regenerate this file on startup, but we use a separate .inc file
             // for persistent mirror configurations that we manually append after Tor's rewrite
@@ -943,24 +1123,31 @@ impl DeploymentManager {
             );
             std::fs::create_dir_all(tor_dir.join("data"))?;
             std::fs::write(&torrc_path, torrc_content)?;
-            
+
             // Create empty torrc.inc file for mirror configs
             std::fs::write(&torrc_inc_path, "")?;
         } else {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Debug,
-                "tor",
-                "Using existing torrc"
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Debug,
+                    "tor",
+                    "Using existing torrc",
+                ))
+                .await
+                .ok();
         }
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "tor",
-            &format!("Starting Tor (SOCKS:{}, Control:{})", 
-                config.network.socks_port, 
-                config.network.control_port)
-        )).await.ok();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "tor",
+                &format!(
+                    "Starting Tor (SOCKS:{}, Control:{})",
+                    config.network.socks_port, config.network.control_port
+                ),
+            ))
+            .await
+            .ok();
 
         // Start tor
         let mut child = Command::new("tor")
@@ -970,11 +1157,14 @@ impl DeploymentManager {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Debug,
-            "tor",
-            "Tor process spawned, waiting for bootstrap..."
-        )).await.ok();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Debug,
+                "tor",
+                "Tor process spawned, waiting for bootstrap...",
+            ))
+            .await
+            .ok();
 
         // Capture stdout
         if let Some(stdout) = child.stdout.take() {
@@ -984,20 +1174,26 @@ impl DeploymentManager {
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     if let Some(entry) = parse_log_line(&line) {
-                        log_tx.send(LogEntry::from_source(entry.level, "tor", &entry.message)).await.ok();
+                        log_tx
+                            .send(LogEntry::from_source(entry.level, "tor", &entry.message))
+                            .await
+                            .ok();
                     }
                 }
             });
         }
 
-        // Capture stderr 
+        // Capture stderr
         if let Some(stderr) = child.stderr.take() {
             let log_tx = self.log_tx.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    log_tx.send(LogEntry::from_source(LogLevel::Warn, "tor", &line)).await.ok();
+                    log_tx
+                        .send(LogEntry::from_source(LogLevel::Warn, "tor", &line))
+                        .await
+                        .ok();
                 }
             });
         }
@@ -1005,40 +1201,52 @@ impl DeploymentManager {
         self.children.lock().await.push(child);
 
         // Wait for Tor to be ready (check control port)
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Debug,
-            "tor",
-            "Waiting for Tor control port to be available..."
-        )).await.ok();
-        
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Debug,
+                "tor",
+                "Waiting for Tor control port to be available...",
+            ))
+            .await
+            .ok();
+
         let control_addr = format!("127.0.0.1:{}", config.network.control_port);
         let mut connected = false;
         for attempt in 1..=15 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             if std::net::TcpStream::connect(&control_addr).is_ok() {
-                self.log_tx.send(LogEntry::from_source(
-                    LogLevel::Info,
-                    "tor",
-                    &format!("Tor control port ready after {}s", attempt)
-                )).await.ok();
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Info,
+                        "tor",
+                        &format!("Tor control port ready after {}s", attempt),
+                    ))
+                    .await
+                    .ok();
                 connected = true;
                 break;
             }
             if attempt % 5 == 0 {
-                self.log_tx.send(LogEntry::from_source(
-                    LogLevel::Debug,
-                    "tor",
-                    &format!("Still waiting for Tor... ({}s)", attempt)
-                )).await.ok();
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Debug,
+                        "tor",
+                        &format!("Still waiting for Tor... ({}s)", attempt),
+                    ))
+                    .await
+                    .ok();
             }
         }
-        
+
         if !connected {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Warn,
-                "tor",
-                "Tor control port not responding after 15s, continuing anyway..."
-            )).await.ok();
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Warn,
+                    "tor",
+                    "Tor control port not responding after 15s, continuing anyway...",
+                ))
+                .await
+                .ok();
         }
 
         Ok(())
@@ -1047,61 +1255,94 @@ impl DeploymentManager {
     /// Start Fortify controller
     async fn start_controller(&mut self, config: &FortifyConfig) -> Result<()> {
         let controller_bin = Self::find_binary("fortify-controller")?;
-        
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Debug,
-            "deploy",
-            &format!("Found controller: {}", controller_bin.display())
-        )).await.ok();
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "deploy",
-            "Spawning Fortify controller..."
-        )).await.ok();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Debug,
+                "deploy",
+                &format!("Found controller: {}", controller_bin.display()),
+            ))
+            .await
+            .ok();
+
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "deploy",
+                "Spawning Fortify controller...",
+            ))
+            .await
+            .ok();
 
         let mut cmd = Command::new(&controller_bin);
         cmd.env("FORTIFY_DATA_DIR", &config.network.data_dir)
             .env("NODE_BACKEND_ADDR", &config.network.backend_address)
             .env("FORTIFY_SOCKS_PORT", config.network.socks_port.to_string())
-            .env("FORTIFY_CONTROL_PORT", config.network.control_port.to_string())
-            .env("TOR_CONTROL_ADDR", format!("127.0.0.1:{}", config.network.control_port))
-            .env("TOR_COOKIE_PATH", config.network.data_dir.join("tor/data/control_auth_cookie").to_string_lossy().to_string())
+            .env(
+                "FORTIFY_CONTROL_PORT",
+                config.network.control_port.to_string(),
+            )
+            .env(
+                "TOR_CONTROL_ADDR",
+                format!("127.0.0.1:{}", config.network.control_port),
+            )
+            .env(
+                "TOR_COOKIE_PATH",
+                config
+                    .network
+                    .data_dir
+                    .join("tor/data/control_auth_cookie")
+                    .to_string_lossy()
+                    .to_string(),
+            )
             // CAPTCHA pool configuration
             .env("CAPTCHA_ENABLED", config.captcha.enabled.to_string())
             .env("CAPTCHA_POOL_SIZE", config.captcha.pool_size.to_string())
             .env("CAPTCHA_MIN_POOL", config.captcha.min_pool_size.to_string())
             .env("CAPTCHA_MAX_POOL", config.captcha.max_pool_size.to_string())
-            .env("CAPTCHA_ROTATION_PERCENT", config.captcha.rotation_percent.to_string())
-            .env("CAPTCHA_ROTATION_DAYS", config.captcha.rotation_interval_days.to_string())
+            .env(
+                "CAPTCHA_ROTATION_PERCENT",
+                config.captcha.rotation_percent.to_string(),
+            )
+            .env(
+                "CAPTCHA_ROTATION_DAYS",
+                config.captcha.rotation_interval_days.to_string(),
+            )
             .env("RUST_LOG", "info,fortify_controller=debug");
-        
+
         // Pass vanity configuration - controller will forward to orchestrators for mirror generation
         // Note: Vanity applies to MIRRORS only, not nodes (healthy/threat nodes use random addresses)
         if config.vanity.enabled && !config.vanity.prefix.is_empty() {
-            self.log_tx.send(LogEntry::from_source(
-                LogLevel::Info,
-                "vanity",
-                &format!("Vanity enabled for mirrors: prefix='{}', timeout={}s", 
-                    config.vanity.prefix, 
-                    config.vanity.safety_net_timeout_seconds)
-            )).await.ok();
-            
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Info,
+                    "vanity",
+                    &format!(
+                        "Vanity enabled for mirrors: prefix='{}', timeout={}s",
+                        config.vanity.prefix, config.vanity.safety_net_timeout_seconds
+                    ),
+                ))
+                .await
+                .ok();
+
             cmd.env("VANITY_ENABLED", "true")
                 .env("VANITY_PREFIX", &config.vanity.prefix)
-                .env("VANITY_TIMEOUT", config.vanity.safety_net_timeout_seconds.to_string());
+                .env(
+                    "VANITY_TIMEOUT",
+                    config.vanity.safety_net_timeout_seconds.to_string(),
+                );
         }
-        
-        let mut child = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
 
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Debug,
-            "deploy",
-            "Controller process spawned"
-        )).await.ok();
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Debug,
+                "deploy",
+                "Controller process spawned",
+            ))
+            .await
+            .ok();
 
         // Capture stdout
         if let Some(stdout) = child.stdout.take() {
@@ -1127,22 +1368,28 @@ impl DeploymentManager {
                     if let Some(entry) = parse_log_line(&line) {
                         log_tx.send(entry).await.ok();
                     } else {
-                        log_tx.send(LogEntry::from_source(LogLevel::Error, "controller", &line)).await.ok();
+                        log_tx
+                            .send(LogEntry::from_source(LogLevel::Error, "controller", &line))
+                            .await
+                            .ok();
                     }
                 }
             });
         }
 
         self.children.lock().await.push(child);
-        
+
         // Give controller time to start
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        
-        self.log_tx.send(LogEntry::from_source(
-            LogLevel::Info,
-            "deploy",
-            "Controller started, deployment ready"
-        )).await.ok();
+
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "deploy",
+                "Controller started, deployment ready",
+            ))
+            .await
+            .ok();
 
         Ok(())
     }
@@ -1179,7 +1426,10 @@ impl DeploymentManager {
     pub async fn stop(&mut self) -> Result<()> {
         *self.state.lock().await = DeploymentState::Stopping;
 
-        self.log_tx.send(LogEntry::info("Stopping deployment...")).await.ok();
+        self.log_tx
+            .send(LogEntry::info("Stopping deployment..."))
+            .await
+            .ok();
 
         // Signal shutdown
         if let Some(tx) = &self.shutdown_tx {
@@ -1206,7 +1456,7 @@ impl DeploymentManager {
             .await;
 
         *self.state.lock().await = DeploymentState::Stopped;
-        
+
         // Update deployment state file
         let state_path = DeploymentStateFile::default_path();
         if state_path.exists() {
@@ -1214,31 +1464,43 @@ impl DeploymentManager {
                 state.active = false;
                 state.last_stopped = Some(Local::now().to_rfc3339());
                 if let Err(e) = state.save(&state_path) {
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Warn,
-                        "state",
-                        &format!("Failed to update deployment state: {}", e)
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Warn,
+                            "state",
+                            &format!("Failed to update deployment state: {}", e),
+                        ))
+                        .await
+                        .ok();
                 } else {
-                    self.log_tx.send(LogEntry::from_source(
-                        LogLevel::Debug,
-                        "state",
-                        "Deployment state updated (stopped)"
-                    )).await.ok();
+                    self.log_tx
+                        .send(LogEntry::from_source(
+                            LogLevel::Debug,
+                            "state",
+                            "Deployment state updated (stopped)",
+                        ))
+                        .await
+                        .ok();
                 }
             }
         }
-        
+
         *self.config.lock().await = None;
 
-        self.log_tx.send(LogEntry::info("Deployment stopped")).await.ok();
+        self.log_tx
+            .send(LogEntry::info("Deployment stopped"))
+            .await
+            .ok();
 
         Ok(())
     }
 
     /// Reload configuration (hot reload)
     pub async fn reload_config(&mut self, config: &FortifyConfig) -> Result<()> {
-        self.log_tx.send(LogEntry::info("Reloading configuration...")).await.ok();
+        self.log_tx
+            .send(LogEntry::info("Reloading configuration..."))
+            .await
+            .ok();
 
         // Save updated config
         let mut cfg = config.clone();
@@ -1246,7 +1508,12 @@ impl DeploymentManager {
 
         // Send SIGHUP to controller to trigger reload
         // For now, just log - full hot reload would need IPC
-        self.log_tx.send(LogEntry::info("Configuration saved (restart required for some changes)")).await.ok();
+        self.log_tx
+            .send(LogEntry::info(
+                "Configuration saved (restart required for some changes)",
+            ))
+            .await
+            .ok();
 
         *self.config.lock().await = Some(config.clone());
 

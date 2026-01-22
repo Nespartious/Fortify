@@ -15,7 +15,7 @@ pub enum RoutingStrategy {
 }
 
 /// Router for selecting backend nodes
-/// 
+///
 /// Phase 4.3: Node Distribution
 /// - Healthy nodes: LeastPopulatedOrdered for even distribution with deterministic tie-breaking
 /// - Threat nodes: Fill-first to maximize isolation on fewer nodes
@@ -48,7 +48,7 @@ impl Router {
             fill_first_index: Arc::new(std::sync::Mutex::new(0)),
         }
     }
-    
+
     /// Create router with explicit strategies for each tier
     pub fn new_with_strategies(
         healthy_nodes: Vec<BackendNode>,
@@ -92,22 +92,22 @@ impl Router {
     /// This ensures even distribution across nodes with predictable behavior
     fn least_populated_ordered(&self, nodes: &[BackendNode]) -> Option<BackendNode> {
         let mut available: Vec<_> = nodes.iter().filter(|n| n.can_accept()).collect();
-        
+
         if available.is_empty() {
             return None;
         }
-        
+
         // Sort by (connection_count, name) - lowest connections first, then alphabetically by name
         available.sort_by(|a, b| {
             let a_connections = *a.active_connections.lock().unwrap();
             let b_connections = *b.active_connections.lock().unwrap();
-            
+
             match a_connections.cmp(&b_connections) {
                 std::cmp::Ordering::Equal => a.name.cmp(&b.name),
                 other => other,
             }
         });
-        
+
         // Return the first node (lowest session count, first alphabetically if tied)
         available.first().map(|n| (*n).clone())
     }
@@ -124,23 +124,23 @@ impl Router {
         *index = (*index + 1) % available.len();
         Some(node)
     }
-    
+
     /// Fill-first: Fill nodes to capacity before moving to the next
     /// Used for threat nodes to maximize isolation on fewer nodes
     fn fill_first(&self, nodes: &[BackendNode]) -> Option<BackendNode> {
         let available: Vec<_> = nodes.iter().filter(|n| n.can_accept()).collect();
-        
+
         if available.is_empty() {
             return None;
         }
-        
+
         let mut index = self.fill_first_index.lock().unwrap();
-        
+
         // Clamp index to available nodes range
         if *index >= available.len() {
             *index = 0;
         }
-        
+
         // Try current node first
         if let Some(node) = available.get(*index) {
             let connections = *node.active_connections.lock().unwrap();
@@ -149,10 +149,10 @@ impl Router {
                 return Some((*node).clone());
             }
         }
-        
+
         // Current node is full, move to next
         *index = (*index + 1) % available.len();
-        
+
         // Return the next available node
         available.get(*index).map(|n| (*n).clone())
     }

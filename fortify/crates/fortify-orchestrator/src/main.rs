@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     if let Ok(cookie) = std::env::var("TOR_COOKIE_PATH") {
         config.tor_cookie_path = Some(PathBuf::from(cookie));
     }
-    
+
     // Get base data directory from controller (or use default)
     let base_data_dir = std::env::var("FORTIFY_DATA_DIR")
         .map(PathBuf::from)
@@ -49,19 +49,25 @@ async fn main() -> anyhow::Result<()> {
                 PathBuf::from("/tmp/fortify")
             }
         });
-    
+
     // Use orchestrator-specific data directory to prevent multiple orchestrators
     // from managing the same mirrors
     if let Ok(orch_id) = std::env::var("ORCH_ID") {
-        config.tor_data_dir = base_data_dir.join("tor").join("mirrors").join(format!("orch-{}", orch_id));
-        info!("Orchestrator {} using data dir: {:?}", orch_id, config.tor_data_dir);
+        config.tor_data_dir = base_data_dir
+            .join("tor")
+            .join("mirrors")
+            .join(format!("orch-{}", orch_id));
+        info!(
+            "Orchestrator {} using data dir: {:?}",
+            orch_id, config.tor_data_dir
+        );
     } else {
         config.tor_data_dir = base_data_dir.join("tor").join("mirrors");
     }
-    
+
     // Store base data dir in config for torrc path resolution
     config.base_data_dir = Some(base_data_dir);
-    
+
     // Vanity address configuration for mirrors
     if let Ok(val) = std::env::var("VANITY_ENABLED") {
         config.vanity_enabled = val.parse().unwrap_or(false);
@@ -72,16 +78,22 @@ async fn main() -> anyhow::Result<()> {
     if let Ok(val) = std::env::var("VANITY_TIMEOUT") {
         config.vanity_timeout = val.parse().unwrap_or(30);
     }
-    
+
     if config.vanity_enabled && !config.vanity_prefix.is_empty() {
-        info!("Vanity addresses enabled: prefix='{}', timeout={}s", 
-            config.vanity_prefix, config.vanity_timeout);
+        info!(
+            "Vanity addresses enabled: prefix='{}', timeout={}s",
+            config.vanity_prefix, config.vanity_timeout
+        );
     }
 
     // CAPTCHA pool configuration from TUI settings
     if let Ok(val) = std::env::var("CAPTCHA_POOL_SIZE") {
         if let Ok(size) = val.parse() {
-            config.multi_daemon.flex_core.captcha_pregen.target_pool_size = size;
+            config
+                .multi_daemon
+                .flex_core
+                .captcha_pregen
+                .target_pool_size = size;
             info!("CAPTCHA target pool size: {}", size);
         }
     }
@@ -100,12 +112,20 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Ok(val) = std::env::var("CAPTCHA_ROTATION_PERCENT") {
         if let Ok(pct) = val.parse() {
-            config.multi_daemon.flex_core.captcha_pregen.rotation_percent = pct;
+            config
+                .multi_daemon
+                .flex_core
+                .captcha_pregen
+                .rotation_percent = pct;
         }
     }
     if let Ok(val) = std::env::var("CAPTCHA_ROTATION_DAYS") {
         if let Ok(days) = val.parse() {
-            config.multi_daemon.flex_core.captcha_pregen.rotation_interval_days = days;
+            config
+                .multi_daemon
+                .flex_core
+                .captcha_pregen
+                .rotation_interval_days = days;
         }
     }
     if let Ok(val) = std::env::var("CAPTCHA_BATCH_SIZE") {
@@ -135,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Clone orchestrator for shutdown handler
     let shutdown_orchestrator = Arc::clone(&orchestrator);
-    
+
     // Start server with shutdown signal handling
     tokio::select! {
         result = server.start() => {
@@ -147,7 +167,7 @@ async fn main() -> anyhow::Result<()> {
             info!("Received shutdown signal");
         }
     }
-    
+
     // Signal background tasks to shutdown and save state
     shutdown_orchestrator.shutdown();
 

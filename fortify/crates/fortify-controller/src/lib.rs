@@ -70,13 +70,16 @@ impl Controller {
         // Create vanguards config from controller config
         let (tor_host, tor_port) = if let Some(ref addr) = config.tor_control_addr {
             let parts: Vec<&str> = addr.split(':').collect();
-            let host = parts.get(0).map(|s| s.to_string()).unwrap_or_else(|| "127.0.0.1".to_string());
+            let host = parts
+                .get(0)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "127.0.0.1".to_string());
             let port = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(9151);
             (host, port)
         } else {
             ("127.0.0.1".to_string(), 9151)
         };
-        
+
         let vanguards_config = VanguardsConfig {
             enabled: config.vanguards_enabled,
             tor_control_addr: tor_host,
@@ -212,10 +215,10 @@ impl Controller {
 
         // Check if vanguards is available
         if !VanguardsManager::is_available() {
+            tracing::warn!("Vanguards addon not found. Install with: pip3 install vanguards");
             tracing::warn!(
-                "Vanguards addon not found. Install with: pip3 install vanguards"
+                "Continuing without vanguards protection (guard discovery attacks possible)"
             );
-            tracing::warn!("Continuing without vanguards protection (guard discovery attacks possible)");
             return Ok(());
         }
 
@@ -243,7 +246,7 @@ impl Controller {
         // Get backend URL from environment
         let backend_url = std::env::var("NODE_BACKEND_ADDR")
             .unwrap_or_else(|_| "http://backend.onion".to_string());
-        
+
         // Only start if backend is a .onion address
         if !backend_url.contains(".onion") {
             tracing::warn!(
@@ -254,7 +257,7 @@ impl Controller {
         }
 
         tracing::info!("Starting backend health checker for circuit pre-warming");
-        
+
         match HealthChecker::new(backend_url.clone()) {
             Ok(checker) => {
                 tokio::spawn(async move {
@@ -271,12 +274,12 @@ impl Controller {
     /// Start mirror health checker
     async fn start_mirror_health_checker(&self) {
         tracing::info!("Starting mirror health checker");
-        
+
         match MirrorHealthChecker::new() {
             Ok(checker) => {
                 // Use first orchestrator for fetching mirror list
                 let orchestrator_url = "http://127.0.0.1:8080/mirrors/extended".to_string();
-                
+
                 tokio::spawn(async move {
                     checker.run(orchestrator_url).await;
                 });
@@ -311,12 +314,12 @@ impl Controller {
                 m.cpu_usage_percent = monitor.cpu_usage_percent();
                 m.memory_usage_mb = monitor.memory_used_mb();
                 m.total_memory_mb = monitor.memory_total_mb();
-                
+
                 // Update vanguards metrics
                 let vg = vanguards_metrics.lock().await;
                 m.vanguards_status = format!("{:?}", vg.status());
                 m.vanguards_uptime_secs = vg.uptime_secs();
-                
+
                 // Check for attacks detected by vanguards
                 let alerts = vg.check_for_attacks();
                 for alert in alerts {
@@ -331,32 +334,38 @@ impl Controller {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                
+
                 let mut blacklist = blacklist_cleanup.lock().unwrap();
                 let now = Instant::now();
                 let before = blacklist.len();
-                
+
                 // Remove expired entries
                 blacklist.retain(|_, (expiry, _)| *expiry > now);
-                
+
                 // Enforce 72-hour retention limit
                 let max_age = Duration::from_secs(72 * 3600);
-                blacklist.retain(|_, (expiry, _)| {
-                    expiry.saturating_duration_since(now) < max_age
-                });
-                
+                blacklist.retain(|_, (expiry, _)| expiry.saturating_duration_since(now) < max_age);
+
                 // Cap at 10K entries (remove oldest 20% if exceeded)
                 if blacklist.len() > 10_000 {
-                    let mut entries: Vec<_> = blacklist.iter().map(|(k, v)| (k.clone(), *v)).collect();
+                    let mut entries: Vec<_> =
+                        blacklist.iter().map(|(k, v)| (k.clone(), *v)).collect();
                     entries.sort_by_key(|(_, (expiry, _))| *expiry);
                     let to_remove = entries.len() / 5;
-                    let keys_to_remove: Vec<String> = entries.iter().take(to_remove).map(|(k, _)| k.clone()).collect();
+                    let keys_to_remove: Vec<String> = entries
+                        .iter()
+                        .take(to_remove)
+                        .map(|(k, _)| k.clone())
+                        .collect();
                     for session_id in keys_to_remove {
                         blacklist.remove(&session_id);
                     }
-                    tracing::warn!("Blacklist exceeded 10K entries, removed oldest {}", to_remove);
+                    tracing::warn!(
+                        "Blacklist exceeded 10K entries, removed oldest {}",
+                        to_remove
+                    );
                 }
-                
+
                 let after = blacklist.len();
                 if before > after {
                     tracing::debug!("Cleaned blacklist: {} -> {} entries", before, after);
@@ -370,7 +379,7 @@ impl Controller {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                
+
                 let mut vg = vanguards_health.lock().await;
                 if !vg.is_alive() && vg.status() == VanguardsStatus::Running {
                     tracing::warn!("Vanguards process died, attempting restart");
@@ -486,28 +495,30 @@ impl Controller {
             3 => 1800,
             _ => 1800, // Cap at 30 minutes
         };
-        
+
         let expiry = Instant::now() + Duration::from_secs(duration_secs);
         let mut blacklist = self.session_blacklist.lock().unwrap();
         blacklist.insert(session_id.clone(), (expiry, demotion_count));
-        
+
         tracing::info!(
             "Session {} blacklisted for {} seconds (demotion #{})",
-            session_id, duration_secs, demotion_count
+            session_id,
+            duration_secs,
+            demotion_count
         );
     }
 
     /// Check if session is blacklisted
     pub fn is_blacklisted(&self, session_id: &str) -> bool {
         let blacklist = self.session_blacklist.lock().unwrap();
-        
+
         if let Some((expiry, _)) = blacklist.get(session_id) {
             if Instant::now() < *expiry {
                 return true; // Still blacklisted
             }
             // Expired, will be cleaned up later
         }
-        
+
         false
     }
 
@@ -523,26 +534,29 @@ impl Controller {
         let now = Instant::now();
         let seventy_two_hours = Duration::from_secs(72 * 60 * 60);
         let oldest_allowed = now.checked_sub(seventy_two_hours).unwrap_or(now);
-        
+
         // Remove expired entries and enforce 72-hour limit
-        blacklist.retain(|_, (expiry, _)| {
-            *expiry > now && *expiry > oldest_allowed
-        });
-        
+        blacklist.retain(|_, (expiry, _)| *expiry > now && *expiry > oldest_allowed);
+
         // If still over 10K entries, remove oldest 20%
         if blacklist.len() > 10_000 {
             let to_remove = blacklist.len() / 5; // Remove 20%
             let mut entries: Vec<_> = blacklist.iter().map(|(k, v)| (k.clone(), *v)).collect();
             entries.sort_by_key(|(_, (expiry, _))| *expiry);
-            
-            let keys_to_remove: Vec<String> = entries.iter().take(to_remove).map(|(k, _)| k.clone()).collect();
+
+            let keys_to_remove: Vec<String> = entries
+                .iter()
+                .take(to_remove)
+                .map(|(k, _)| k.clone())
+                .collect();
             for session_id in keys_to_remove {
                 blacklist.remove(&session_id);
             }
-            
+
             tracing::warn!(
                 "Blacklist over capacity, removed {} oldest entries (size now: {})",
-                to_remove, blacklist.len()
+                to_remove,
+                blacklist.len()
             );
         }
     }
@@ -588,11 +602,15 @@ impl Controller {
         // Healthy nodes for verified traffic
         let healthy_allocations = self.healthy_node_env.node_allocations();
         if !healthy_allocations.is_empty() {
-            let addrs: Vec<String> = healthy_allocations.iter().map(|a| a.local_addr.clone()).collect();
+            let addrs: Vec<String> = healthy_allocations
+                .iter()
+                .map(|a| a.local_addr.clone())
+                .collect();
             env.push(format!("HEALTHY_NODES={}", addrs.join(",")));
-            
+
             // Also pass onion addresses for admin panel display
-            let onions: Vec<String> = healthy_allocations.iter()
+            let onions: Vec<String> = healthy_allocations
+                .iter()
                 .map(|a| a.onion_addr.clone().unwrap_or_default())
                 .collect();
             env.push(format!("HEALTHY_ONIONS={}", onions.join(",")));
@@ -601,16 +619,23 @@ impl Controller {
         // Threat nodes for suspicious/unknown traffic
         let threat_allocations = self.threat_node_env.node_allocations();
         if !threat_allocations.is_empty() {
-            let addrs: Vec<String> = threat_allocations.iter().map(|a| a.local_addr.clone()).collect();
+            let addrs: Vec<String> = threat_allocations
+                .iter()
+                .map(|a| a.local_addr.clone())
+                .collect();
             env.push(format!("THREAT_NODES={}", addrs.join(",")));
-            
-            let onions: Vec<String> = threat_allocations.iter()
+
+            let onions: Vec<String> = threat_allocations
+                .iter()
                 .map(|a| a.onion_addr.clone().unwrap_or_default())
                 .collect();
             env.push(format!("THREAT_ONIONS={}", onions.join(",")));
         } else {
             // Fallback to Gate if no threat nodes
-            env.push(format!("THREAT_NODES=http://{}", self.config.gate_bind_addr));
+            env.push(format!(
+                "THREAT_NODES=http://{}",
+                self.config.gate_bind_addr
+            ));
         }
 
         env
@@ -691,21 +716,27 @@ impl OrchestratorEnvFactory {
         if let Some(cookie) = &self.tor_cookie_path {
             env.push(format!("TOR_COOKIE_PATH={}", cookie));
         }
-        
+
         // Vanity configuration for mirror addresses
         if self.vanity_enabled && !self.vanity_prefix.is_empty() {
             env.push("VANITY_ENABLED=true".to_string());
             env.push(format!("VANITY_PREFIX={}", self.vanity_prefix));
             env.push(format!("VANITY_TIMEOUT={}", self.vanity_timeout));
         }
-        
+
         // CAPTCHA configuration
         env.push(format!("CAPTCHA_ENABLED={}", self.captcha_enabled));
         env.push(format!("CAPTCHA_POOL_SIZE={}", self.captcha_pool_size));
         env.push(format!("CAPTCHA_MIN_POOL={}", self.captcha_min_pool));
         env.push(format!("CAPTCHA_MAX_POOL={}", self.captcha_max_pool));
-        env.push(format!("CAPTCHA_ROTATION_PERCENT={}", self.captcha_rotation_percent));
-        env.push(format!("CAPTCHA_ROTATION_DAYS={}", self.captcha_rotation_days));
+        env.push(format!(
+            "CAPTCHA_ROTATION_PERCENT={}",
+            self.captcha_rotation_percent
+        ));
+        env.push(format!(
+            "CAPTCHA_ROTATION_DAYS={}",
+            self.captcha_rotation_days
+        ));
 
         Ok(env)
     }
@@ -753,8 +784,8 @@ impl NodeEnvFactory {
             .expect("healthy_node_bind_base validated");
 
         // Nodes do not use vanity addresses - only mirrors do
-        let tor_manager = if let (Some(ctrl), Some(cookie)) = 
-            (&config.tor_control_addr, &config.tor_cookie_path) 
+        let tor_manager = if let (Some(ctrl), Some(cookie)) =
+            (&config.tor_control_addr, &config.tor_cookie_path)
         {
             Some(TorManager::new(ctrl.clone(), cookie.clone()))
         } else {
@@ -778,8 +809,8 @@ impl NodeEnvFactory {
             .expect("threat_node_bind_base validated");
 
         // Nodes do not use vanity addresses - only mirrors do
-        let tor_manager = if let (Some(ctrl), Some(cookie)) = 
-            (&config.tor_control_addr, &config.tor_cookie_path) 
+        let tor_manager = if let (Some(ctrl), Some(cookie)) =
+            (&config.tor_control_addr, &config.tor_cookie_path)
         {
             Some(TorManager::new(ctrl.clone(), cookie.clone()))
         } else {
@@ -804,23 +835,33 @@ impl NodeEnvFactory {
         let offset = allocations.len();
         let addr = self.next_bind_addr(offset)?;
         let addr_str = addr.to_string();
-        
+
         // Try to create a Tor hidden service for this node
         let onion_addr = if let Some(ref tor) = self.tor_manager {
             match tor.create_hidden_service(addr.port()) {
                 Ok(onion) => {
-                    tracing::info!("Created onion {} for {} node on {}", onion, self.mode, addr_str);
+                    tracing::info!(
+                        "Created onion {} for {} node on {}",
+                        onion,
+                        self.mode,
+                        addr_str
+                    );
                     Some(onion)
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to create onion for {} node on {}: {}", self.mode, addr_str, e);
+                    tracing::warn!(
+                        "Failed to create onion for {} node on {}: {}",
+                        self.mode,
+                        addr_str,
+                        e
+                    );
                     None
                 }
             }
         } else {
             None
         };
-        
+
         allocations.push(NodeAllocation {
             local_addr: format!("http://{}", addr_str),
             onion_addr: onion_addr.clone(),
@@ -832,12 +873,12 @@ impl NodeEnvFactory {
             format!("SECRET_KEY={}", self.secret_key),
             format!("NODE_MODE={}", self.mode),
         ];
-        
+
         // Pass onion address to node so it knows its public identity
         if let Some(ref onion) = onion_addr {
             env.push(format!("ONION_ADDRESS={}", onion));
         }
-        
+
         Ok(env)
     }
 
@@ -851,7 +892,7 @@ impl NodeEnvFactory {
             .map(|a| a.local_addr.clone())
             .collect()
     }
-    
+
     /// Get detailed node allocations with onion addresses
     fn node_allocations(&self) -> Vec<NodeAllocation> {
         self.allocations

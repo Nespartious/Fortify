@@ -223,7 +223,7 @@ impl PersistentSessionManager {
     /// Load sessions from disk (VM pause recovery)
     fn load_sessions(&self) {
         let snapshot_path = self.config.storage_path.join("sessions.json");
-        
+
         if !snapshot_path.exists() {
             return;
         }
@@ -236,10 +236,10 @@ impl PersistentSessionManager {
                             .duration_since(UNIX_EPOCH)
                             .unwrap()
                             .as_secs();
-                        
+
                         let mut restored = 0;
                         let mut expired = 0;
-                        
+
                         for snapshot in snapshots {
                             // Check if session is too old (> 7 days)
                             let age_days = (now - snapshot.created_at) / 86400;
@@ -247,16 +247,18 @@ impl PersistentSessionManager {
                                 expired += 1;
                                 continue;
                             }
-                            
+
                             // Check pause gap for VM recovery warning
                             let pause_gap = now - snapshot.last_activity;
                             if pause_gap > self.config.max_pause_gap_seconds {
                                 tracing::warn!(
                                     "Session {} was paused for {} seconds (threshold: {})",
-                                    snapshot.session_id, pause_gap, self.config.max_pause_gap_seconds
+                                    snapshot.session_id,
+                                    pause_gap,
+                                    self.config.max_pause_gap_seconds
                                 );
                             }
-                            
+
                             // Restore session
                             let trust_tier = match snapshot.trust_tier.as_str() {
                                 "Unknown" => TrustTier::Unknown,
@@ -266,7 +268,7 @@ impl PersistentSessionManager {
                                 "Burned" => TrustTier::Burned,
                                 _ => TrustTier::Unknown,
                             };
-                            
+
                             let token = SessionToken {
                                 session_id: snapshot.session_id.clone(),
                                 trust_tier,
@@ -275,21 +277,22 @@ impl PersistentSessionManager {
                                 user_agent_hash: String::from("unknown"), // Restored sessions don't have UA binding
                                 signature: Vec::new(), // Will be re-signed if needed
                             };
-                            
+
                             let session = Session {
                                 token,
                                 request_count: snapshot.request_count,
                                 violation_count: snapshot.violation_count,
                                 last_activity: snapshot.last_activity,
                             };
-                            
+
                             self.inner.update_session(session);
                             restored += 1;
                         }
-                        
+
                         tracing::info!(
                             "Session recovery: {} restored, {} expired",
-                            restored, expired
+                            restored,
+                            expired
                         );
                     }
                     Err(e) => {
@@ -313,10 +316,8 @@ impl PersistentSessionManager {
         std::fs::create_dir_all(&self.config.storage_path)?;
 
         let sessions = self.inner.sessions.lock().unwrap();
-        let snapshots: Vec<SessionSnapshot> = sessions
-            .values()
-            .map(SessionSnapshot::from)
-            .collect();
+        let snapshots: Vec<SessionSnapshot> =
+            sessions.values().map(SessionSnapshot::from).collect();
 
         let content = serde_json::to_string_pretty(&snapshots)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;

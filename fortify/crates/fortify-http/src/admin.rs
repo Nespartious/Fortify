@@ -1,17 +1,17 @@
 //! Admin Control Panel
-//! 
+//!
 //! Secret admin panel for managing Fortify services.
 //! All pages are pure HTML with forms - no JavaScript required.
-//! 
+//!
 //! Theme: Retro Synthwave / Outrun with Fortification hints
 
 use fortify_core::{BehaviorConfig, BehaviorStats, KNOWN_ATTACK_PATHS};
-use fortify_gate::{CaptchaType, CaptchaConfig};
-use hyper::{Body, Method, Request, Response, StatusCode, header};
+use fortify_gate::{CaptchaConfig, CaptchaType};
+use hyper::{header, Body, Method, Request, Response, StatusCode};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 
 /// Secret admin panel path - random 32 char string
 pub const ADMIN_PATH: &str = "/ctrl_8f7k3m9x2n4p1q6w5v0b8c";
@@ -133,7 +133,7 @@ impl HistoryEventType {
             Self::ViolationDetected => "🚨",
         }
     }
-    
+
     pub fn css_class(&self) -> &'static str {
         match self {
             Self::PageRequest => "",
@@ -176,7 +176,7 @@ pub struct NodeInfo {
     pub id: String,
     pub bind_addr: String,
     pub onion_address: Option<String>, // Optional Tor onion address for this node
-    pub mode: String, // "healthy" or "threat"
+    pub mode: String,                  // "healthy" or "threat"
     pub status: String,
     pub created_at: u64,
     pub total_requests: u64,
@@ -237,7 +237,14 @@ impl AdminState {
     }
 
     /// Record a session event (non-page-load) in history
-    pub fn record_session_event(&self, session_id: &str, event_type: HistoryEventType, description: &str, source: &str, reason: Option<&str>) {
+    pub fn record_session_event(
+        &self,
+        session_id: &str,
+        event_type: HistoryEventType,
+        description: &str,
+        source: &str,
+        reason: Option<&str>,
+    ) {
         let mut inner = self.inner.write().unwrap();
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.last_activity = now();
@@ -263,9 +270,15 @@ impl AdminState {
             session.trust_tier = tier.to_string();
         }
         // Store admin override so we can enforce it on subsequent requests
-        inner.tier_overrides.insert(session_id.to_string(), tier.to_string());
-        tracing::info!("Admin override: session {} tier set to {}", session_id, tier);
-        
+        inner
+            .tier_overrides
+            .insert(session_id.to_string(), tier.to_string());
+        tracing::info!(
+            "Admin override: session {} tier set to {}",
+            session_id,
+            tier
+        );
+
         // Record in history (this is called from admin actions and auto-demotion)
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.browsing_history.push(HistoryEntry {
@@ -294,15 +307,26 @@ impl AdminState {
                 path: format!("Auto-demoted to {}", tier),
                 method: "System".to_string(),
                 status_code: 0,
-                reason: Some(format!("{} (was: {})", reason, old_tier.unwrap_or_default())),
+                reason: Some(format!(
+                    "{} (was: {})",
+                    reason,
+                    old_tier.unwrap_or_default()
+                )),
             });
             if session.browsing_history.len() > 100 {
                 session.browsing_history.remove(0);
             }
         }
         // Store override so we can enforce it on subsequent requests
-        inner.tier_overrides.insert(session_id.to_string(), tier.to_string());
-        tracing::info!("Auto demotion: session {} tier set to {} - {}", session_id, tier, reason);
+        inner
+            .tier_overrides
+            .insert(session_id.to_string(), tier.to_string());
+        tracing::info!(
+            "Auto demotion: session {} tier set to {} - {}",
+            session_id,
+            tier,
+            reason
+        );
     }
 
     /// Check if session has an admin-forced tier override
@@ -368,19 +392,30 @@ impl AdminState {
     /// Increment demotion count for a session and check if it should be killed
     /// Returns true if session was killed (exceeded max demotions)
     pub fn record_demotion(&self, session_id: &str, max_demotions: u32) -> bool {
-        self.record_demotion_with_reason(session_id, max_demotions, "Behavioral violations exceeded threshold")
+        self.record_demotion_with_reason(
+            session_id,
+            max_demotions,
+            "Behavioral violations exceeded threshold",
+        )
     }
 
     /// Record demotion with a specific reason for the history
-    pub fn record_demotion_with_reason(&self, session_id: &str, max_demotions: u32, reason: &str) -> bool {
+    pub fn record_demotion_with_reason(
+        &self,
+        session_id: &str,
+        max_demotions: u32,
+        reason: &str,
+    ) -> bool {
         let mut inner = self.inner.write().unwrap();
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.demotion_count += 1;
             tracing::info!(
                 "Session {} demotion count: {} / {}",
-                session_id, session.demotion_count, max_demotions
+                session_id,
+                session.demotion_count,
+                max_demotions
             );
-            
+
             // Record demotion event in history
             session.browsing_history.push(HistoryEntry {
                 timestamp: now(),
@@ -393,7 +428,7 @@ impl AdminState {
             if session.browsing_history.len() > 100 {
                 session.browsing_history.remove(0);
             }
-            
+
             if session.demotion_count >= max_demotions {
                 session.is_killed = true;
                 session.trust_tier = "Killed".to_string();
@@ -411,7 +446,8 @@ impl AdminState {
                 }
                 tracing::warn!(
                     "Session {} KILLED - exceeded max demotions ({})",
-                    session_id, max_demotions
+                    session_id,
+                    max_demotions
                 );
                 return true;
             }
@@ -420,7 +456,13 @@ impl AdminState {
     }
 
     /// Record a behavioral violation in the session history
-    pub fn record_violation(&self, session_id: &str, violation_type: &str, details: &str, severity: u8) {
+    pub fn record_violation(
+        &self,
+        session_id: &str,
+        violation_type: &str,
+        details: &str,
+        severity: u8,
+    ) {
         let mut inner = self.inner.write().unwrap();
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.browsing_history.push(HistoryEntry {
@@ -458,13 +500,21 @@ impl AdminState {
     /// Check if a session is killed (repeat offender)
     pub fn is_killed(&self, session_id: &str) -> bool {
         let inner = self.inner.read().unwrap();
-        inner.sessions.get(session_id).map(|s| s.is_killed).unwrap_or(false)
+        inner
+            .sessions
+            .get(session_id)
+            .map(|s| s.is_killed)
+            .unwrap_or(false)
     }
 
     /// Get demotion count for a session
     pub fn get_demotion_count(&self, session_id: &str) -> u32 {
         let inner = self.inner.read().unwrap();
-        inner.sessions.get(session_id).map(|s| s.demotion_count).unwrap_or(0)
+        inner
+            .sessions
+            .get(session_id)
+            .map(|s| s.demotion_count)
+            .unwrap_or(0)
     }
 
     pub fn delete_session(&self, session_id: &str) {
@@ -511,7 +561,9 @@ impl AdminState {
         inner.total_requests += 1;
         inner.total_traffic_bytes += bytes;
         // Log for time-series aggregation
-        inner.request_log.push((timestamp, bytes, node_id.to_string()));
+        inner
+            .request_log
+            .push((timestamp, bytes, node_id.to_string()));
         // Clean up old entries (keep last 7 days worth)
         let cutoff = timestamp.saturating_sub(7 * 24 * 60 * 60);
         inner.request_log.retain(|(ts, _, _)| *ts >= cutoff);
@@ -523,7 +575,9 @@ impl AdminState {
         inner.total_traffic_bytes += bytes;
         // Add to time-series as well (with empty node_id to indicate response traffic)
         let timestamp = now();
-        inner.request_log.push((timestamp, bytes, "_response".to_string()));
+        inner
+            .request_log
+            .push((timestamp, bytes, "_response".to_string()));
     }
 
     /// Release a connection from a node
@@ -589,7 +643,7 @@ impl AdminState {
     pub fn get_time_based_stats(&self) -> TimeBasedStats {
         let inner = self.inner.read().unwrap();
         let current_time = now();
-        
+
         // Define time windows in seconds
         let windows = [
             ("15min", 15 * 60),
@@ -599,38 +653,43 @@ impl AdminState {
             ("1week", 7 * 24 * 60 * 60),
             ("1month", 30 * 24 * 60 * 60),
         ];
-        
+
         let mut result = TimeBasedStats {
             per_node: HashMap::new(),
             totals: HashMap::new(),
             gate_queue: inner.gate_queue.len(),
         };
-        
+
         // Initialize totals for each window
         for (name, _) in &windows {
-            result.totals.insert(name.to_string(), WindowStats::default());
+            result
+                .totals
+                .insert(name.to_string(), WindowStats::default());
         }
-        
+
         // Initialize per-node stats
         for node in inner.nodes.values() {
             let mut node_windows = HashMap::new();
             for (name, _) in &windows {
                 node_windows.insert(name.to_string(), WindowStats::default());
             }
-            result.per_node.insert(node.id.clone(), NodeTimeStats {
-                node_id: node.id.clone(),
-                mode: node.mode.clone(),
-                status: node.status.clone(),
-                total_requests: node.total_requests,
-                active_connections: node.active_connections,
-                windows: node_windows,
-            });
+            result.per_node.insert(
+                node.id.clone(),
+                NodeTimeStats {
+                    node_id: node.id.clone(),
+                    mode: node.mode.clone(),
+                    status: node.status.clone(),
+                    total_requests: node.total_requests,
+                    active_connections: node.active_connections,
+                    windows: node_windows,
+                },
+            );
         }
-        
+
         // Aggregate from request log
         for (timestamp, bytes, node_id) in &inner.request_log {
             let age = current_time.saturating_sub(*timestamp);
-            
+
             for (name, window_secs) in &windows {
                 if age <= *window_secs {
                     // Update totals
@@ -638,7 +697,7 @@ impl AdminState {
                         total.requests += 1;
                         total.bytes += bytes;
                     }
-                    
+
                     // Update per-node
                     if let Some(node_stats) = result.per_node.get_mut(node_id) {
                         if let Some(window) = node_stats.windows.get_mut(*name) {
@@ -649,7 +708,7 @@ impl AdminState {
                 }
             }
         }
-        
+
         // Count sessions by window (using last_activity)
         for session in inner.sessions.values() {
             let age = current_time.saturating_sub(session.last_activity);
@@ -661,7 +720,7 @@ impl AdminState {
                 }
             }
         }
-        
+
         result
     }
 
@@ -692,44 +751,51 @@ impl AdminState {
     /// Get next suggested node name and port for a given pool
     pub fn get_next_node_suggestion(&self, mode: &str) -> (String, String) {
         let inner = self.inner.read().unwrap();
-        
+
         // Count existing nodes in this pool
-        let pool_count = inner.nodes.values()
-            .filter(|n| n.mode == mode)
-            .count();
-        
+        let pool_count = inner.nodes.values().filter(|n| n.mode == mode).count();
+
         // Find highest port in use (default base ports: healthy=9100, threat=8081)
         let base_port = if mode == "healthy" { 9100 } else { 8081 };
-        let max_port = inner.nodes.values()
+        let max_port = inner
+            .nodes
+            .values()
             .filter(|n| n.mode == mode)
             .filter_map(|n| {
-                n.bind_addr.split(':').last()
+                n.bind_addr
+                    .split(':')
+                    .last()
                     .and_then(|p| p.parse::<u16>().ok())
             })
             .max()
             .unwrap_or(base_port - 1);
-        
+
         let suggested_name = format!("{}-{}", mode, pool_count);
         let suggested_port = format!("127.0.0.1:{}", max_port + 1);
-        
+
         (suggested_name, suggested_port)
     }
 
     /// Get traffic statistics
     pub fn get_traffic_stats(&self) -> TrafficStats {
         let inner = self.inner.read().unwrap();
-        
+
         let mut per_node: HashMap<String, NodeTrafficStats> = HashMap::new();
         for node in inner.nodes.values() {
-            per_node.insert(node.id.clone(), NodeTrafficStats {
-                node_id: node.id.clone(),
-                mode: node.mode.clone(),
-                total_requests: node.total_requests,
-                active_connections: node.active_connections,
-            });
+            per_node.insert(
+                node.id.clone(),
+                NodeTrafficStats {
+                    node_id: node.id.clone(),
+                    mode: node.mode.clone(),
+                    total_requests: node.total_requests,
+                    active_connections: node.active_connections,
+                },
+            );
         }
-        
-        let mut per_session: Vec<SessionTrafficStats> = inner.sessions.values()
+
+        let mut per_session: Vec<SessionTrafficStats> = inner
+            .sessions
+            .values()
             .map(|s| SessionTrafficStats {
                 session_id: s.session_id.clone(),
                 trust_tier: s.trust_tier.clone(),
@@ -738,10 +804,10 @@ impl AdminState {
                 current_node: s.current_node.clone(),
             })
             .collect();
-        
+
         // Sort by request count descending
         per_session.sort_by(|a, b| b.request_count.cmp(&a.request_count));
-        
+
         TrafficStats {
             total_requests: inner.total_requests,
             total_bytes: inner.total_traffic_bytes,
@@ -764,7 +830,11 @@ impl AdminState {
     /// Get mirror by onion address
     pub fn get_mirror_by_onion(&self, onion_address: &str) -> Option<MirrorInfo> {
         let inner = self.inner.read().unwrap();
-        inner.mirrors.values().find(|m| m.onion_address == onion_address).cloned()
+        inner
+            .mirrors
+            .values()
+            .find(|m| m.onion_address == onion_address)
+            .cloned()
     }
 
     /// Record a request through a specific mirror (by onion address)
@@ -772,24 +842,32 @@ impl AdminState {
     pub fn record_mirror_request(&self, onion_address: &str) {
         let mut inner = self.inner.write().unwrap();
         // Try to find existing mirror by onion address
-        let mirror_id = inner.mirrors.iter()
+        let mirror_id = inner
+            .mirrors
+            .iter()
             .find(|(_, m)| m.onion_address == onion_address)
             .map(|(id, _)| id.clone());
-        
+
         if let Some(id) = mirror_id {
             if let Some(mirror) = inner.mirrors.get_mut(&id) {
                 mirror.total_requests += 1;
             }
         } else {
             // Create a new mirror entry with a generated ID
-            let id = format!("mirror-{}", onion_address.chars().take(8).collect::<String>());
-            inner.mirrors.insert(id.clone(), MirrorInfo {
-                id,
-                onion_address: onion_address.to_string(),
-                status: "active".to_string(),
-                created_at: now(),
-                total_requests: 1,
-            });
+            let id = format!(
+                "mirror-{}",
+                onion_address.chars().take(8).collect::<String>()
+            );
+            inner.mirrors.insert(
+                id.clone(),
+                MirrorInfo {
+                    id,
+                    onion_address: onion_address.to_string(),
+                    status: "active".to_string(),
+                    created_at: now(),
+                    total_requests: 1,
+                },
+            );
         }
     }
 
@@ -802,10 +880,13 @@ impl AdminState {
     pub fn get_stats(&self) -> AdminStats {
         let inner = self.inner.read().unwrap();
         let sessions = &inner.sessions;
-        
+
         AdminStats {
             total_sessions: sessions.len(),
-            active_sessions: sessions.values().filter(|s| now() - s.last_activity < 300).count(),
+            active_sessions: sessions
+                .values()
+                .filter(|s| now() - s.last_activity < 300)
+                .count(),
             banned_sessions: inner.banned_sessions.len(),
             healthy_nodes: inner.nodes.values().filter(|n| n.mode == "healthy").count(),
             threat_nodes: inner.nodes.values().filter(|n| n.mode == "threat").count(),
@@ -856,7 +937,9 @@ impl AdminState {
             "ua_analysis" => inner.behavior_config.ua_analysis_enabled = enabled,
             "referer_analysis" => inner.behavior_config.referer_analysis_enabled = enabled,
             "path_analysis" => inner.behavior_config.path_analysis_enabled = enabled,
-            "enumeration_detection" => inner.behavior_config.enumeration_detection_enabled = enabled,
+            "enumeration_detection" => {
+                inner.behavior_config.enumeration_detection_enabled = enabled
+            }
             "form_tracking" => inner.behavior_config.form_tracking_enabled = enabled,
             "payload_analysis" => inner.behavior_config.payload_analysis_enabled = enabled,
             _ => {
@@ -869,8 +952,10 @@ impl AdminState {
     /// Update behavioral stats for a session
     pub fn update_behavior_stats(&self, session_id: &str, stats: BehaviorStats) {
         let mut inner = self.inner.write().unwrap();
-        inner.behavior_stats.insert(session_id.to_string(), stats.clone());
-        
+        inner
+            .behavior_stats
+            .insert(session_id.to_string(), stats.clone());
+
         // Also update in session info if present
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.behavior_stats = Some(stats);
@@ -887,20 +972,20 @@ impl AdminState {
     pub fn get_aggregate_behavior_stats(&self) -> AggregateBehaviorStats {
         let inner = self.inner.read().unwrap();
         let mut agg = AggregateBehaviorStats::default();
-        
+
         for stats in inner.behavior_stats.values() {
             agg.total_requests_analyzed += stats.requests_analyzed;
             agg.total_violations += stats.total_violations();
-            
+
             for (vtype, count) in &stats.violations_by_type {
                 *agg.violations_by_type.entry(vtype.clone()).or_insert(0) += count;
             }
-            
+
             if stats.suspicious_ua_detected {
                 agg.sessions_with_suspicious_ua += 1;
             }
         }
-        
+
         agg.sessions_analyzed = inner.behavior_stats.len();
         agg
     }
@@ -909,12 +994,12 @@ impl AdminState {
     pub fn is_behavior_enabled(&self) -> bool {
         let inner = self.inner.read().unwrap();
         // At least one feature must be enabled
-        inner.behavior_config.ua_analysis_enabled ||
-        inner.behavior_config.referer_analysis_enabled ||
-        inner.behavior_config.path_analysis_enabled ||
-        inner.behavior_config.enumeration_detection_enabled ||
-        inner.behavior_config.form_tracking_enabled ||
-        inner.behavior_config.payload_analysis_enabled
+        inner.behavior_config.ua_analysis_enabled
+            || inner.behavior_config.referer_analysis_enabled
+            || inner.behavior_config.path_analysis_enabled
+            || inner.behavior_config.enumeration_detection_enabled
+            || inner.behavior_config.form_tracking_enabled
+            || inner.behavior_config.payload_analysis_enabled
     }
 }
 
@@ -1031,10 +1116,10 @@ pub async fn handle_admin_request(
 ) -> Response<Body> {
     let path = req.uri().path().to_string();
     let method = req.method().clone();
-    
+
     // Route admin requests
     let sub_path = path.strip_prefix(ADMIN_PATH).unwrap_or("");
-    
+
     // Public routes (no auth required)
     match (method.clone(), sub_path) {
         (Method::GET, "/login") => return render_login_page(None),
@@ -1042,50 +1127,40 @@ pub async fn handle_admin_request(
         (Method::POST, "/logout") => return handle_logout(req, admin_state).await,
         _ => {}
     }
-    
+
     // All other routes require authentication
     if !is_authenticated(&req, &admin_state) {
         return render_login_page(Some("Please log in to access the admin panel"));
     }
-    
+
     match (method, sub_path) {
         // Dashboard
         (Method::GET, "" | "/") => render_dashboard(&admin_state),
-        
+
         // Sessions
         (Method::GET, "/sessions") => render_sessions(&admin_state),
         (Method::GET, p) if p.starts_with("/session/") => {
             let id = p.strip_prefix("/session/").unwrap_or("");
             render_session_detail(&admin_state, id)
         }
-        (Method::POST, "/session/action") => {
-            handle_session_action(req, admin_state).await
-        }
-        
+        (Method::POST, "/session/action") => handle_session_action(req, admin_state).await,
+
         // Nodes
         (Method::GET, "/nodes") => render_nodes(&admin_state),
-        (Method::POST, "/node/action") => {
-            handle_node_action(req, admin_state).await
-        }
-        
+        (Method::POST, "/node/action") => handle_node_action(req, admin_state).await,
+
         // Mirrors
         (Method::GET, "/mirrors") => render_mirrors(&admin_state),
-        (Method::POST, "/mirror/action") => {
-            handle_mirror_action(req, admin_state).await
-        }
-        
+        (Method::POST, "/mirror/action") => handle_mirror_action(req, admin_state).await,
+
         // Behavioral Analysis Settings
         (Method::GET, "/settings") => render_settings(&admin_state),
-        (Method::POST, "/settings/behavior") => {
-            handle_behavior_settings(req, admin_state).await
-        }
-        (Method::POST, "/settings/captcha") => {
-            handle_captcha_settings(req, admin_state).await
-        }
-        
+        (Method::POST, "/settings/behavior") => handle_behavior_settings(req, admin_state).await,
+        (Method::POST, "/settings/captcha") => handle_captcha_settings(req, admin_state).await,
+
         // Tutorial / Documentation
         (Method::GET, "/tutorial") => render_tutorial(),
-        
+
         _ => not_found(),
     }
 }
@@ -1096,8 +1171,9 @@ pub async fn handle_admin_request(
 
 fn render_login_page(error: Option<&str>) -> Response<Body> {
     let error_html = error.map(|msg| format!(r#"<div style="background: var(--crimson); padding: 12px; border-radius: 4px; margin-bottom: 20px; color: white;">{}</div>"#, msg)).unwrap_or_default();
-    
-    let html = format!(r##"<!DOCTYPE html>
+
+    let html = format!(
+        r##"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -1196,8 +1272,9 @@ fn render_login_page(error: Option<&str>) -> Response<Body> {
         </form>
     </div>
 </body>
-</html>"##);
-    
+</html>"##
+    );
+
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -1206,23 +1283,31 @@ fn render_login_page(error: Option<&str>) -> Response<Body> {
 }
 
 async fn handle_login(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+    let body_bytes = hyper::body::to_bytes(req.into_body())
+        .await
+        .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
-    
+
     let password = params.get("password").map(|s| s.as_str()).unwrap_or("");
-    
+
     if password == ADMIN_PASSWORD {
         // Generate session ID
         let session_id = uuid_v4();
         state.create_admin_session(&session_id);
-        
+
         tracing::info!("✅ Admin login successful from control panel");
-        
+
         // Set cookie and redirect to dashboard
         Response::builder()
             .status(StatusCode::SEE_OTHER)
             .header(header::LOCATION, ADMIN_PATH)
-            .header(header::SET_COOKIE, format!("fortify_admin_session={}; Path={}; HttpOnly; Max-Age=86400", session_id, ADMIN_PATH))
+            .header(
+                header::SET_COOKIE,
+                format!(
+                    "fortify_admin_session={}; Path={}; HttpOnly; Max-Age=86400",
+                    session_id, ADMIN_PATH
+                ),
+            )
             .body(Body::empty())
             .unwrap()
     } else {
@@ -1244,13 +1329,16 @@ async fn handle_logout(req: Request<Body>, state: Arc<AdminState>) -> Response<B
             }
         }
     }
-    
+
     tracing::info!("Admin logged out");
-    
+
     Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header(header::LOCATION, format!("{}/login", ADMIN_PATH))
-        .header(header::SET_COOKIE, format!("fortify_admin_session=; Path={}; Max-Age=0", ADMIN_PATH))
+        .header(
+            header::SET_COOKIE,
+            format!("fortify_admin_session=; Path={}; Max-Age=0", ADMIN_PATH),
+        )
         .body(Body::empty())
         .unwrap()
 }
@@ -1260,7 +1348,8 @@ async fn handle_logout(req: Request<Body>, state: Arc<AdminState>) -> Response<B
 // ============================================================================
 
 fn html_page(title: &str, content: &str) -> Response<Body> {
-    let html = format!(r##"<!DOCTYPE html>
+    let html = format!(
+        r##"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -1268,7 +1357,7 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
     <title>{title} - Fortify Control Panel</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
+
         :root {{
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
@@ -1287,9 +1376,9 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             --crimson: #c96969;
             --slate-blue: #6b7c8c;
         }}
-        
+
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        
+
         body {{
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg-deep);
@@ -1297,16 +1386,16 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             min-height: 100vh;
             overflow-x: hidden;
         }}
-        
+
         body::before {{
             content: '';
             position: fixed;
             inset: 0;
-            background: 
+            background:
                 radial-gradient(ellipse at 50% 0%, rgba(201, 162, 39, 0.02) 0%, transparent 50%);
             pointer-events: none;
         }}
-        
+
         .container {{
             max-width: 1400px;
             margin: 0 auto;
@@ -1314,7 +1403,7 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             position: relative;
             z-index: 1;
         }}
-        
+
         header {{
             text-align: center;
             padding: 32px 0;
@@ -1322,7 +1411,7 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             border-bottom: 1px solid var(--border-subtle);
             position: relative;
         }}
-        
+
         header::after {{
             content: '';
             position: absolute;
@@ -1333,7 +1422,7 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             height: 1px;
             background: linear-gradient(90deg, transparent, var(--gold-primary), transparent);
         }}
-        
+
         .logo {{
             font-size: 2rem;
             font-weight: 300;
@@ -1342,20 +1431,20 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             text-transform: uppercase;
             margin-bottom: 8px;
         }}
-        
+
         .logo-sub {{
             font-size: 0.75rem;
             color: var(--gold-muted);
             letter-spacing: 0.2em;
             text-transform: uppercase;
         }}
-        
+
         .castle-icon {{
             font-size: 1.2em;
             margin: 0 12px;
             opacity: 0.8;
         }}
-        
+
         nav {{
             margin-top: 28px;
             display: flex;
@@ -1363,7 +1452,7 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             gap: 8px;
             flex-wrap: wrap;
         }}
-        
+
         nav a {{
             color: var(--text-secondary);
             text-decoration: none;
@@ -1377,24 +1466,24 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             font-weight: 500;
             transition: all 0.2s ease;
         }}
-        
+
         nav a:hover {{
             background: var(--bg-elevated);
             border-color: var(--gold-muted);
             color: var(--text-primary);
         }}
-        
+
         nav a.active {{
             background: var(--gold-primary);
             border-color: var(--gold-primary);
             color: var(--bg-deep);
         }}
-        
+
         h1 {{ font-size: 1.5rem; font-weight: 400; margin-bottom: 12px; color: var(--text-primary); letter-spacing: 0.05em; }}
-        h2 {{ 
-            font-size: 1rem; 
+        h2 {{
+            font-size: 1rem;
             font-weight: 500;
-            margin: 28px 0 18px; 
+            margin: 28px 0 18px;
             color: var(--gold-primary);
             text-transform: uppercase;
             letter-spacing: 0.1em;
@@ -1409,14 +1498,14 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             background: var(--gold-primary);
             border-radius: 1px;
         }}
-        h3 {{ 
-            font-size: 0.9rem; 
+        h3 {{
+            font-size: 0.9rem;
             font-weight: 500;
-            margin: 18px 0 14px; 
+            margin: 18px 0 14px;
             color: var(--gold-muted);
             letter-spacing: 0.05em;
         }}
-        
+
         .card {{
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
@@ -1425,7 +1514,7 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             margin-bottom: 24px;
             position: relative;
         }}
-        
+
         .card::before {{
             content: '';
             position: absolute;
@@ -1437,14 +1526,14 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             border-radius: 4px 4px 0 0;
             opacity: 0.6;
         }}
-        
+
         .stats-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 16px;
             margin-bottom: 24px;
         }}
-        
+
         .stat-box {{
             background: var(--bg-elevated);
             border: 1px solid var(--border-subtle);
@@ -1452,21 +1541,21 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             padding: 18px;
             text-align: center;
         }}
-        
-        .stat-value {{ 
-            font-size: 1.5rem; 
+
+        .stat-value {{
+            font-size: 1.5rem;
             font-weight: 600;
             color: var(--text-primary);
         }}
-        
-        .stat-label {{ 
-            font-size: 0.7rem; 
-            color: var(--gold-muted); 
+
+        .stat-label {{
+            font-size: 0.7rem;
+            color: var(--gold-muted);
             margin-top: 6px;
             text-transform: uppercase;
             letter-spacing: 0.1em;
         }}
-        
+
         table {{
             width: 100%;
             border-collapse: collapse;
@@ -1475,14 +1564,14 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             border-radius: 4px;
             overflow: hidden;
         }}
-        
+
         th, td {{
             text-align: left;
             padding: 14px 16px;
             border-bottom: 1px solid var(--border-subtle);
         }}
-        
-        th {{ 
+
+        th {{
             background: var(--bg-elevated);
             color: var(--gold-muted);
             font-size: 0.7rem;
@@ -1490,9 +1579,9 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             text-transform: uppercase;
             letter-spacing: 0.1em;
         }}
-        
+
         tr:hover {{ background: var(--bg-elevated); }}
-        
+
         .btn {{
             font-family: 'Inter', sans-serif;
             background: transparent;
@@ -1510,21 +1599,21 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             text-decoration: none;
             display: inline-block;
         }}
-        
-        .btn:hover {{ 
-            background: var(--gold-primary); 
+
+        .btn:hover {{
+            background: var(--gold-primary);
             color: var(--bg-deep);
         }}
-        
+
         .btn-danger {{ border-color: var(--crimson); color: var(--crimson); }}
         .btn-danger:hover {{ background: var(--crimson); color: var(--text-primary); }}
-        
+
         .btn-warning {{ border-color: var(--amber); color: var(--amber); }}
         .btn-warning:hover {{ background: var(--amber); color: var(--bg-deep); }}
-        
+
         .btn-success {{ border-color: var(--sage); color: var(--sage); }}
         .btn-success:hover {{ background: var(--sage); color: var(--bg-deep); }}
-        
+
         input, select {{
             font-family: 'Inter', sans-serif;
             background: var(--bg-deep);
@@ -1536,24 +1625,24 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             margin: 5px;
             transition: all 0.2s ease;
         }}
-        
-        input:focus, select:focus {{ 
-            border-color: var(--gold-muted); 
+
+        input:focus, select:focus {{
+            border-color: var(--gold-muted);
             outline: none;
         }}
-        
+
         .tier-verified {{ color: var(--sage); }}
         .tier-trusted {{ color: var(--gold-primary); }}
         .tier-suspicious {{ color: var(--amber); }}
         .tier-burned {{ color: var(--crimson); }}
         .tier-unknown {{ color: var(--text-muted); }}
-        
+
         .status-online {{ color: var(--sage); }}
         .status-offline {{ color: var(--crimson); }}
-        
+
         .mode-healthy {{ color: var(--sage); }}
         .mode-threat {{ color: var(--amber); }}
-        
+
         .history-list {{
             max-height: 400px;
             overflow-y: auto;
@@ -1563,13 +1652,13 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             border-radius: 4px;
             padding: 12px;
         }}
-        
+
         .history-item {{
             padding: 10px 12px;
             border-bottom: 1px solid var(--border-subtle);
             font-family: 'Inter', sans-serif;
         }}
-        
+
         /* Event type styles for history entries */
         .history-item.event-admin {{
             background: rgba(201, 162, 39, 0.08);
@@ -1587,25 +1676,25 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             background: rgba(125, 154, 120, 0.08);
             border-left: 3px solid var(--sage);
         }}
-        
+
         .timestamp {{ color: var(--text-muted); font-size: 0.8rem; margin-right: 10px; }}
-        
+
         form {{ display: inline; }}
-        
+
         .section {{ margin-bottom: 40px; }}
-        
+
         .actions {{ margin-top: 20px; }}
-        
-        pre {{ 
-            background: var(--bg-deep); 
-            padding: 16px; 
+
+        pre {{
+            background: var(--bg-deep);
+            padding: 16px;
             overflow-x: auto;
             border: 1px solid var(--border-subtle);
             border-radius: 4px;
             color: var(--text-secondary);
             font-size: 0.85rem;
         }}
-        
+
         code {{
             font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
             color: var(--gold-muted);
@@ -1613,10 +1702,10 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
             padding: 2px 6px;
             border-radius: 2px;
         }}
-        
+
         a {{ color: var(--gold-primary); text-decoration: none; }}
         a:hover {{ color: var(--gold-light); }}
-        
+
         /* Scrollbar styling */
         ::-webkit-scrollbar {{
             width: 6px;
@@ -1652,8 +1741,9 @@ fn html_page(title: &str, content: &str) -> Response<Body> {
         </main>
     </div>
 </body>
-</html>"##);
-    
+</html>"##
+    );
+
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
@@ -1666,10 +1756,8 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
     let traffic_stats = state.get_traffic_stats();
     let time_stats = state.get_time_based_stats();
     let sessions = state.get_sessions();
-    let recent_sessions: Vec<_> = sessions.iter()
-        .take(5)
-        .collect();
-    
+    let recent_sessions: Vec<_> = sessions.iter().take(5).collect();
+
     let mut recent_html = String::new();
     for s in recent_sessions {
         let tier_class = format!("tier-{}", s.trust_tier.to_lowercase());
@@ -1680,14 +1768,16 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
                 <td>{}</td>
                 <td>{}</td>
             </tr>"#,
-            ADMIN_PATH, s.session_id, 
+            ADMIN_PATH,
+            s.session_id,
             &s.session_id[..8.min(s.session_id.len())],
-            tier_class, s.trust_tier,
+            tier_class,
+            s.trust_tier,
             s.page_loads,
             format_time_ago(s.last_activity)
         ));
     }
-    
+
     // Build time-based stats table
     let windows = ["15min", "1hour", "4hours", "1day", "1week", "1month"];
     let mut time_stats_html = String::new();
@@ -1709,12 +1799,16 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
                     <td>{}</td>
                     <td style="color: var(--gold-primary);">{}</td>
                 </tr>"#,
-                label, ws.requests, format_bytes(ws.bytes), ws.sessions
+                label,
+                ws.requests,
+                format_bytes(ws.bytes),
+                ws.sessions
             ));
         }
     }
-    
-    let content = format!(r#"
+
+    let content = format!(
+        r#"
         <h2>System Overview</h2>
         <div class="stats-grid">
             <div class="stat-box">
@@ -1758,7 +1852,7 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
                 <div class="stat-label">Violations</div>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>Traffic Over Time</h2>
             <table>
@@ -1775,7 +1869,7 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
                 </tbody>
             </table>
         </div>
-        
+
         <div class="section">
             <h2>Recent Sessions</h2>
             <table>
@@ -1808,17 +1902,17 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
         recent_html,
         ADMIN_PATH
     );
-    
+
     html_page("Dashboard", &content)
 }
 
 fn render_sessions(state: &AdminState) -> Response<Body> {
     let mut sessions = state.get_sessions();
     let traffic_stats = state.get_traffic_stats();
-    
+
     // Sort by last_activity descending (most recent first)
     sessions.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
-    
+
     // Pagination (50 per page)
     let per_page = 50;
     let _total_pages = (sessions.len() + per_page - 1) / per_page;
@@ -1826,30 +1920,37 @@ fn render_sessions(state: &AdminState) -> Response<Body> {
     let start = (page - 1) * per_page;
     let end = start + per_page;
     let page_sessions = &sessions[start..end.min(sessions.len())];
-    
+
     let mut rows = String::new();
     for s in page_sessions {
         let tier_class = format!("tier-{}", s.trust_tier.to_lowercase());
-        let status_marker = if s.is_killed { 
-            "💀 " 
-        } else if s.is_banned { 
-            "🚫 " 
-        } else { 
-            "" 
+        let status_marker = if s.is_killed {
+            "💀 "
+        } else if s.is_banned {
+            "🚫 "
+        } else {
+            ""
         };
         let demotion_display = if s.demotion_count > 0 {
-            format!("<span style='color: var(--amber);' title='Demotion cycles'>↻{}</span>", s.demotion_count)
+            format!(
+                "<span style='color: var(--amber);' title='Demotion cycles'>↻{}</span>",
+                s.demotion_count
+            )
         } else {
             "-".to_string()
         };
         let node_display = if s.current_node.is_empty() {
             "<span style='color: var(--text-muted);'>-</span>".to_string()
         } else {
-            let node_class = if s.current_node.starts_with("healthy") { "mode-healthy" } else { "mode-threat" };
+            let node_class = if s.current_node.starts_with("healthy") {
+                "mode-healthy"
+            } else {
+                "mode-threat"
+            };
             format!("<span class='{}'>{}</span>", node_class, s.current_node)
         };
         let traffic_display = format_bytes(s.total_bytes);
-        
+
         rows.push_str(&format!(
             r#"<tr>
                 <td><a href="{}/session/{}">{}{}</a></td>
@@ -1882,10 +1983,11 @@ fn render_sessions(state: &AdminState) -> Response<Body> {
             s.session_id
         ));
     }
-    
-    let content = format!(r#"
+
+    let content = format!(
+        r#"
         <h2>Session Management</h2>
-        
+
         <div class="stats-grid">
             <div class="stat-box">
                 <div class="stat-value">{}</div>
@@ -1900,11 +2002,11 @@ fn render_sessions(state: &AdminState) -> Response<Body> {
                 <div class="stat-label">Total Traffic</div>
             </div>
         </div>
-        
+
         <div style="margin: 20px 0; color: var(--text-secondary);">
             Showing {} - {} of {} sessions (sorted by most recent activity)
         </div>
-        
+
         <table>
             <thead>
                 <tr>
@@ -1932,7 +2034,7 @@ fn render_sessions(state: &AdminState) -> Response<Body> {
         sessions.len(),
         rows
     );
-    
+
     html_page("Sessions", &content)
 }
 
@@ -1941,15 +2043,19 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
         Some(s) => s,
         None => return not_found(),
     };
-    
+
     let tier_class = format!("tier-{}", session.trust_tier.to_lowercase());
-    
+
     let mut history_html = String::new();
     for entry in session.browsing_history.iter().rev().take(50) {
         // Render based on event type
         match entry.event_type {
             HistoryEventType::PageRequest => {
-                let status_class = if entry.status_code < 400 { "status-online" } else { "status-offline" };
+                let status_class = if entry.status_code < 400 {
+                    "status-online"
+                } else {
+                    "status-offline"
+                };
                 history_html.push_str(&format!(
                     r#"<div class="history-item">
                         <span class="timestamp">{}</span>
@@ -1957,10 +2063,12 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                         <strong>{}</strong> {}
                     </div>"#,
                     format_timestamp(entry.timestamp),
-                    status_class, entry.status_code,
-                    entry.method, entry.path
+                    status_class,
+                    entry.status_code,
+                    entry.method,
+                    entry.path
                 ));
-            },
+            }
             _ => {
                 // Event entries (non-page requests)
                 let event_class = entry.event_type.css_class();
@@ -1979,13 +2087,14 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                     event_class,
                     format_timestamp(entry.timestamp),
                     icon,
-                    entry.method, entry.path,
+                    entry.method,
+                    entry.path,
                     reason_html
                 ));
             }
         }
     }
-    
+
     if history_html.is_empty() {
         history_html = "<p>No history recorded.</p>".to_string();
     }
@@ -1994,7 +2103,13 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
     let behavior_html = if let Some(ref bstats) = session.behavior_stats {
         let mut violations_rows = String::new();
         for (vtype, count) in &bstats.violations_by_type {
-            let severity_class = if *count > 5 { "status-offline" } else if *count > 2 { "btn-warning" } else { "" };
+            let severity_class = if *count > 5 {
+                "status-offline"
+            } else if *count > 2 {
+                "btn-warning"
+            } else {
+                ""
+            };
             violations_rows.push_str(&format!(
                 r#"<tr><td>{}</td><td class="{}">{}</td></tr>"#,
                 vtype, severity_class, count
@@ -2008,7 +2123,7 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
         for v in bstats.recent_violations.iter().rev().take(10) {
             let severity_class = match v.severity {
                 3 => "status-offline",
-                2 => "btn-warning", 
+                2 => "btn-warning",
                 _ => "",
             };
             recent_violations_html.push_str(&format!(
@@ -2019,19 +2134,22 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                     <span style="color: var(--text-muted);">{}</span>
                 </div>"#,
                 format_timestamp(v.timestamp),
-                severity_class, v.severity,
+                severity_class,
+                v.severity,
                 v.violation_type.as_str(),
                 v.details
             ));
         }
         if recent_violations_html.is_empty() {
-            recent_violations_html = "<p style=\"color: var(--sage);\">No recent violations ✓</p>".to_string();
+            recent_violations_html =
+                "<p style=\"color: var(--sage);\">No recent violations ✓</p>".to_string();
         }
 
-        format!(r#"
+        format!(
+            r#"
         <div class="card" style="border-color: var(--amber);">
             <h3>Behavioral Analysis</h3>
-            
+
             <div class="stats-grid">
                 <div class="stat-box">
                     <div class="stat-value">{}</div>
@@ -2058,13 +2176,13 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                     <div class="stat-label">Severity Score</div>
                 </div>
             </div>
-            
+
             <h3>Violations by Type</h3>
             <table>
                 <thead><tr><th>Violation Type</th><th>Count</th></tr></thead>
                 <tbody>{}</tbody>
             </table>
-            
+
             <h3>Recent Violations (Last 10)</h3>
             <div class="history-list" style="max-height: 250px;">
                 {}
@@ -2072,12 +2190,26 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
         </div>
         "#,
             bstats.requests_analyzed,
-            if bstats.total_violations() > 5 { "status-offline" } else if bstats.total_violations() > 0 { "btn-warning" } else { "status-online" },
+            if bstats.total_violations() > 5 {
+                "status-offline"
+            } else if bstats.total_violations() > 0 {
+                "btn-warning"
+            } else {
+                "status-online"
+            },
             bstats.total_violations(),
             bstats.unique_paths_count,
             bstats.form_submissions,
-            if bstats.suspicious_ua_detected { "status-offline" } else { "status-online" },
-            if bstats.suspicious_ua_detected { "YES" } else { "NO" },
+            if bstats.suspicious_ua_detected {
+                "status-offline"
+            } else {
+                "status-online"
+            },
+            if bstats.suspicious_ua_detected {
+                "YES"
+            } else {
+                "NO"
+            },
             bstats.severity_score(),
             violations_rows,
             recent_violations_html
@@ -2091,15 +2223,22 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
         </div>
         "#.to_string()
     };
-    
+
     // Format current node display
     let node_display = if session.current_node.is_empty() {
         "<span style='color: var(--text-muted);'>Not yet routed</span>".to_string()
     } else {
-        let node_class = if session.current_node.starts_with("healthy") { "mode-healthy" } else { "mode-threat" };
-        format!("<span class='{}'>{}</span>", node_class, session.current_node)
+        let node_class = if session.current_node.starts_with("healthy") {
+            "mode-healthy"
+        } else {
+            "mode-threat"
+        };
+        format!(
+            "<span class='{}'>{}</span>",
+            node_class, session.current_node
+        )
     };
-    
+
     // Format current mirror display (name + first 5 chars of onion address)
     let mirror_display = if session.current_mirror.is_empty() {
         "<span style='color: var(--text-muted);'>Direct / Local</span>".to_string()
@@ -2110,13 +2249,14 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
         } else {
             &session.current_mirror
         };
-        format!("<span style='color: var(--gold-primary);'>🧅 {}</span> <code style='font-size: 0.9em;'>{}...</code>", 
+        format!("<span style='color: var(--gold-primary);'>🧅 {}</span> <code style='font-size: 0.9em;'>{}...</code>",
             "Mirror", onion_prefix)
     };
-    
-    let content = format!(r#"
+
+    let content = format!(
+        r#"
         <h2>Session: {}</h2>
-        
+
         <div class="card">
             <h3>Session Info</h3>
             <table>
@@ -2134,7 +2274,7 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                 <tr><td>Banned</td><td>{}</td></tr>
                 <tr><td>Killed</td><td>{}</td></tr>
             </table>
-            
+
             <div class="actions">
                 <form method="POST" action="{}/session/action">
                     <input type="hidden" name="session_id" value="{}">
@@ -2146,9 +2286,9 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                 </form>
             </div>
         </div>
-        
+
         {}
-        
+
         <div class="card">
             <h3>📜 Session History (Last 50)</h3>
             <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 15px;">Page requests, tier changes, demotions, bans, and system events</p>
@@ -2156,12 +2296,13 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
                 {}
             </div>
         </div>
-        
+
         <a href="{}/sessions" class="btn">← Back to Sessions</a>
     "#,
         &session.session_id[..12.min(session.session_id.len())],
         session.session_id,
-        tier_class, session.trust_tier,
+        tier_class,
+        session.trust_tier,
         node_display,
         mirror_display,
         session.page_loads,
@@ -2172,13 +2313,18 @@ fn render_session_detail(state: &AdminState, session_id: &str) -> Response<Body>
         format_timestamp(session.created_at),
         format_timestamp(session.last_activity),
         if session.is_banned { "Yes" } else { "No" },
-        if session.is_killed { "<span style='color: var(--crimson);'>YES - REPEAT OFFENDER</span>" } else { "No" },
-        ADMIN_PATH, session.session_id,
+        if session.is_killed {
+            "<span style='color: var(--crimson);'>YES - REPEAT OFFENDER</span>"
+        } else {
+            "No"
+        },
+        ADMIN_PATH,
+        session.session_id,
         behavior_html,
         history_html,
         ADMIN_PATH
     );
-    
+
     html_page("Session Detail", &content)
 }
 
@@ -2186,17 +2332,17 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
     let mut nodes = state.get_nodes();
     let traffic_stats = state.get_traffic_stats();
     let time_stats = state.get_time_based_stats();
-    
+
     // Sort nodes by total_requests descending (busiest first)
     nodes.sort_by(|a, b| b.total_requests.cmp(&a.total_requests));
-    
+
     let healthy: Vec<_> = nodes.iter().filter(|n| n.mode == "healthy").collect();
     let threat: Vec<_> = nodes.iter().filter(|n| n.mode == "threat").collect();
-    
+
     // Calculate total requests across all nodes
     let total_node_requests: u64 = nodes.iter().map(|n| n.total_requests).sum();
     let total_connections: usize = nodes.iter().map(|n| n.active_connections).sum();
-    
+
     // Build time-based stats summary at the top
     let windows = ["15min", "1hour", "4hours", "1day", "1week", "1month"];
     let mut time_summary_html = String::new();
@@ -2206,44 +2352,52 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
             if let Some(ws) = node_stats.windows.get(*window) {
                 window_cells.push_str(&format!(
                     "<td>{} / {}</td>",
-                    ws.requests, format_bytes(ws.bytes)
+                    ws.requests,
+                    format_bytes(ws.bytes)
                 ));
             } else {
                 window_cells.push_str("<td>-</td>");
             }
         }
-        let mode_class = if node_stats.mode == "healthy" { "mode-healthy" } else { "mode-threat" };
+        let mode_class = if node_stats.mode == "healthy" {
+            "mode-healthy"
+        } else {
+            "mode-threat"
+        };
         time_summary_html.push_str(&format!(
             r#"<tr>
                 <td><strong class="{}">{}</strong></td>
                 <td class="{}">{}</td>
                 {}
             </tr>"#,
-            mode_class, node_id,
-            mode_class, node_stats.mode,
-            window_cells
+            mode_class, node_id, mode_class, node_stats.mode, window_cells
         ));
     }
-    
+
     // System totals row
     let mut total_window_cells = String::new();
     for window in &windows {
         if let Some(ws) = time_stats.totals.get(*window) {
             total_window_cells.push_str(&format!(
                 "<td><strong>{} / {}</strong></td>",
-                ws.requests, format_bytes(ws.bytes)
+                ws.requests,
+                format_bytes(ws.bytes)
             ));
         } else {
             total_window_cells.push_str("<td>-</td>");
         }
     }
-    
+
     let render_node_table = |nodes: &[&NodeInfo], pool_name: &str| -> String {
         let mut rows = String::new();
         for n in nodes {
-            let status_class = if n.status == "online" { "status-online" } else { "status-offline" };
+            let status_class = if n.status == "online" {
+                "status-online"
+            } else {
+                "status-offline"
+            };
             let age = format_time_ago(n.created_at);
-            
+
             // Build address display with both local and onion if available
             let local_url = format!(
                 "<code style='color: var(--gold-primary); background: var(--bg-elevated); padding: 2px 6px;'>{}</code>",
@@ -2258,7 +2412,7 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
             } else {
                 local_url
             };
-            
+
             rows.push_str(&format!(
                 r#"<tr>
                     <td><strong style="color: var(--gold-primary);">{}</strong></td>
@@ -2280,20 +2434,24 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
                         </form>
                     </td>
                 </tr>"#,
-                n.id, url_display,
-                status_class, n.status,
+                n.id,
+                url_display,
+                status_class,
+                n.status,
                 age,
                 n.total_requests,
                 n.active_connections,
-                ADMIN_PATH, n.id
+                ADMIN_PATH,
+                n.id
             ));
         }
-        
+
         // Calculate pool stats
         let pool_requests: u64 = nodes.iter().map(|n| n.total_requests).sum();
         let pool_connections: usize = nodes.iter().map(|n| n.active_connections).sum();
-        
-        format!(r#"
+
+        format!(
+            r#"
             <h3>{} Pool ({} nodes) - {} requests, {} active</h3>
             <table>
                 <thead>
@@ -2309,16 +2467,23 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
                 </thead>
                 <tbody>{}</tbody>
             </table>
-        "#, pool_name, nodes.len(), pool_requests, pool_connections, rows)
+        "#,
+            pool_name,
+            nodes.len(),
+            pool_requests,
+            pool_connections,
+            rows
+        )
     };
-    
+
     // Get auto-suggestions for new nodes
     let (suggested_healthy_name, suggested_healthy_url) = state.get_next_node_suggestion("healthy");
     let (suggested_threat_name, suggested_threat_url) = state.get_next_node_suggestion("threat");
-    
-    let content = format!(r#"
+
+    let content = format!(
+        r#"
         <h2>Node Management</h2>
-        
+
         <div class="stats-grid">
             <div class="stat-box">
                 <div class="stat-value">{}</div>
@@ -2345,7 +2510,7 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
                 <div class="stat-label">System Traffic</div>
             </div>
         </div>
-        
+
         <div class="card">
             <h3>+ Add New Node</h3>
             <p style="color: var(--text-muted); margin-bottom: 15px;">
@@ -2365,19 +2530,19 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
                 </div>
             </form>
             <p style="color: var(--text-muted); font-size: 0.8em; margin-top: 10px;">
-                Suggested next: <strong>Healthy</strong> = <code>{}</code> @ <code>{}</code> | 
+                Suggested next: <strong>Healthy</strong> = <code>{}</code> @ <code>{}</code> |
                 <strong>Threat</strong> = <code>{}</code> @ <code>{}</code>
             </p>
         </div>
-        
+
         <div class="section">
             {}
         </div>
-        
+
         <div class="section">
             {}
         </div>
-        
+
         <div class="card" style="margin-top: 20px;">
             <h3>Node Traffic by Time Window</h3>
             <table class="data-table" style="width: 100%; margin-top: 10px;">
@@ -2415,14 +2580,16 @@ fn render_nodes(state: &AdminState) -> Response<Body> {
         ADMIN_PATH,
         suggested_healthy_name,
         suggested_healthy_url,
-        suggested_healthy_name, suggested_healthy_url,
-        suggested_threat_name, suggested_threat_url,
+        suggested_healthy_name,
+        suggested_healthy_url,
+        suggested_threat_name,
+        suggested_threat_url,
         render_node_table(&healthy, "Healthy"),
         render_node_table(&threat, "Threat"),
         time_summary_html,
         total_window_cells
     );
-    
+
     html_page("Nodes", &content)
 }
 
@@ -2436,7 +2603,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
         pow_enabled: bool,
         is_standby: bool,
     }
-    
+
     let orchestrator_mirrors: Vec<OrchestratorMirror> = match std::thread::spawn(|| {
         let client = reqwest::blocking::Client::new();
         // Try both orchestrator ports - use /mirrors/extended for full info
@@ -2454,9 +2621,21 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                                 let id = v.get("id")?.as_str()?.to_string();
                                 let onion_address = v.get("onion_address")?.as_str()?.to_string();
                                 let status = v.get("status")?.as_str()?.to_string();
-                                let pow_enabled = v.get("pow_enabled").and_then(|p| p.as_bool()).unwrap_or(false);
-                                let is_standby = v.get("is_standby").and_then(|s| s.as_bool()).unwrap_or(false);
-                                Some(OrchestratorMirror { id, onion_address, status, pow_enabled, is_standby })
+                                let pow_enabled = v
+                                    .get("pow_enabled")
+                                    .and_then(|p| p.as_bool())
+                                    .unwrap_or(false);
+                                let is_standby = v
+                                    .get("is_standby")
+                                    .and_then(|s| s.as_bool())
+                                    .unwrap_or(false);
+                                Some(OrchestratorMirror {
+                                    id,
+                                    onion_address,
+                                    status,
+                                    pow_enabled,
+                                    is_standby,
+                                })
                             })
                             .collect();
                     }
@@ -2464,27 +2643,39 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
             }
         }
         Vec::new()
-    }).join() {
+    })
+    .join()
+    {
         Ok(m) => m,
         Err(_) => Vec::new(),
     };
-    
+
     // Get local mirror stats (created_at, total_requests)
     let local_mirrors = state.get_mirrors();
-    
-    let active_count = orchestrator_mirrors.iter().filter(|m| m.status == "active").count();
-    let _paused_count = orchestrator_mirrors.iter().filter(|m| m.status == "paused" && !m.is_standby).count();
+
+    let active_count = orchestrator_mirrors
+        .iter()
+        .filter(|m| m.status == "active")
+        .count();
+    let _paused_count = orchestrator_mirrors
+        .iter()
+        .filter(|m| m.status == "paused" && !m.is_standby)
+        .count();
     let standby_count = orchestrator_mirrors.iter().filter(|m| m.is_standby).count();
-    let pow_count = orchestrator_mirrors.iter().filter(|m| m.pow_enabled).count();
-    
+    let pow_count = orchestrator_mirrors
+        .iter()
+        .filter(|m| m.pow_enabled)
+        .count();
+
     let current_time = now();
-    
+
     let mut rows = String::new();
     for mirror in orchestrator_mirrors.iter() {
         // Find local stats for this mirror by onion address
-        let local_stats = local_mirrors.iter()
+        let local_stats = local_mirrors
+            .iter()
             .find(|lm| lm.onion_address == mirror.onion_address);
-        
+
         // Format age (time since first seen or created)
         let age_display = if let Some(stats) = local_stats {
             let age_secs = current_time.saturating_sub(stats.created_at);
@@ -2492,29 +2683,32 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
         } else {
             "-".to_string()
         };
-        
+
         // Format request count
         let requests_display = if let Some(stats) = local_stats {
             format_number(stats.total_requests)
         } else {
             "0".to_string()
         };
-        
+
         // PoW badge
         let pow_badge = if mirror.pow_enabled {
             r#"<span style="background: rgba(125,154,120,0.2); color: var(--sage); padding: 2px 6px; font-size: 0.65em; border-radius: 3px; margin-left: 5px;">PoW</span>"#
         } else {
             ""
         };
-        
+
         // Standby badge
         let standby_badge = if mirror.is_standby {
             r#"<span style="background: rgba(212,168,75,0.2); color: var(--amber); padding: 2px 6px; font-size: 0.65em; border-radius: 3px; margin-left: 5px;">STANDBY</span>"#
         } else {
             ""
         };
-        
-        let (status_class, status_text, action_buttons) = match (mirror.status.as_str(), mirror.is_standby) {
+
+        let (status_class, status_text, action_buttons) = match (
+            mirror.status.as_str(),
+            mirror.is_standby,
+        ) {
             ("active", _) => (
                 "status-online",
                 format!("🟢 Active{}{}", pow_badge, standby_badge),
@@ -2533,9 +2727,13 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                         <button type="submit" class="btn btn-danger" style="font-size: 0.8em;" onclick="return confirm('DESTROY this mirror? This will permanently remove it.');">🔥 Destroy</button>
                     </form>"#,
                     mirror.onion_address,
-                    ADMIN_PATH, mirror.id, mirror.onion_address,
-                    ADMIN_PATH, mirror.id, mirror.onion_address
-                )
+                    ADMIN_PATH,
+                    mirror.id,
+                    mirror.onion_address,
+                    ADMIN_PATH,
+                    mirror.id,
+                    mirror.onion_address
+                ),
             ),
             ("paused", true) => (
                 "status-threat",
@@ -2553,9 +2751,13 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                         <input type="hidden" name="onion_address" value="{}">
                         <button type="submit" class="btn btn-danger" style="font-size: 0.8em;" onclick="return confirm('DESTROY this standby mirror?');">🔥 Destroy</button>
                     </form>"#,
-                    ADMIN_PATH, mirror.id, mirror.onion_address,
-                    ADMIN_PATH, mirror.id, mirror.onion_address
-                )
+                    ADMIN_PATH,
+                    mirror.id,
+                    mirror.onion_address,
+                    ADMIN_PATH,
+                    mirror.id,
+                    mirror.onion_address
+                ),
             ),
             ("paused", false) => (
                 "status-threat",
@@ -2573,17 +2775,17 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                         <input type="hidden" name="onion_address" value="{}">
                         <button type="submit" class="btn btn-danger" style="font-size: 0.8em;" onclick="return confirm('DESTROY this mirror? This will permanently remove it.');">🔥 Destroy</button>
                     </form>"#,
-                    ADMIN_PATH, mirror.id, mirror.onion_address,
-                    ADMIN_PATH, mirror.id, mirror.onion_address
-                )
+                    ADMIN_PATH,
+                    mirror.id,
+                    mirror.onion_address,
+                    ADMIN_PATH,
+                    mirror.id,
+                    mirror.onion_address
+                ),
             ),
-            _ => (
-                "status-unknown",
-                mirror.status.clone(),
-                String::new()
-            ),
+            _ => ("status-unknown", mirror.status.clone(), String::new()),
         };
-        
+
         rows.push_str(&format!(
             r#"<tr>
                 <td>{}</td>
@@ -2602,14 +2804,15 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
             action_buttons
         ));
     }
-    
+
     if rows.is_empty() {
         rows = r#"<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No mirrors found. Orchestrator may still be starting up...</td></tr>"#.to_string();
     }
-    
-    let content = format!(r#"
+
+    let content = format!(
+        r#"
         <h2>Mirror Management</h2>
-        
+
         <div class="stats-grid">
             <div class="stat-box">
                 <div class="stat-value">{}</div>
@@ -2628,7 +2831,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                 <div class="stat-label">Total Mirrors</div>
             </div>
         </div>
-        
+
         <div class="card" style="background: var(--bg-elevated); border-color: var(--gold-muted);">
             <h3>How Mirrors Work</h3>
             <p style="color: var(--text-secondary); line-height: 1.6;">
@@ -2643,7 +2846,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                 <a href="http://127.0.0.1:8080/status" target="_blank" class="btn">View Orchestrator Status</a>
             </p>
         </div>
-        
+
         <div class="card">
             <h3>+ Create New Mirror</h3>
             <p style="color: var(--text-muted); margin-bottom: 15px;">
@@ -2663,7 +2866,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
                 <strong>Active</strong> mirrors serve traffic immediately. <strong>Standby</strong> mirrors are paused but ready for instant activation.
             </p>
         </div>
-        
+
         <div class="section">
             <h3>All Mirrors</h3>
             <p style="color: var(--text-muted); margin-bottom: 15px;">These .onion addresses route through Tor to this Fortify instance:</p>
@@ -2692,7 +2895,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
         ADMIN_PATH,
         rows
     );
-    
+
     html_page("Mirrors", &content)
 }
 
@@ -2700,33 +2903,39 @@ fn render_settings(state: &AdminState) -> Response<Body> {
     let config = state.get_behavior_config();
     let captcha_config = state.get_captcha_config();
     let agg_stats = state.get_aggregate_behavior_stats();
-    
+
     let checkbox = |name: &str, label: &str, enabled: bool| -> String {
         let checked = if enabled { "checked" } else { "" };
-        format!(r#"
+        format!(
+            r#"
             <div style="display: flex; align-items: center; gap: 15px; padding: 12px; border-bottom: 1px solid var(--border-subtle);">
                 <input type="checkbox" name="{}" value="1" {} id="{}" style="width: 20px; height: 20px; accent-color: var(--gold-primary);">
                 <label for="{}" style="cursor: pointer; flex: 1;">{}</label>
                 <span style="color: {};">{}</span>
             </div>
-        "#, 
-            name, checked, name, name, label,
-            if enabled { "var(--sage)" } else { "var(--crimson)" },
+        "#,
+            name,
+            checked,
+            name,
+            name,
+            label,
+            if enabled {
+                "var(--sage)"
+            } else {
+                "var(--crimson)"
+            },
             if enabled { "ACTIVE" } else { "DISABLED" }
         )
     };
 
     let mut violations_breakdown = String::new();
     for (vtype, count) in &agg_stats.violations_by_type {
-        violations_breakdown.push_str(&format!(
-            r#"<tr><td>{}</td><td>{}</td></tr>"#,
-            vtype, count
-        ));
+        violations_breakdown.push_str(&format!(r#"<tr><td>{}</td><td>{}</td></tr>"#, vtype, count));
     }
     if violations_breakdown.is_empty() {
         violations_breakdown = r#"<tr><td colspan="2" style="color: var(--text-muted);">No violations detected yet</td></tr>"#.to_string();
     }
-    
+
     // Build attack path toggles - grouped by category
     let mut attack_path_rows = String::new();
     let categories = [
@@ -2739,22 +2948,26 @@ fn render_settings(state: &AdminState) -> Response<Body> {
         ("debug", "Debug Endpoints"),
         ("exploit", "Exploit Attempts"),
     ];
-    
+
     for (cat_id, cat_label) in &categories {
-        let paths_in_cat: Vec<_> = KNOWN_ATTACK_PATHS.iter()
+        let paths_in_cat: Vec<_> = KNOWN_ATTACK_PATHS
+            .iter()
             .filter(|(_, _, cat)| cat == cat_id)
             .collect();
-        
+
         if !paths_in_cat.is_empty() {
             attack_path_rows.push_str(&format!(
                 r#"<div style="margin-top: 15px; margin-bottom: 5px; color: var(--gold-primary); font-weight: bold;">{}</div>"#,
                 cat_label
             ));
-            
+
             for (pattern, desc, _) in paths_in_cat {
                 let is_enabled = !config.disabled_attack_paths.contains(*pattern);
                 let checked = if is_enabled { "checked" } else { "" };
-                let field_name = pattern.replace('/', "_").replace('.', "_").replace('\\', "_");
+                let field_name = pattern
+                    .replace('/', "_")
+                    .replace('.', "_")
+                    .replace('\\', "_");
                 attack_path_rows.push_str(&format!(r#"
                     <div style="display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border-subtle);">
                         <input type="checkbox" name="attack_path_{}" value="1" {} style="width: 18px; height: 18px; accent-color: var(--gold-primary);">
@@ -2762,10 +2975,10 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                         <span style="color: var(--text-muted); font-size: 0.9em;">{}</span>
                         <span style="margin-left: auto; color: {}; font-size: 0.8em;">{}</span>
                     </div>
-                "#, 
-                    field_name, 
-                    checked, 
-                    html_escape(pattern), 
+                "#,
+                    field_name,
+                    checked,
+                    html_escape(pattern),
                     desc,
                     if is_enabled { "var(--sage)" } else { "var(--crimson)" },
                     if is_enabled { "DETECTING" } else { "DISABLED" }
@@ -2773,15 +2986,15 @@ fn render_settings(state: &AdminState) -> Response<Body> {
             }
         }
     }
-    
+
     // Custom whitelist paths textarea
     let custom_whitelist_str = config.custom_whitelist_paths.join("\n");
-    
+
     // Build violation type thresholds rows
     let mut threshold_rows = String::new();
     let violation_types = [
         "Attack Path Access",
-        "Suspicious User-Agent", 
+        "Suspicious User-Agent",
         "Path Enumeration",
         "Resource Enumeration",
         "Form Submission Flood",
@@ -2791,7 +3004,11 @@ fn render_settings(state: &AdminState) -> Response<Body> {
         "Undersized Payload",
     ];
     for vtype in &violation_types {
-        let threshold = config.violation_type_thresholds.get(*vtype).copied().unwrap_or(5);
+        let threshold = config
+            .violation_type_thresholds
+            .get(*vtype)
+            .copied()
+            .unwrap_or(5);
         let field_name = vtype.to_lowercase().replace(' ', "_").replace('-', "_");
         threshold_rows.push_str(&format!(r#"
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
@@ -2800,10 +3017,11 @@ fn render_settings(state: &AdminState) -> Response<Body> {
             </div>
         "#, vtype, field_name, threshold));
     }
-    
-    let content = format!(r#"
+
+    let content = format!(
+        r#"
         <h2>Settings</h2>
-        
+
         <div class="card" style="background: var(--bg-elevated); border-color: var(--gold-primary); margin-bottom: 20px;">
             <h3>Need Help?</h3>
             <p style="color: var(--text-secondary); margin-bottom: 15px;">
@@ -2813,13 +3031,13 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                 View Tutorial &amp; Documentation
             </a>
         </div>
-        
+
         <div class="card" style="border-color: var(--amber);">
             <h3>Behavioral Analysis Engine</h3>
             <p style="color: var(--text-muted); margin-bottom: 20px;">
                 Toggle individual detection modules on/off. Changes take effect immediately for new requests.
             </p>
-            
+
             <form method="POST" action="{}/settings/behavior">
                 <div style="background: var(--bg-deep); border: 1px solid var(--border-subtle); margin-bottom: 20px;">
                     {}
@@ -2829,7 +3047,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                     {}
                     {}
                 </div>
-                
+
                 <h3>Detection Thresholds</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                     <div>
@@ -2849,7 +3067,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                         <input type="number" name="sequential_path_threshold" value="{}" style="width: 100%;">
                     </div>
                 </div>
-                
+
                 <h3>Threat Node Demotion Thresholds</h3>
                 <p style="color: var(--text-muted); margin-bottom: 15px;">
                     Configure when sessions get automatically demoted to the threat node pool.
@@ -2871,7 +3089,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                         <small style="color: var(--text-muted);">Kill session after N demotion cycles</small>
                     </div>
                 </div>
-                
+
                 <h4 style="color: var(--amber); margin-top: 20px;">Per-Violation Type Thresholds</h4>
                 <p style="color: var(--text-muted); margin-bottom: 10px;">
                     Demote to threat node when a specific violation type count reaches these limits:
@@ -2879,7 +3097,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                 <div style="background: var(--bg-deep); border: 1px solid var(--border-subtle); padding: 15px; margin-bottom: 20px;">
                     {}
                 </div>
-                
+
                 <h3>Attack Path Detection</h3>
                 <p style="color: var(--text-muted); margin-bottom: 10px;">
                     Toggle detection for each attack path pattern. Disable patterns that may conflict with your hidden service's legitimate paths.
@@ -2887,17 +3105,17 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                 <div style="background: var(--bg-deep); border: 1px solid var(--border-subtle); padding: 15px; margin-bottom: 20px; max-height: 400px; overflow-y: auto;">
                     {}
                 </div>
-                
+
                 <h3>Custom Path Whitelist</h3>
                 <p style="color: var(--text-muted); margin-bottom: 10px;">
                     Additional paths to whitelist. One per line. Use * for prefix matching (e.g., /my-app/*).
                 </p>
                 <textarea name="custom_whitelist_paths" rows="4" style="width: 100%; font-family: monospace; margin-bottom: 20px;" placeholder="/my-custom-path&#10;/my-api/*">{}</textarea>
-                
+
                 <button type="submit" class="btn btn-success">Save All Settings</button>
             </form>
         </div>
-        
+
         <div class="card">
             <h3>Aggregate Behavioral Stats</h3>
             <div class="stats-grid">
@@ -2918,18 +3136,18 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                     <div class="stat-label">Suspicious UAs</div>
                 </div>
             </div>
-            
+
             <h3>Violations by Type (All Sessions)</h3>
             <table>
                 <thead><tr><th>Violation Type</th><th>Count</th></tr></thead>
                 <tbody>{}</tbody>
             </table>
         </div>
-        
+
         <div class="card" style="background: var(--bg-elevated); border-color: var(--gold-muted);">
             <h3>About Behavioral Analysis</h3>
             <p style="color: var(--text-secondary); line-height: 1.6;">
-                The Behavioral Analysis Engine monitors request patterns to detect automated threats, 
+                The Behavioral Analysis Engine monitors request patterns to detect automated threats,
                 scrapers, and attack attempts <strong>without using JavaScript</strong>.
             </p>
             <p style="color: var(--text-secondary); line-height: 1.6; margin-top: 10px;">
@@ -2947,14 +3165,14 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                 All detection is Tor Browser "safest mode" compatible. Missing referers and standardized UAs are treated as normal.
             </p>
         </div>
-        
+
         <!-- CAPTCHA CONFIGURATION -->
         <div class="card" style="border-color: var(--sage); background: var(--bg-elevated);">
             <h3>Captcha Configuration</h3>
             <p style="color: var(--text-muted); margin-bottom: 20px;">
                 Configure captcha types used at the Gate (new visitors) and for Threat verification (demoted sessions).
             </p>
-            
+
             <form method="POST" action="{}/settings/captcha">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
                     <div>
@@ -2972,7 +3190,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                         </select>
                     </div>
                 </div>
-                
+
                 <div style="background: var(--bg-deep); border: 1px solid var(--border-subtle); padding: 15px; margin-bottom: 20px;">
                     <div style="display: flex; align-items: center; gap: 15px; padding: 12px; border-bottom: 1px solid var(--border-subtle);">
                         <input type="checkbox" name="threat_captcha_enabled" value="1" {} id="threat_captcha_enabled" style="width: 20px; height: 20px; accent-color: var(--gold-primary);">
@@ -2985,7 +3203,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                         <span style="color: {};">{}</span>
                     </div>
                 </div>
-                
+
                 <h4 style="color: var(--amber); margin-bottom: 15px;">Captcha Types for Cycling</h4>
                 <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 15px;">When random cycling is enabled, select which captcha types to cycle through:</p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
@@ -3032,19 +3250,43 @@ fn render_settings(state: &AdminState) -> Response<Body> {
                         </div>
                     </div>
                 </div>
-                
+
                 <button type="submit" class="btn btn-success">Save Captcha Settings</button>
             </form>
         </div>
     "#,
         ADMIN_PATH,
         ADMIN_PATH,
-        checkbox("ua_analysis_enabled", "User-Agent Analysis (detect bots, non-Tor browsers)", config.ua_analysis_enabled),
-        checkbox("referer_analysis_enabled", "Referer Analysis (detect suspicious external referers)", config.referer_analysis_enabled),
-        checkbox("path_analysis_enabled", "Path Analysis (detect attack paths like ../, .env)", config.path_analysis_enabled),
-        checkbox("enumeration_detection_enabled", "Enumeration Detection (detect rapid path scanning)", config.enumeration_detection_enabled),
-        checkbox("form_tracking_enabled", "Form Submission Tracking (detect form floods)", config.form_tracking_enabled),
-        checkbox("payload_analysis_enabled", "Payload Size Analysis (detect oversized requests)", config.payload_analysis_enabled),
+        checkbox(
+            "ua_analysis_enabled",
+            "User-Agent Analysis (detect bots, non-Tor browsers)",
+            config.ua_analysis_enabled
+        ),
+        checkbox(
+            "referer_analysis_enabled",
+            "Referer Analysis (detect suspicious external referers)",
+            config.referer_analysis_enabled
+        ),
+        checkbox(
+            "path_analysis_enabled",
+            "Path Analysis (detect attack paths like ../, .env)",
+            config.path_analysis_enabled
+        ),
+        checkbox(
+            "enumeration_detection_enabled",
+            "Enumeration Detection (detect rapid path scanning)",
+            config.enumeration_detection_enabled
+        ),
+        checkbox(
+            "form_tracking_enabled",
+            "Form Submission Tracking (detect form floods)",
+            config.form_tracking_enabled
+        ),
+        checkbox(
+            "payload_analysis_enabled",
+            "Payload Size Analysis (detect oversized requests)",
+            config.payload_analysis_enabled
+        ),
         config.max_unique_paths_per_minute,
         config.max_form_submissions_per_minute,
         config.max_payload_size,
@@ -3064,34 +3306,95 @@ fn render_settings(state: &AdminState) -> Response<Body> {
         ADMIN_PATH,
         render_captcha_type_options(captcha_config.gate_captcha_type),
         render_captcha_type_options(captcha_config.threat_captcha_type),
-        if captcha_config.threat_captcha_enabled { "checked" } else { "" },
-        if captcha_config.threat_captcha_enabled { "var(--sage)" } else { "var(--crimson)" },
-        if captcha_config.threat_captcha_enabled { "ENABLED" } else { "DISABLED" },
-        if captcha_config.random_cycling { "checked" } else { "" },
-        if captcha_config.random_cycling { "var(--sage)" } else { "var(--crimson)" },
-        if captcha_config.random_cycling { "ENABLED" } else { "DISABLED" },
+        if captcha_config.threat_captcha_enabled {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config.threat_captcha_enabled {
+            "var(--sage)"
+        } else {
+            "var(--crimson)"
+        },
+        if captcha_config.threat_captcha_enabled {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        },
+        if captcha_config.random_cycling {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config.random_cycling {
+            "var(--sage)"
+        } else {
+            "var(--crimson)"
+        },
+        if captcha_config.random_cycling {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        },
         // Cycling types checkboxes
-        if captcha_config.cycling_types.contains(&CaptchaType::BmpText) { "checked" } else { "" },
-        if captcha_config.cycling_types.contains(&CaptchaType::Emoji) { "checked" } else { "" },
-        if captcha_config.cycling_types.contains(&CaptchaType::Direction) { "checked" } else { "" },
-        if captcha_config.cycling_types.contains(&CaptchaType::Sequence) { "checked" } else { "" },
-        if captcha_config.cycling_types.contains(&CaptchaType::WordUnscramble) { "checked" } else { "" },
-        if captcha_config.cycling_types.contains(&CaptchaType::Silhouette) { "checked" } else { "" },
+        if captcha_config.cycling_types.contains(&CaptchaType::BmpText) {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config.cycling_types.contains(&CaptchaType::Emoji) {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config
+            .cycling_types
+            .contains(&CaptchaType::Direction)
+        {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config
+            .cycling_types
+            .contains(&CaptchaType::Sequence)
+        {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config
+            .cycling_types
+            .contains(&CaptchaType::WordUnscramble)
+        {
+            "checked"
+        } else {
+            ""
+        },
+        if captcha_config
+            .cycling_types
+            .contains(&CaptchaType::Silhouette)
+        {
+            "checked"
+        } else {
+            ""
+        },
     );
-    
+
     html_page("Settings", &content)
 }
 
 fn render_tutorial() -> Response<Body> {
-    let content = format!(r#"
+    let content = format!(
+        r#"
         <h2>Fortify System Tutorial</h2>
-        
+
         <!-- Quick Intro Section -->
         <div class="card" style="background: var(--bg-elevated); border: 2px solid var(--gold-primary);">
             <h3 style="font-size: 1.5em; margin-bottom: 15px;">Welcome to Fortify</h3>
             <p style="color: var(--text-secondary); font-size: 1.05em; line-height: 1.8;">
-                <strong>Fortify</strong> is a military-grade protection layer for Tor hidden services (.onion sites). 
-                It acts as an intelligent reverse proxy that shields your service from automated attacks, scrapers, 
+                <strong>Fortify</strong> is a military-grade protection layer for Tor hidden services (.onion sites).
+                It acts as an intelligent reverse proxy that shields your service from automated attacks, scrapers,
                 and malicious actors — all while respecting the privacy-first nature of Tor.
             </p>
             <div style="margin-top: 20px; padding: 15px; background: var(--bg-deep); border-radius: 4px;">
@@ -3107,7 +3410,7 @@ fn render_tutorial() -> Response<Body> {
                 </ul>
             </div>
         </div>
-        
+
         <!-- What It Protects Against -->
         <div class="card">
             <h3>What Fortify Protects Against</h3>
@@ -3138,7 +3441,7 @@ fn render_tutorial() -> Response<Body> {
                 </div>
             </div>
         </div>
-        
+
         <!-- How Routing Works -->
         <div class="card" style="border-color: var(--gold-muted);">
             <h3>How User Routing Works</h3>
@@ -3184,18 +3487,18 @@ fn render_tutorial() -> Response<Body> {
                 </div>
             </div>
             <p style="color: var(--text-muted); font-size: 0.9em; margin-top: 15px;">
-                Users automatically move between tiers based on their behavior. Legitimate users stay verified; 
+                Users automatically move between tiers based on their behavior. Legitimate users stay verified;
                 attackers get demoted and eventually burned.
             </p>
         </div>
-        
+
         <!-- Settings Explanations -->
         <div class="card" style="border-color: var(--amber);">
             <h3>Settings Reference</h3>
             <p style="color: var(--text-muted); margin-bottom: 20px;">
                 Click each setting to expand detailed explanations.
             </p>
-            
+
             <!-- Detection Modules -->
             <details style="margin-bottom: 15px; background: var(--bg-deep); border: 1px solid var(--border-subtle); padding: 15px; border-radius: 4px;">
                 <summary style="cursor: pointer; color: var(--gold-primary); font-weight: 500; font-size: 1.05em;">
@@ -3222,7 +3525,7 @@ fn render_tutorial() -> Response<Body> {
                     </details>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-deep); border: 1px solid var(--border-subtle); padding: 15px; border-radius: 4px;">
                 <summary style="cursor: pointer; color: var(--gold-primary); font-weight: 500; font-size: 1.05em;">
                     Referer Analysis
@@ -3247,7 +3550,7 @@ fn render_tutorial() -> Response<Body> {
                     </details>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-deep); border: 1px solid var(--border-subtle); padding: 15px; border-radius: 4px;">
                 <summary style="cursor: pointer; color: var(--gold-primary); font-weight: 500; font-size: 1.05em;">
                     Path Analysis
@@ -3274,7 +3577,7 @@ fn render_tutorial() -> Response<Body> {
                     </details>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-surface); border: 1px solid var(--border-accent); padding: 15px; border-radius: 5px;">
                 <summary style="cursor: pointer; color: var(--gold-primary); font-weight: bold; font-size: 1.1em;">
                     Enumeration Detection
@@ -3299,7 +3602,7 @@ fn render_tutorial() -> Response<Body> {
                     </details>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-surface); border: 1px solid var(--border-accent); padding: 15px; border-radius: 5px;">
                 <summary style="cursor: pointer; color: var(--gold-primary); font-weight: bold; font-size: 1.1em;">
                     Form Submission Tracking
@@ -3324,7 +3627,7 @@ fn render_tutorial() -> Response<Body> {
                     </details>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-surface); border: 1px solid var(--border-accent); padding: 15px; border-radius: 5px;">
                 <summary style="cursor: pointer; color: var(--gold-primary); font-weight: bold; font-size: 1.1em;">
                     Payload Size Analysis
@@ -3349,10 +3652,10 @@ fn render_tutorial() -> Response<Body> {
                     </details>
                 </div>
             </details>
-            
+
             <!-- Demotion Thresholds -->
             <h4 style="color: var(--crimson); margin: 25px 0 15px 0;">Demotion Thresholds</h4>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-surface); border: 1px solid var(--crimson); padding: 15px; border-radius: 5px;">
                 <summary style="cursor: pointer; color: var(--crimson); font-weight: bold; font-size: 1.1em;">
                     Total Violations Threshold
@@ -3366,7 +3669,7 @@ fn render_tutorial() -> Response<Body> {
                     </p>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-surface); border: 1px solid var(--crimson); padding: 15px; border-radius: 5px;">
                 <summary style="cursor: pointer; color: var(--crimson); font-weight: bold; font-size: 1.1em;">
                     Severity Score Threshold
@@ -3376,12 +3679,12 @@ fn render_tutorial() -> Response<Body> {
                         <strong>Simple:</strong> Demote when cumulative severity score reaches this value.
                     </p>
                     <p style="color: var(--text-muted); font-size: 0.9em;">
-                        Some violations (like exploit attempts) carry higher severity weight than others. 
+                        Some violations (like exploit attempts) carry higher severity weight than others.
                         This threshold triggers on weighted severity, not just count.
                     </p>
                 </div>
             </details>
-            
+
             <details style="margin-bottom: 15px; background: var(--bg-surface); border: 1px solid var(--crimson); padding: 15px; border-radius: 5px;">
                 <summary style="cursor: pointer; color: var(--crimson); font-weight: bold; font-size: 1.1em;">
                     Max Demotions Before Kill
@@ -3397,15 +3700,17 @@ fn render_tutorial() -> Response<Body> {
                 </div>
             </details>
         </div>
-        
+
         <!-- Back to Settings -->
         <div style="text-align: center; margin-top: 30px;">
             <a href="{}/settings" class="btn" style="padding: 15px 40px; font-size: 1.1em;">
                 ← Back to Settings
             </a>
         </div>
-    "#, ADMIN_PATH);
-    
+    "#,
+        ADMIN_PATH
+    );
+
     html_page("Tutorial", &content)
 }
 
@@ -3414,12 +3719,14 @@ fn render_tutorial() -> Response<Body> {
 // ============================================================================
 
 async fn handle_session_action(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+    let body_bytes = hyper::body::to_bytes(req.into_body())
+        .await
+        .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
-    
+
     let session_id = params.get("session_id").map(|s| s.as_str()).unwrap_or("");
     let action = params.get("action").map(|s| s.as_str()).unwrap_or("");
-    
+
     match action {
         "to_threat" => {
             state.set_session_tier(session_id, "Suspicious");
@@ -3444,17 +3751,19 @@ async fn handle_session_action(req: Request<Body>, state: Arc<AdminState>) -> Re
         }
         _ => {}
     }
-    
+
     redirect(&format!("{}/sessions", ADMIN_PATH))
 }
 
 async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+    let body_bytes = hyper::body::to_bytes(req.into_body())
+        .await
+        .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
-    
+
     let node_id = params.get("node_id").map(|s| s.as_str()).unwrap_or("");
     let action = params.get("action").map(|s| s.as_str()).unwrap_or("");
-    
+
     match action {
         "to_healthy" => {
             state.set_node_mode(node_id, "healthy");
@@ -3472,7 +3781,7 @@ async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Respo
                 node.status = "online".to_string();
                 state.update_node(node);
             }
-            
+
             // Demote all sessions currently using this node
             // They'll be forced through the Gate/captcha flow on their next request
             let sessions = state.get_sessions();
@@ -3482,11 +3791,19 @@ async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Respo
                     // Set tier to Suspicious so requires_gate() returns true
                     state.set_session_tier(&session.session_id, "Suspicious");
                     demoted_count += 1;
-                    tracing::info!("Demoted session {} (was on node {})", session.session_id, node_id);
+                    tracing::info!(
+                        "Demoted session {} (was on node {})",
+                        session.session_id,
+                        node_id
+                    );
                 }
             }
-            
-            tracing::info!("Admin: Node {} set to threat mode, demoted {} sessions", node_id, demoted_count);
+
+            tracing::info!(
+                "Admin: Node {} set to threat mode, demoted {} sessions",
+                node_id,
+                demoted_count
+            );
         }
         "remove" => {
             state.remove_node(node_id);
@@ -3502,10 +3819,13 @@ async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Respo
         }
         "add" => {
             let bind_addr = params.get("bind_addr").map(|s| s.as_str()).unwrap_or("");
-            let onion_address = params.get("onion_address").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+            let onion_address = params
+                .get("onion_address")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             let mode = params.get("mode").map(|s| s.as_str()).unwrap_or("healthy");
             let custom_name = params.get("node_name").map(|s| s.trim()).unwrap_or("");
-            
+
             if !bind_addr.is_empty() {
                 // Generate node ID: use custom name if provided, otherwise auto-generate
                 let new_id = if !custom_name.is_empty() {
@@ -3513,12 +3833,10 @@ async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Respo
                 } else {
                     // Auto-generate based on pool and existing count
                     let existing_nodes = state.get_nodes();
-                    let pool_count = existing_nodes.iter()
-                        .filter(|n| n.mode == mode)
-                        .count();
+                    let pool_count = existing_nodes.iter().filter(|n| n.mode == mode).count();
                     format!("{}-{}", mode, pool_count)
                 };
-                
+
                 state.update_node(NodeInfo {
                     id: new_id.clone(),
                     bind_addr: bind_addr.to_string(),
@@ -3531,27 +3849,37 @@ async fn handle_node_action(req: Request<Body>, state: Arc<AdminState>) -> Respo
                     active_connections: 0,
                     violations_detected: 0,
                 });
-                tracing::info!("Admin: Node {} added at {} (mode: {})", new_id, bind_addr, mode);
+                tracing::info!(
+                    "Admin: Node {} added at {} (mode: {})",
+                    new_id,
+                    bind_addr,
+                    mode
+                );
             }
         }
         _ => {}
     }
-    
+
     redirect(&format!("{}/nodes", ADMIN_PATH))
 }
 
 async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+    let body_bytes = hyper::body::to_bytes(req.into_body())
+        .await
+        .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
-    
+
     let mirror_id = params.get("mirror_id").map(|s| s.as_str()).unwrap_or("");
     let action = params.get("action").map(|s| s.as_str()).unwrap_or("");
-    
-    let onion_address = params.get("onion_address").map(|s| s.as_str()).unwrap_or("");
-    
+
+    let onion_address = params
+        .get("onion_address")
+        .map(|s| s.as_str())
+        .unwrap_or("");
+
     // Get auth token for orchestrator API calls
     let auth_token = get_auth_token();
-    
+
     match action {
         "pause" => {
             // Call orchestrator to pause/standdown this mirror
@@ -3566,7 +3894,9 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(10))
                         .send()
-                }).join() {
+                })
+                .join()
+                {
                     tracing::info!("Admin: Mirror {} paused via orchestrator", mirror_id);
                     break;
                 }
@@ -3585,7 +3915,9 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(10))
                         .send()
-                }).join() {
+                })
+                .join()
+                {
                     tracing::info!("Admin: Mirror {} resumed via orchestrator", mirror_id);
                     break;
                 }
@@ -3604,7 +3936,9 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(10))
                         .send()
-                }).join() {
+                })
+                .join()
+                {
                     tracing::warn!("Admin: Mirror {} destroyed via orchestrator", mirror_id);
                     break;
                 }
@@ -3627,9 +3961,14 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         .header(AUTH_TOKEN_HEADER, token)
                         .timeout(std::time::Duration::from_secs(30))
                         .send()
-                }).join() {
+                })
+                .join()
+                {
                     Ok(Ok(resp)) if resp.status().is_success() => {
-                        tracing::info!("✅ Admin: Mirror creation triggered via orchestrator (port {})", port);
+                        tracing::info!(
+                            "✅ Admin: Mirror creation triggered via orchestrator (port {})",
+                            port
+                        );
                         created = true;
                         break;
                     }
@@ -3637,14 +3976,18 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         tracing::warn!("Admin: Orchestrator responded with {}", resp.status());
                     }
                     Ok(Err(e)) => {
-                        tracing::debug!("Admin: Could not reach orchestrator on port {}: {}", port, e);
+                        tracing::debug!(
+                            "Admin: Could not reach orchestrator on port {}: {}",
+                            port,
+                            e
+                        );
                     }
                     Err(_) => {
                         tracing::debug!("Admin: Thread panicked trying port {}", port);
                     }
                 }
             }
-            
+
             if !created {
                 // Fallback: create placeholder if orchestrator is unreachable
                 let new_id = format!("mirror-{}", &uuid_v4()[..8]);
@@ -3669,16 +4012,28 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(15))
                         .send()
-                }).join() {
+                })
+                .join()
+                {
                     Ok(Ok(resp)) if resp.status().is_success() => {
-                        tracing::info!("Admin: Standby mirror {} activated via orchestrator", mirror_id);
+                        tracing::info!(
+                            "Admin: Standby mirror {} activated via orchestrator",
+                            mirror_id
+                        );
                         break;
                     }
                     Ok(Ok(resp)) => {
-                        tracing::warn!("Admin: Orchestrator returned {} when activating mirror", resp.status());
+                        tracing::warn!(
+                            "Admin: Orchestrator returned {} when activating mirror",
+                            resp.status()
+                        );
                     }
                     Ok(Err(e)) => {
-                        tracing::debug!("Admin: Could not reach orchestrator on port {}: {}", port, e);
+                        tracing::debug!(
+                            "Admin: Could not reach orchestrator on port {}: {}",
+                            port,
+                            e
+                        );
                     }
                     Err(_) => {
                         tracing::debug!("Admin: Thread panicked trying port {}", port);
@@ -3695,16 +4050,28 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                         .post(&format!("http://127.0.0.1:{}/mirror/create-standby", port))
                         .timeout(std::time::Duration::from_secs(30))
                         .send()
-                }).join() {
+                })
+                .join()
+                {
                     Ok(Ok(resp)) if resp.status().is_success() => {
-                        tracing::info!("Admin: Standby mirror creation triggered via orchestrator (port {})", port);
+                        tracing::info!(
+                            "Admin: Standby mirror creation triggered via orchestrator (port {})",
+                            port
+                        );
                         break;
                     }
                     Ok(Ok(resp)) => {
-                        tracing::warn!("Admin: Orchestrator responded with {} when creating standby", resp.status());
+                        tracing::warn!(
+                            "Admin: Orchestrator responded with {} when creating standby",
+                            resp.status()
+                        );
                     }
                     Ok(Err(e)) => {
-                        tracing::debug!("Admin: Could not reach orchestrator on port {}: {}", port, e);
+                        tracing::debug!(
+                            "Admin: Could not reach orchestrator on port {}: {}",
+                            port,
+                            e
+                        );
                     }
                     Err(_) => {
                         tracing::debug!("Admin: Thread panicked trying port {}", port);
@@ -3714,17 +4081,19 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
         }
         _ => {}
     }
-    
+
     redirect(&format!("{}/mirrors", ADMIN_PATH))
 }
 
 async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+    let body_bytes = hyper::body::to_bytes(req.into_body())
+        .await
+        .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
-    
+
     // Get current config and update with form values
     let mut config = state.get_behavior_config();
-    
+
     // Checkboxes: present in form = enabled, absent = disabled
     config.ua_analysis_enabled = params.contains_key("ua_analysis_enabled");
     config.referer_analysis_enabled = params.contains_key("referer_analysis_enabled");
@@ -3732,7 +4101,7 @@ async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) ->
     config.enumeration_detection_enabled = params.contains_key("enumeration_detection_enabled");
     config.form_tracking_enabled = params.contains_key("form_tracking_enabled");
     config.payload_analysis_enabled = params.contains_key("payload_analysis_enabled");
-    
+
     // Numeric thresholds
     if let Some(val) = params.get("max_unique_paths_per_minute") {
         if let Ok(v) = val.parse::<u32>() {
@@ -3754,7 +4123,7 @@ async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) ->
             config.sequential_path_threshold = v;
         }
     }
-    
+
     // Threat demotion thresholds
     if let Some(val) = params.get("threat_demotion_threshold") {
         if let Ok(v) = val.parse::<u32>() {
@@ -3771,7 +4140,7 @@ async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) ->
             config.max_demotions_before_kill = v;
         }
     }
-    
+
     // Per-violation type thresholds
     let violation_type_mappings = [
         ("threshold_attack_path_access", "Attack Path Access"),
@@ -3784,26 +4153,34 @@ async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) ->
         ("threshold_oversized_payload", "Oversized Payload"),
         ("threshold_undersized_payload", "Undersized Payload"),
     ];
-    
+
     for (field_name, violation_type) in &violation_type_mappings {
         if let Some(val) = params.get(*field_name) {
             if let Ok(v) = val.parse::<u32>() {
-                config.violation_type_thresholds.insert(violation_type.to_string(), v);
+                config
+                    .violation_type_thresholds
+                    .insert(violation_type.to_string(), v);
             }
         }
     }
-    
+
     // Attack path toggles - rebuild the disabled set based on which checkboxes are checked
     let mut disabled_paths = HashSet::new();
     for (pattern, _, _) in KNOWN_ATTACK_PATHS {
-        let field_name = format!("attack_path_{}", pattern.replace('/', "_").replace('.', "_").replace('\\', "_"));
+        let field_name = format!(
+            "attack_path_{}",
+            pattern
+                .replace('/', "_")
+                .replace('.', "_")
+                .replace('\\', "_")
+        );
         // If checkbox is NOT in params, the path is disabled
         if !params.contains_key(&field_name) {
             disabled_paths.insert(pattern.to_string());
         }
     }
     config.disabled_attack_paths = disabled_paths;
-    
+
     // Custom whitelist paths (one per line in textarea)
     if let Some(val) = params.get("custom_whitelist_paths") {
         config.custom_whitelist_paths = val
@@ -3812,38 +4189,66 @@ async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) ->
             .filter(|s| !s.is_empty())
             .collect();
     }
-    
+
     state.update_behavior_config(config);
     tracing::info!("Admin: Behavioral analysis settings updated");
-    
+
     redirect(&format!("{}/settings", ADMIN_PATH))
 }
 
 /// Render HTML options for captcha type select
 fn render_captcha_type_options(selected: CaptchaType) -> String {
     let captcha_types = [
-        (CaptchaType::BmpText, "Text Image - Type characters from BMP image"),
-        (CaptchaType::Emoji, "Emoji Selection - Click emoji matching description"),
-        (CaptchaType::Direction, "Arrow Direction - Click the arrow pointing correctly"),
-        (CaptchaType::Sequence, "Sequence Pattern - Complete the pattern (A,B,C,?)"),
-        (CaptchaType::WordUnscramble, "Word Unscramble - Unscramble letters to form word"),
-        (CaptchaType::ImageRotation, "Image Rotation - Select correctly oriented image"),
-        (CaptchaType::Silhouette, "Silhouette ID - Identify the silhouette category"),
+        (
+            CaptchaType::BmpText,
+            "Text Image - Type characters from BMP image",
+        ),
+        (
+            CaptchaType::Emoji,
+            "Emoji Selection - Click emoji matching description",
+        ),
+        (
+            CaptchaType::Direction,
+            "Arrow Direction - Click the arrow pointing correctly",
+        ),
+        (
+            CaptchaType::Sequence,
+            "Sequence Pattern - Complete the pattern (A,B,C,?)",
+        ),
+        (
+            CaptchaType::WordUnscramble,
+            "Word Unscramble - Unscramble letters to form word",
+        ),
+        (
+            CaptchaType::ImageRotation,
+            "Image Rotation - Select correctly oriented image",
+        ),
+        (
+            CaptchaType::Silhouette,
+            "Silhouette ID - Identify the silhouette category",
+        ),
     ];
-    
-    captcha_types.iter().map(|(ctype, desc)| {
-        let selected_attr = if *ctype == selected { "selected" } else { "" };
-        let value = match ctype {
-            CaptchaType::BmpText => "BmpText",
-            CaptchaType::Emoji => "Emoji",
-            CaptchaType::Direction => "Direction",
-            CaptchaType::Sequence => "Sequence",
-            CaptchaType::WordUnscramble => "WordUnscramble",
-            CaptchaType::ImageRotation => "ImageRotation",
-            CaptchaType::Silhouette => "Silhouette",
-        };
-        format!(r#"<option value="{}" {}>{}</option>"#, value, selected_attr, desc)
-    }).collect::<Vec<_>>().join("\n")
+
+    captcha_types
+        .iter()
+        .map(|(ctype, desc)| {
+            let selected_attr = if *ctype == selected { "selected" } else { "" };
+            let value = match ctype {
+                CaptchaType::BmpText => "BmpText",
+                CaptchaType::Emoji => "Emoji",
+                CaptchaType::Direction => "Direction",
+                CaptchaType::Sequence => "Sequence",
+                CaptchaType::WordUnscramble => "WordUnscramble",
+                CaptchaType::ImageRotation => "ImageRotation",
+                CaptchaType::Silhouette => "Silhouette",
+            };
+            format!(
+                r#"<option value="{}" {}>{}</option>"#,
+                value, selected_attr, desc
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Parse CaptchaType from string
@@ -3860,12 +4265,14 @@ fn parse_captcha_type(s: &str) -> CaptchaType {
 }
 
 async fn handle_captcha_settings(req: Request<Body>, state: Arc<AdminState>) -> Response<Body> {
-    let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+    let body_bytes = hyper::body::to_bytes(req.into_body())
+        .await
+        .unwrap_or_default();
     let params = parse_form_data(&body_bytes);
-    
+
     // Get current config and update with form values
     let mut config = state.get_captcha_config();
-    
+
     // Captcha type selections
     if let Some(val) = params.get("gate_captcha_type") {
         config.gate_captcha_type = parse_captcha_type(val);
@@ -3873,11 +4280,11 @@ async fn handle_captcha_settings(req: Request<Body>, state: Arc<AdminState>) -> 
     if let Some(val) = params.get("threat_captcha_type") {
         config.threat_captcha_type = parse_captcha_type(val);
     }
-    
+
     // Toggle checkboxes
     config.threat_captcha_enabled = params.contains_key("threat_captcha_enabled");
     config.random_cycling = params.contains_key("random_cycling");
-    
+
     // Parse cycling types (checkboxes for each captcha type)
     let mut cycling_types = Vec::new();
     if params.contains_key("cycle_BmpText") {
@@ -3904,29 +4311,35 @@ async fn handle_captcha_settings(req: Request<Body>, state: Arc<AdminState>) -> 
     if !cycling_types.is_empty() {
         config.cycling_types = cycling_types;
     }
-    
+
     state.update_captcha_config(config.clone());
-    tracing::info!("Admin: Captcha settings updated - random_cycling={}, threat_captcha_enabled={}", 
-        config.random_cycling, config.threat_captcha_enabled);
-    
+    tracing::info!(
+        "Admin: Captcha settings updated - random_cycling={}, threat_captcha_enabled={}",
+        config.random_cycling,
+        config.threat_captcha_enabled
+    );
+
     // Push config to Gate server via HTTP API
     // Use default gate address if not configured
-    let gate_address = std::env::var("GATE_ADDRESS")
-        .unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
-    
+    let gate_address =
+        std::env::var("GATE_ADDRESS").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+
     match sync_captcha_config_to_gate(&gate_address, &config).await {
         Ok(_) => tracing::info!("Admin: Captcha config synced to Gate"),
         Err(e) => tracing::warn!("Admin: Failed to sync captcha config to Gate: {}", e),
     }
-    
+
     redirect(&format!("{}/settings", ADMIN_PATH))
 }
 
 /// Sync captcha configuration to Gate server
-async fn sync_captcha_config_to_gate(gate_address: &str, config: &CaptchaConfig) -> Result<(), String> {
+async fn sync_captcha_config_to_gate(
+    gate_address: &str,
+    config: &CaptchaConfig,
+) -> Result<(), String> {
     let client = reqwest::Client::new();
     let url = format!("{}/gate/admin/captcha-config", gate_address);
-    
+
     let response = client
         .post(&url)
         .json(config)
@@ -3934,7 +4347,7 @@ async fn sync_captcha_config_to_gate(gate_address: &str, config: &CaptchaConfig)
         .send()
         .await
         .map_err(|e| format!("HTTP request failed: {}", e))?;
-    
+
     if response.status().is_success() {
         Ok(())
     } else {
@@ -3949,7 +4362,7 @@ async fn sync_captcha_config_to_gate(gate_address: &str, config: &CaptchaConfig)
 fn parse_form_data(body: &[u8]) -> HashMap<String, String> {
     let body_str = String::from_utf8_lossy(body);
     let mut params = HashMap::new();
-    
+
     for pair in body_str.split('&') {
         if let Some((key, value)) = pair.split_once('=') {
             let key = urlencoding::decode(key).unwrap_or_default().to_string();
@@ -3957,7 +4370,7 @@ fn parse_form_data(body: &[u8]) -> HashMap<String, String> {
             params.insert(key, value);
         }
     }
-    
+
     params
 }
 
@@ -3980,10 +4393,10 @@ fn not_found() -> Response<Body> {
 /// Escape HTML special characters
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
-     .replace('\'', "&#39;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 fn format_timestamp(ts: u64) -> String {
@@ -3993,7 +4406,7 @@ fn format_timestamp(ts: u64) -> String {
     // Simple formatting - would use chrono in production
     let now = now();
     let diff = now.saturating_sub(ts);
-    
+
     if diff < 60 {
         format!("{}s ago", diff)
     } else if diff < 3600 {
@@ -4039,11 +4452,11 @@ fn format_bytes(bytes: u64) -> String {
     if bytes == 0 {
         return "0 B".to_string();
     }
-    
+
     const KB: u64 = 1024;
     const MB: u64 = KB * 1024;
     const GB: u64 = MB * 1024;
-    
+
     if bytes >= GB {
         format!("{:.2} GB", bytes as f64 / GB as f64)
     } else if bytes >= MB {
@@ -4058,10 +4471,10 @@ fn format_bytes(bytes: u64) -> String {
 fn uuid_v4() -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     now().hash(&mut hasher);
     std::process::id().hash(&mut hasher);
-    
+
     format!("{:016x}{:016x}", hasher.finish(), now())
 }

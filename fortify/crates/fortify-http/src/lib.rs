@@ -1,10 +1,10 @@
-use fortify_core::{SessionManager, SessionToken, TrustTier, RequestMeta, SessionBehavior};
+use fortify_core::{RequestMeta, SessionBehavior, SessionManager, SessionToken, TrustTier};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server, StatusCode, Uri};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH, Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 pub mod admin;
@@ -40,8 +40,8 @@ impl GlobalRateLimiter {
     /// This prevents one attacking circuit from consuming the entire quota
     fn get_limit_for_tier(&self, tier: TrustTier) -> usize {
         match tier {
-            TrustTier::Trusted => 300,       // Proven good actors (per circuit)
-            TrustTier::Verified => 100,      // Passed CAPTCHA (per circuit)
+            TrustTier::Trusted => 300,  // Proven good actors (per circuit)
+            TrustTier::Verified => 100, // Passed CAPTCHA (per circuit)
             TrustTier::Unknown | TrustTier::Suspicious | TrustTier::Burned => 10, // Strict per-circuit limit
         }
     }
@@ -55,8 +55,10 @@ impl GlobalRateLimiter {
         let window_start = now - self.window;
 
         // Get or create request history for this circuit
-        let reqs = requests.entry(circuit_id.to_string()).or_insert_with(Vec::new);
-        
+        let reqs = requests
+            .entry(circuit_id.to_string())
+            .or_insert_with(Vec::new);
+
         // Remove expired timestamps (older than window)
         reqs.retain(|&t| t > window_start);
 
@@ -70,25 +72,28 @@ impl GlobalRateLimiter {
 
         // Record this request
         reqs.push(now);
-        
+
         // Track circuit for attack detection
         self.record_active_circuit(circuit_id, now);
-        
+
         true
     }
-    
+
     /// Record active circuit for attack pattern detection
     fn record_active_circuit(&self, circuit_id: &str, now: Instant) {
         let mut circuits = self.active_circuits.lock().unwrap();
         let window_start = now - self.window;
-        
+
         // Clean old entries
         circuits.retain(|&t, _| t > window_start);
-        
+
         // Add this circuit to current window
-        circuits.entry(now).or_insert_with(Vec::new).push(circuit_id.to_string());
+        circuits
+            .entry(now)
+            .or_insert_with(Vec::new)
+            .push(circuit_id.to_string());
     }
-    
+
     /// Get number of unique circuits active in current window
     /// Used for attack detection (>100 circuits = probable DDoS)
     #[allow(dead_code)]
@@ -137,7 +142,7 @@ impl SessionActivityTracker {
             last_activity: HashMap::new(),
         }
     }
-    
+
     /// Get seconds since last activity for a session
     fn seconds_since_last(&mut self, session_id: &str, now: u64) -> u64 {
         let last = self.last_activity.get(session_id).copied().unwrap_or(now);
@@ -149,7 +154,7 @@ impl SessionActivityTracker {
 // Session timestamp cache for cloning detection (Task 8)
 // Tracks last request timestamp per session to detect rapid concurrent requests
 lazy_static::lazy_static! {
-    static ref SESSION_TIMESTAMPS: Arc<Mutex<HashMap<String, u64>>> = 
+    static ref SESSION_TIMESTAMPS: Arc<Mutex<HashMap<String, u64>>> =
         Arc::new(Mutex::new(HashMap::new()));
 }
 
@@ -160,12 +165,12 @@ fn detect_session_cloning(session_id: &str) -> bool {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    
+
     let mut timestamps = SESSION_TIMESTAMPS.lock().unwrap();
-    
+
     if let Some(&last_request) = timestamps.get(session_id) {
         let time_diff = now_millis.saturating_sub(last_request);
-        
+
         // If requests are less than 100ms apart, likely cloning attack
         if time_diff < 100 {
             tracing::warn!(
@@ -177,7 +182,7 @@ fn detect_session_cloning(session_id: &str) -> bool {
             return true;
         }
     }
-    
+
     timestamps.insert(session_id.to_string(), now_millis);
     false
 }
@@ -195,7 +200,7 @@ fn log_session_activity(sid: &str, seconds_idle: u64, path: &str, event: Option<
     } else {
         format!("{}h", seconds_idle / 3600)
     };
-    
+
     if let Some(ev) = event {
         tracing::info!("[{}] +{} {} → {}", short_sid, idle_str, path, ev);
     } else {
@@ -248,9 +253,14 @@ impl BackendNode {
             max_connections,
         }
     }
-    
+
     /// Create a node with an explicit name
-    pub fn with_name(name: String, address: String, healthy_mode: bool, max_connections: usize) -> Self {
+    pub fn with_name(
+        name: String,
+        address: String,
+        healthy_mode: bool,
+        max_connections: usize,
+    ) -> Self {
         Self {
             name,
             address,
@@ -366,7 +376,7 @@ impl HttpProxy {
             "http://127.0.0.1:8081".to_string(),
         )
     }
-    
+
     /// Create with onion addresses for nodes
     pub fn new_with_onions(
         bind_addr: SocketAddr,
@@ -380,7 +390,7 @@ impl HttpProxy {
         gate_address: String,
     ) -> Self {
         let admin_state = Arc::new(AdminState::new());
-        
+
         // Register initial nodes in admin state
         for (i, node) in healthy_nodes.iter().enumerate() {
             let onion = healthy_onions.get(i).cloned().flatten();
@@ -390,7 +400,10 @@ impl HttpProxy {
                 onion_address: onion,
                 mode: "healthy".to_string(),
                 status: "online".to_string(),
-                created_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                created_at: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 total_requests: 0,
                 active_connections: 0,
                 violations_detected: 0,
@@ -404,13 +417,16 @@ impl HttpProxy {
                 onion_address: onion,
                 mode: "threat".to_string(),
                 status: "online".to_string(),
-                created_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                created_at: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 total_requests: 0,
                 active_connections: 0,
                 violations_detected: 0,
             });
         }
-        
+
         Self {
             bind_addr,
             max_concurrent,
@@ -436,7 +452,7 @@ impl HttpProxy {
     {
         self.blacklist_check = Some(Arc::new(callback));
     }
-    
+
     /// Create with existing admin state (for sharing across components)
     pub fn with_admin_state(
         bind_addr: SocketAddr,
@@ -464,7 +480,7 @@ impl HttpProxy {
             blacklist_check: None,
         }
     }
-    
+
     /// Get reference to admin state
     pub fn admin_state(&self) -> Arc<AdminState> {
         Arc::clone(&self.admin_state)
@@ -473,7 +489,11 @@ impl HttpProxy {
     /// Start the HTTP proxy server
     pub async fn start(&self) -> anyhow::Result<()> {
         tracing::info!("HTTP proxy starting on {}", self.bind_addr);
-        tracing::info!("Admin panel available at: http://{}{}", self.bind_addr, ADMIN_PATH);
+        tracing::info!(
+            "Admin panel available at: http://{}{}",
+            self.bind_addr,
+            ADMIN_PATH
+        );
 
         let secret_key = self.secret_key.clone();
         let session_manager = Arc::clone(&self.session_manager);
@@ -588,27 +608,33 @@ async fn handle_proxy_request(
     if admin::is_admin_request(path) {
         return Ok(admin::handle_admin_request(req, admin_state).await);
     }
-    
+
     // Extract client IP
     let client_ip = extract_client_ip(&req);
-    
+
     // Extract session token early to get trust tier for rate limiting
-    let token_cookie = req.headers()
+    let token_cookie = req
+        .headers()
         .get("cookie")
         .and_then(|v| v.to_str().ok())
         .and_then(|cookies| {
-            cookies.split(';')
+            cookies
+                .split(';')
                 .find(|c| c.trim().starts_with("fortify_session="))
-                .map(|c| c.trim().strip_prefix("fortify_session=").unwrap().to_string())
+                .map(|c| {
+                    c.trim()
+                        .strip_prefix("fortify_session=")
+                        .unwrap()
+                        .to_string()
+                })
         });
-    
+
     // LAYER 1: Bypass rate limiting for Gate/CAPTCHA paths
     // This ensures real users can ALWAYS access CAPTCHA even during DDoS attacks
     let path = req.uri().path();
-    let bypass_rate_limit = path.starts_with("/gate/") 
-        || path == "/Fortify/Portcullis"
-        || path.starts_with("/gate");
-    
+    let bypass_rate_limit =
+        path.starts_with("/gate/") || path == "/Fortify/Portcullis" || path.starts_with("/gate");
+
     if !bypass_rate_limit {
         // LAYER 2: Circuit-based rate limiting (not IP-based)
         // Extract circuit ID from session cookie or generate temporary fingerprint
@@ -618,19 +644,23 @@ async fn handle_proxy_request(
                 format!("session_{}", &token_str[..16])
             } else {
                 // Invalid token, use IP + User-Agent as fingerprint
-                let ua = req.headers().get("user-agent")
+                let ua = req
+                    .headers()
+                    .get("user-agent")
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("unknown");
                 format!("temp_{}_{}", client_ip, &ua[..ua.len().min(20)])
             }
         } else {
             // No session, use IP + User-Agent + timestamp as temporary circuit ID
-            let ua = req.headers().get("user-agent")
+            let ua = req
+                .headers()
+                .get("user-agent")
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("unknown");
             format!("temp_{}_{}", client_ip, &ua[..ua.len().min(20)])
         };
-        
+
         // Determine trust tier for rate limiting
         let trust_tier_for_ratelimit = if let Some(token_str) = token_cookie {
             if let Ok(token) = SessionToken::decode(&token_str) {
@@ -645,7 +675,7 @@ async fn handle_proxy_request(
         } else {
             TrustTier::Unknown
         };
-        
+
         // Check rate limit per circuit (not global)
         // Unknown: 10/10s per circuit, Verified: 100/10s, Trusted: 300/10s
         if !rate_limiter.check_and_record(&circuit_id, trust_tier_for_ratelimit) {
@@ -654,11 +684,15 @@ async fn handle_proxy_request(
                 TrustTier::Verified => 100,
                 _ => 10,
             };
-            tracing::warn!("Rate limited circuit: {} tier={:?} ({} req/10sec exceeded)", 
-                circuit_id, trust_tier_for_ratelimit, limit);
+            tracing::warn!(
+                "Rate limited circuit: {} tier={:?} ({} req/10sec exceeded)",
+                circuit_id,
+                trust_tier_for_ratelimit,
+                limit
+            );
             let mut m = metrics.lock().unwrap();
             m.record_denied();
-            
+
             // Redirect to gate with CAPTCHA challenge (RELATIVE path to preserve onion address)
             // Using relative redirect ensures user stays on their .onion address
             // instead of being redirected to localhost
@@ -666,13 +700,22 @@ async fn handle_proxy_request(
             return Ok(Response::builder()
                 .status(StatusCode::TEMPORARY_REDIRECT)
                 .header("Location", "/Fortify/Portcullis?reason=rate_limit")
-                .header("Set-Cookie", "fortify_rate_limited=1; Path=/; Max-Age=60; HttpOnly")
-                .header("Set-Cookie", format!("fortify_rate_limited_circuit={}; Path=/; Max-Age=60; HttpOnly", circuit_id))
+                .header(
+                    "Set-Cookie",
+                    "fortify_rate_limited=1; Path=/; Max-Age=60; HttpOnly",
+                )
+                .header(
+                    "Set-Cookie",
+                    format!(
+                        "fortify_rate_limited_circuit={}; Path=/; Max-Age=60; HttpOnly",
+                        circuit_id
+                    ),
+                )
                 .body(Body::from(""))
                 .unwrap());
         }
     } // end bypass_rate_limit check
-    
+
     // Record request
     {
         let mut m = metrics.lock().unwrap();
@@ -732,7 +775,7 @@ async fn process_request(
     secret_key: Vec<u8>,
     session_manager: Arc<SessionManager>,
     healthy_nodes: Vec<BackendNode>,
-    _threat_nodes: Vec<BackendNode>,  // Kept for API compatibility, threat users go to Gate not nodes
+    _threat_nodes: Vec<BackendNode>, // Kept for API compatibility, threat users go to Gate not nodes
     metrics: Arc<Mutex<Metrics>>,
     admin_state: Arc<AdminState>,
     behavior_sessions: Arc<RwLock<HashMap<String, SessionBehavior>>>,
@@ -743,28 +786,32 @@ async fn process_request(
 ) -> Response<Body> {
     let request_path = req.uri().path().to_string();
     let request_method = req.method().to_string();
-    
+
     // Extract headers for behavioral analysis BEFORE consuming req
-    let user_agent = req.headers()
+    let user_agent = req
+        .headers()
         .get("User-Agent")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
-    let referer = req.headers()
+    let referer = req
+        .headers()
         .get("Referer")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
-    let content_length = req.headers()
+    let content_length = req
+        .headers()
         .get("Content-Length")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
     // Extract Host header to track which mirror user is using
-    let host_header = req.headers()
+    let host_header = req
+        .headers()
         .get("Host")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_default();
-    
+
     // Check if this request is coming through a paused mirror
     if host_header.contains(".onion") {
         if is_mirror_paused(&host_header) {
@@ -773,7 +820,7 @@ async fn process_request(
         // Track mirror request statistics (only for .onion addresses)
         admin_state.record_mirror_request(&host_header);
     }
-    
+
     // GATE PATH: Route Gate-specific paths directly to Gate service
     // This includes CAPTCHA verification pages and API endpoints
     // These paths must always go to Gate regardless of session status
@@ -790,7 +837,7 @@ async fn process_request(
             }
         }
     }
-    
+
     // Attempt to extract and verify token (or upgrade verification token)
     // Priority: 1) Session token, 2) Verification token (upgrade), 3) None (new user)
     let mut trust_tier = TrustTier::Unknown;
@@ -801,7 +848,7 @@ async fn process_request(
 
     // Extract both session and verification tokens
     let (session_token_opt, verification_token_opt) = extract_tokens(&req);
-    
+
     // Try session token first
     if let Some(token_str) = session_token_opt {
         match SessionToken::decode(&token_str) {
@@ -829,12 +876,15 @@ async fn process_request(
                                         &token.session_id[..8.min(token.session_id.len())]
                                     );
                                 }
-                                
-                                tracing::info!("Valid session token for session {}", token.session_id);
+
+                                tracing::info!(
+                                    "Valid session token for session {}",
+                                    token.session_id
+                                );
                                 trust_tier = token.trust_tier;
                                 verified_session_id = Some(token.session_id.clone());
                                 raw_token_for_forwarding = Some(token_str.clone());
-                                
+
                                 // Clear tier override for fresh tokens
                                 let now = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
@@ -845,17 +895,20 @@ async fn process_request(
                                     tracing::info!("Fresh token ({}s old) for session {} - clearing tier override", token_age_secs, token.session_id);
                                     admin_state.clear_tier_override(&token.session_id);
                                 }
-                                
+
                                 let mut m = metrics.lock().unwrap();
                                 m.record_valid_token();
                             }
                         } else {
-                            tracing::info!("Token expired/burned for session {} - routing to gate", token.session_id);
+                            tracing::info!(
+                                "Token expired/burned for session {} - routing to gate",
+                                token.session_id
+                            );
                             stale_session_id = Some(token.session_id);
                             let mut m = metrics.lock().unwrap();
                             m.record_invalid_token();
                         }
-                    },
+                    }
                     Err(e) => {
                         // Token signature invalid (e.g., service restarted with new secret key)
                         // Preserve session ID and route to gate for re-verification
@@ -865,54 +918,65 @@ async fn process_request(
                         m.record_invalid_token();
                     }
                 }
-            },
+            }
             Err(e) => {
-                 tracing::warn!("Failed to decode token: {}", e);
+                tracing::warn!("Failed to decode token: {}", e);
             }
         }
     }
-    
+
     // Task 6: If no valid session token but we have verification token, upgrade it
     if verified_session_id.is_none() && verification_token_opt.is_some() {
         let verification_token = verification_token_opt.clone().unwrap();
         let current_ua = user_agent.as_deref().unwrap_or("unknown");
-        
+
         tracing::info!("Found verification token, attempting upgrade");
-        
+
         // Extract the rate-limited circuit_id from cookie
         // This is the exact circuit_id that was rate-limited before CAPTCHA verification
-        let rate_limited_circuit = req.headers()
+        let rate_limited_circuit = req
+            .headers()
             .get("cookie")
             .and_then(|v| v.to_str().ok())
             .and_then(|cookies| {
-                cookies.split(';')
+                cookies
+                    .split(';')
                     .find(|c| c.trim().starts_with("fortify_rate_limited_circuit="))
-                    .map(|c| c.trim().strip_prefix("fortify_rate_limited_circuit=").unwrap().to_string())
+                    .map(|c| {
+                        c.trim()
+                            .strip_prefix("fortify_rate_limited_circuit=")
+                            .unwrap()
+                            .to_string()
+                    })
             });
-        
+
         // Call Gate's upgrade endpoint
-        if let Some(session_token_str) = upgrade_verification_token(
-            &verification_token,
-            current_ua,
-            &gate_address
-        ).await {
+        if let Some(session_token_str) =
+            upgrade_verification_token(&verification_token, current_ua, &gate_address).await
+        {
             // Successfully upgraded! Decode the session token
             match SessionToken::decode(&session_token_str) {
                 Ok(token) => {
-                    tracing::info!("Successfully upgraded verification token to session {}", token.session_id);
+                    tracing::info!(
+                        "Successfully upgraded verification token to session {}",
+                        token.session_id
+                    );
                     trust_tier = token.trust_tier;
                     verified_session_id = Some(token.session_id.clone());
                     raw_token_for_forwarding = Some(session_token_str.clone());
                     upgraded_session_token = Some(session_token_str); // Will set cookie in response
-                    
+
                     // Clear rate limit quota for the circuit that was rate-limited
                     // This prevents infinite CAPTCHA loops for legitimate users during attacks
                     // Ensures new users can access the site immediately after solving CAPTCHA
                     if let Some(circuit_id) = rate_limited_circuit {
                         rate_limiter.clear_circuit_quota(&circuit_id);
-                        tracing::info!("Cleared rate limit quota for circuit: {} after CAPTCHA verification", circuit_id);
+                        tracing::info!(
+                            "Cleared rate limit quota for circuit: {} after CAPTCHA verification",
+                            circuit_id
+                        );
                     }
-                    
+
                     let mut m = metrics.lock().unwrap();
                     m.record_valid_token();
                 }
@@ -924,7 +988,7 @@ async fn process_request(
             tracing::warn!("Failed to upgrade verification token");
         }
     }
-    
+
     if verified_session_id.is_none() && verification_token_opt.is_none() {
         tracing::debug!("No token found in request");
     }
@@ -955,7 +1019,7 @@ async fn process_request(
                 s.token.trust_tier = TrustTier::Unknown;
                 session_manager.update_session(s.clone());
                 s
-            },
+            }
             None => {
                 // Session doesn't exist, create new one with their existing ID
                 let mut session = session_manager.create_session(sid.clone());
@@ -975,13 +1039,13 @@ async fn process_request(
         verified_session_id = Some(new_session_id);
         session
     };
-    
+
     // Use stale_session_id as verified_session_id for downstream processing if we have one
     // This ensures the session ID is preserved in responses and tracking
     if verified_session_id.is_none() && stale_session_id.is_some() {
         verified_session_id = stale_session_id;
     }
-    
+
     // =========================================================================
     // BEHAVIORAL ANALYSIS
     // =========================================================================
@@ -989,7 +1053,7 @@ async fn process_request(
     if let Some(ref sid) = verified_session_id {
         // Get behavioral config from admin state
         let behavior_config = admin_state.get_behavior_config();
-        
+
         // Check if behavioral analysis is enabled
         if admin_state.is_behavior_enabled() {
             // Create request metadata for analysis
@@ -1000,55 +1064,64 @@ async fn process_request(
                 referer.clone(),
                 content_length,
             );
-            
+
             // Get or create session behavior tracker
             let mut behavior_sessions_guard = behavior_sessions.write().unwrap();
             let session_behavior = behavior_sessions_guard
                 .entry(sid.clone())
                 .or_insert_with(|| SessionBehavior::new(sid.clone(), behavior_config.clone()));
-            
+
             // Update config if it changed
             session_behavior.update_config(behavior_config.clone());
-            
+
             // Analyze the request
             behavior_violations = session_behavior.analyze(&req_meta);
-            
+
             // Log violations and record high-severity ones in session history
             for v in &behavior_violations {
                 tracing::warn!(
                     "Behavioral violation for session {}: {} - {}",
-                    sid, v.violation_type.as_str(), v.details
+                    sid,
+                    v.violation_type.as_str(),
+                    v.details
                 );
                 // Record severity 2+ violations in session history for visibility
                 if v.severity >= 2 {
-                    admin_state.record_violation(sid, v.violation_type.as_str(), &v.details, v.severity);
+                    admin_state.record_violation(
+                        sid,
+                        v.violation_type.as_str(),
+                        &v.details,
+                        v.severity,
+                    );
                 }
             }
-            
+
             // Update behavior stats in admin state
             let stats = session_behavior.get_stats().clone();
             drop(behavior_sessions_guard); // Release lock before calling admin_state
             admin_state.update_behavior_stats(sid, stats.clone());
-            
+
             // Check if session should be automatically demoted to threat node
             if behavior_config.should_demote_to_threat(&stats) {
                 // Only demote if not already in a threat tier
                 if !trust_tier.requires_gate() {
                     // Build a reason string from violations
                     let reason = format!(
-                        "Violations: {}, Severity: {}", 
-                        stats.total_violations(), 
+                        "Violations: {}, Severity: {}",
+                        stats.total_violations(),
                         stats.severity_score()
                     );
-                    
+
                     // Record this demotion and check if session should be killed
                     let max_demotions = behavior_config.max_demotions_before_kill;
-                    let was_killed = admin_state.record_demotion_with_reason(sid, max_demotions, &reason);
-                    
+                    let was_killed =
+                        admin_state.record_demotion_with_reason(sid, max_demotions, &reason);
+
                     if was_killed {
                         tracing::error!(
                             "Session {} KILLED - repeat offender ({} demotions)",
-                            sid, max_demotions
+                            sid,
+                            max_demotions
                         );
                         // Killed sessions get permanently burned - record_demotion_with_reason already recorded the kill event
                         trust_tier = TrustTier::Burned;
@@ -1066,7 +1139,7 @@ async fn process_request(
             }
         }
     }
-    
+
     // Check if session is banned or killed via admin state
     if let Some(ref sid) = verified_session_id {
         // Check blacklist first (if callback is set)
@@ -1075,32 +1148,40 @@ async fn process_request(
                 tracing::warn!("Session {} is blacklisted, redirecting to gate", sid);
                 let mut m = metrics.lock().unwrap();
                 m.record_denied();
-                
+
                 // Redirect to gate for re-verification (RELATIVE to preserve onion)
                 return Response::builder()
                     .status(StatusCode::TEMPORARY_REDIRECT)
                     .header("Location", "/Fortify")
-                    .header("Set-Cookie", format!("fortify_demoted=1; Path=/; Max-Age=300; HttpOnly"))
+                    .header(
+                        "Set-Cookie",
+                        format!("fortify_demoted=1; Path=/; Max-Age=300; HttpOnly"),
+                    )
                     .body(Body::from("Session blacklisted - please verify again"))
                     .unwrap();
             }
         }
-        
+
         if admin_state.is_killed(sid) {
             // Killed sessions get a friendly page explaining they can try again
             tracing::info!("Session {} is killed, showing recovery page", sid);
             return serve_killed_session_page();
         }
-        
+
         if admin_state.is_banned(sid) {
             let mut m = metrics.lock().unwrap();
             m.record_denied();
             return error_response(StatusCode::FORBIDDEN, "Session permanently banned");
         }
-        
+
         // Check for admin tier override - this overrides the token's tier
         if let Some(override_tier) = admin_state.get_tier_override(sid) {
-            tracing::info!("Admin tier override for session {}: {} -> {}", sid, trust_tier.as_str(), override_tier);
+            tracing::info!(
+                "Admin tier override for session {}: {} -> {}",
+                sid,
+                trust_tier.as_str(),
+                override_tier
+            );
             trust_tier = match override_tier.to_lowercase().as_str() {
                 "verified" => TrustTier::Verified,
                 "trusted" => TrustTier::Trusted,
@@ -1120,33 +1201,37 @@ async fn process_request(
 
     // ==========================================================================
     // ROUTING LOGIC - CRITICAL ARCHITECTURE:
-    // 
+    //
     // THREAT PATH (requires_gate() = true): Unknown, Suspicious users
     //   -> Proxy to Gate -> User sees Fortify/captcha page
     //   -> User MUST solve captcha to escape to healthy pool
     //   -> Threat nodes only serve static Fortify pages, never the real site
     //
-    // HEALTHY PATH (requires_gate() = false): Verified, Trusted users  
+    // HEALTHY PATH (requires_gate() = false): Verified, Trusted users
     //   -> Proxy to backend -> User sees real site
     //   -> Behavioral monitoring active, can demote back to threat if suspicious
     // ==========================================================================
-    
+
     // THREAT PATH: Unknown users OR users demoted to threat pool
     // These users must solve a captcha to prove they're human before accessing the real site
     if trust_tier.requires_gate() {
-        tracing::info!("THREAT PATH: Proxying {} user to Gate for verification: {}", trust_tier.as_str(), request_path);
+        tracing::info!(
+            "THREAT PATH: Proxying {} user to Gate for verification: {}",
+            trust_tier.as_str(),
+            request_path
+        );
         {
             let mut m = metrics.lock().unwrap();
             m.record_request();
         } // Lock released here before async call
-        
+
         // Track new session in admin state before going to gate
         if let Some(ref sid) = verified_session_id {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            
+
             // Create or update session info in admin state
             let existing = admin_state.get_session(sid);
             let session_info = existing.unwrap_or_else(|| admin::SessionInfo {
@@ -1168,7 +1253,7 @@ async fn process_request(
             });
             admin_state.update_session(session_info);
         }
-        
+
         // Proxy to Gate - preserve the original path so /captcha, /verify etc work
         // If user is at root, send them to /Fortify landing page
         let gate_path = if request_path == "/" || request_path.is_empty() {
@@ -1180,7 +1265,7 @@ async fn process_request(
         // NEW visitors (is_new_visitor=true) should NOT be marked as demoted - they get 1 CAPTCHA
         // Demoted/stale users (is_new_visitor=false) get 2 CAPTCHAs to re-verify
         let is_demoted_user = !is_new_visitor;
-        
+
         match proxy_to_gate(req, &gate_address, &gate_path).await {
             Ok(mut resp) => {
                 // Inject session cookie for new visitors so they're tracked through Gate flow
@@ -1189,17 +1274,21 @@ async fn process_request(
                     // Gate will issue a proper signed token after captcha verification
                     resp.headers_mut().append(
                         "Set-Cookie",
-                        format!("fortify_pending_session={}; Path=/; HttpOnly", sid).parse().unwrap()
+                        format!("fortify_pending_session={}; Path=/; HttpOnly", sid)
+                            .parse()
+                            .unwrap(),
                     );
                 }
-                
+
                 // CRITICAL: Set fortify_demoted=1 cookie for demoted users
                 // This tells Gate to show the "hold position" page and require 2 captchas
                 if is_demoted_user {
                     tracing::info!("Setting fortify_demoted cookie for demoted user");
                     resp.headers_mut().append(
                         "Set-Cookie",
-                        "fortify_demoted=1; Path=/; HttpOnly; SameSite=Lax".parse().unwrap()
+                        "fortify_demoted=1; Path=/; HttpOnly; SameSite=Lax"
+                            .parse()
+                            .unwrap(),
                     );
                 }
                 return resp;
@@ -1212,22 +1301,29 @@ async fn process_request(
     }
 
     // HEALTHY PATH: Verified/Trusted users get proxied to the real backend
-    tracing::info!("HEALTHY PATH: Routing {} user to backend: {}", trust_tier.as_str(), request_path);
+    tracing::info!(
+        "HEALTHY PATH: Routing {} user to backend: {}",
+        trust_tier.as_str(),
+        request_path
+    );
 
     // Route to backend via healthy nodes only
     // Pass the raw encoded token so backend can identify the session
     let (mut response, routed_node_id, response_bytes) = match route_to_backend(
-        req, 
-        &healthy_nodes,  // Always use healthy nodes for backend - threat users never reach here
-        "healthy", 
+        req,
+        &healthy_nodes, // Always use healthy nodes for backend - threat users never reach here
+        "healthy",
         Arc::clone(&admin_state),
         raw_token_for_forwarding.clone(),
-    ).await {
+    )
+    .await
+    {
         Ok((resp, node_id)) => {
             let mut m = metrics.lock().unwrap();
             m.record_allowed();
             // Get response Content-Length for traffic tracking
-            let resp_bytes = resp.headers()
+            let resp_bytes = resp
+                .headers()
                 .get("Content-Length")
                 .and_then(|h| h.to_str().ok())
                 .and_then(|s| s.parse::<u64>().ok())
@@ -1239,40 +1335,55 @@ async fn process_request(
         Err(e) => {
             let mut m = metrics.lock().unwrap();
             m.record_backend_error();
-            (error_response(StatusCode::BAD_GATEWAY, &format!("Backend error: {}", e)), String::new(), 0u64)
+            (
+                error_response(StatusCode::BAD_GATEWAY, &format!("Backend error: {}", e)),
+                String::new(),
+                0u64,
+            )
         }
     };
-    
+
     // Task 6: If we upgraded a verification token, set the session cookie
     if let Some(session_token_str) = upgraded_session_token {
         tracing::info!("Setting session cookie after token upgrade");
         response.headers_mut().append(
             "Set-Cookie",
-            format!("fortify_session={}; Path=/; HttpOnly; Max-Age=86400; SameSite=Strict", session_token_str)
-                .parse()
-                .unwrap()
+            format!(
+                "fortify_session={}; Path=/; HttpOnly; Max-Age=86400; SameSite=Strict",
+                session_token_str
+            )
+            .parse()
+            .unwrap(),
         );
         // Clear the verification token cookie
         response.headers_mut().append(
             "Set-Cookie",
-            "fortify_verification=; Path=/; Max-Age=0; HttpOnly".parse().unwrap()
+            "fortify_verification=; Path=/; Max-Age=0; HttpOnly"
+                .parse()
+                .unwrap(),
         );
     }
-    
+
     // Log session activity with concise format
     if let Some(ref sid) = verified_session_id {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let seconds_idle = {
             let mut tracker = activity_tracker.lock().unwrap();
             tracker.seconds_since_last(sid, now)
         };
         log_session_activity(sid, seconds_idle, &request_path, None);
     }
-    
+
     // Track session in admin state
     if let Some(ref sid) = verified_session_id {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
         // Update or create session info in admin state
         let existing = admin_state.get_session(sid);
         let mut session_info = existing.unwrap_or_else(|| admin::SessionInfo {
@@ -1292,34 +1403,39 @@ async fn process_request(
             total_bytes: 0,
             current_mirror: String::new(),
         });
-        
+
         session_info.request_count += 1;
         session_info.last_activity = now;
-        session_info.trust_tier = trust_tier.as_str().to_string();  // Use possibly overridden tier
-        session_info.current_node = routed_node_id.clone();  // Track current node
-        // Update mirror if host header contains .onion
+        session_info.trust_tier = trust_tier.as_str().to_string(); // Use possibly overridden tier
+        session_info.current_node = routed_node_id.clone(); // Track current node
+                                                            // Update mirror if host header contains .onion
         if host_header.contains(".onion") {
             session_info.current_mirror = host_header.clone();
         }
-        
+
         // Record traffic bytes (request + response)
         let total_traffic = content_length as u64 + response_bytes;
         session_info.total_bytes += total_traffic;
-        
+
         // Accumulate violation count from this request's behavioral violations
         session_info.violation_count += behavior_violations.len() as u32;
-        
+
         // Get behavior stats from admin state and attach to session info
         if let Some(bstats) = admin_state.get_behavior_stats(sid) {
             // Sync violation count from behavior stats (authoritative source)
             session_info.violation_count = bstats.total_violations() as u32;
             session_info.behavior_stats = Some(bstats);
         }
-        
+
         admin_state.update_session(session_info);
-        admin_state.record_page_load(sid, &request_path, &request_method, response.status().as_u16());
+        admin_state.record_page_load(
+            sid,
+            &request_path,
+            &request_method,
+            response.status().as_u16(),
+        );
     }
-    
+
     response
 }
 
@@ -1329,17 +1445,18 @@ async fn process_request(
 fn extract_tokens(req: &Request<Body>) -> (Option<String>, Option<String>) {
     let mut session_token = None;
     let mut verification_token = None;
-    
+
     // 1. Check Authorization: Bearer for session token
-    if let Some(token) = req.headers()
+    if let Some(token) = req
+        .headers()
         .get("Authorization")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
-        .map(|s| s.to_string()) 
+        .map(|s| s.to_string())
     {
         session_token = Some(token);
     }
-    
+
     // 2. Check Cookies for both session and verification tokens
     if let Some(cookie_header) = req.headers().get(hyper::header::COOKIE) {
         if let Ok(cookie_str) = cookie_header.to_str() {
@@ -1354,7 +1471,7 @@ fn extract_tokens(req: &Request<Body>) -> (Option<String>, Option<String>) {
             }
         }
     }
-    
+
     (session_token, verification_token)
 }
 
@@ -1373,12 +1490,12 @@ async fn upgrade_verification_token(
     gate_address: &str,
 ) -> Option<String> {
     let client = Client::new();
-    
+
     // Build request body
     let body_json = serde_json::json!({
         "verification_token": verification_token
     });
-    
+
     let gate_uri = match format!("{}/gate/upgrade-token", gate_address).parse::<Uri>() {
         Ok(uri) => uri,
         Err(e) => {
@@ -1386,7 +1503,7 @@ async fn upgrade_verification_token(
             return None;
         }
     };
-    
+
     // Build request with User-Agent
     let request = match Request::builder()
         .method("POST")
@@ -1401,28 +1518,30 @@ async fn upgrade_verification_token(
             return None;
         }
     };
-    
+
     // Send request to Gate
     match client.request(request).await {
         Ok(response) => {
             if response.status() == StatusCode::OK {
                 // Parse response JSON
                 match hyper::body::to_bytes(response.into_body()).await {
-                    Ok(bytes) => {
-                        match serde_json::from_slice::<serde_json::Value>(&bytes) {
-                            Ok(json) => {
-                                if let Some(session_token) = json.get("session_token").and_then(|v| v.as_str()) {
-                                    tracing::info!("Successfully upgraded verification token to session token");
-                                    return Some(session_token.to_string());
-                                } else {
-                                    tracing::error!("Gate response missing session_token field");
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to parse Gate upgrade response: {}", e);
+                    Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                        Ok(json) => {
+                            if let Some(session_token) =
+                                json.get("session_token").and_then(|v| v.as_str())
+                            {
+                                tracing::info!(
+                                    "Successfully upgraded verification token to session token"
+                                );
+                                return Some(session_token.to_string());
+                            } else {
+                                tracing::error!("Gate response missing session_token field");
                             }
                         }
-                    }
+                        Err(e) => {
+                            tracing::error!("Failed to parse Gate upgrade response: {}", e);
+                        }
+                    },
                     Err(e) => {
                         tracing::error!("Failed to read Gate upgrade response body: {}", e);
                     }
@@ -1435,7 +1554,7 @@ async fn upgrade_verification_token(
             tracing::error!("Failed to call Gate upgrade endpoint: {}", e);
         }
     }
-    
+
     None
 }
 
@@ -1447,23 +1566,25 @@ async fn proxy_to_gate(
     gate_path: &str,
 ) -> std::result::Result<Response<Body>, String> {
     let client = Client::new();
-    
+
     // Build full Gate URL preserving query string if present
-    let query = req.uri().query().map(|q| format!("?{}", q)).unwrap_or_default();
+    let query = req
+        .uri()
+        .query()
+        .map(|q| format!("?{}", q))
+        .unwrap_or_default();
     let gate_url = format!("{}{}{}", gate_address, gate_path, query);
     tracing::debug!("Proxying to Gate: {}", gate_url);
-    
+
     // Build the Gate request preserving relevant headers
-    let mut gate_req = Request::builder()
-        .method(req.method())
-        .uri(&gate_url);
-    
+    let mut gate_req = Request::builder().method(req.method()).uri(&gate_url);
+
     // Copy safe headers
     for (name, value) in req.headers() {
         let name_str = name.as_str().to_lowercase();
         // Skip hop-by-hop headers and host
-        if name_str != "host" 
-            && name_str != "connection" 
+        if name_str != "host"
+            && name_str != "connection"
             && name_str != "keep-alive"
             && name_str != "transfer-encoding"
             && name_str != "upgrade"
@@ -1473,16 +1594,16 @@ async fn proxy_to_gate(
             }
         }
     }
-    
+
     let gate_req = gate_req
         .body(req.into_body())
         .map_err(|e| format!("Failed to build gate request: {}", e))?;
-    
+
     let response = client
         .request(gate_req)
         .await
         .map_err(|e| format!("Gate request failed: {}", e))?;
-    
+
     Ok(response)
 }
 
@@ -1517,12 +1638,13 @@ async fn route_to_backend(
     if let Some(ref token) = session_token {
         req.headers_mut().insert(
             "X-Session-ID",
-            token.parse().unwrap_or_else(|_| "".parse().unwrap())
+            token.parse().unwrap_or_else(|_| "".parse().unwrap()),
         );
     }
 
     // Record the request to this node
-    let content_length = req.headers()
+    let content_length = req
+        .headers()
         .get("Content-Length")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
@@ -1530,7 +1652,8 @@ async fn route_to_backend(
     admin_state.record_node_request(&node_id, content_length);
 
     // Build backend URI - include path AND query string
-    let path_and_query = req.uri()
+    let path_and_query = req
+        .uri()
         .path_and_query()
         .map(|p| p.as_str())
         .unwrap_or("/");
@@ -1545,7 +1668,7 @@ async fn route_to_backend(
     // Forward to backend
     let client = Client::new();
     let result = client.request(req).await;
-    
+
     // Release connection slot
     node.release();
     admin_state.release_node_connection(&node_id);
@@ -1562,7 +1685,9 @@ async fn route_to_backend(
         if response.headers().get("Set-Cookie").is_none() {
             response.headers_mut().insert(
                 "Set-Cookie",
-                "fortify_session=; Path=/; Max-Age=0; HttpOnly".parse().unwrap()
+                "fortify_session=; Path=/; Max-Age=0; HttpOnly"
+                    .parse()
+                    .unwrap(),
             );
         }
     }
@@ -1684,7 +1809,10 @@ fn serve_killed_session_page() -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
-        .header("Set-Cookie", "fortify_session=; Path=/; Max-Age=0; HttpOnly")
+        .header(
+            "Set-Cookie",
+            "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+        )
         .body(Body::from(html))
         .unwrap()
 }
@@ -1706,7 +1834,8 @@ fn is_mirror_paused(onion_address: &str) -> bool {
                     if let Some(arr) = json.get("mirrors").and_then(|m| m.as_array()) {
                         for mirror in arr {
                             if mirror.get("onion_address").and_then(|v| v.as_str()) == Some(&addr) {
-                                return mirror.get("status").and_then(|v| v.as_str()) == Some("paused");
+                                return mirror.get("status").and_then(|v| v.as_str())
+                                    == Some("paused");
                             }
                         }
                     }
@@ -1714,7 +1843,9 @@ fn is_mirror_paused(onion_address: &str) -> bool {
             }
         }
         false
-    }).join() {
+    })
+    .join()
+    {
         Ok(paused) => paused,
         Err(_) => false,
     }
@@ -1733,22 +1864,31 @@ fn serve_paused_mirror_page(_onion_address: &str) -> Response<Body> {
             {
                 if let Ok(json) = resp.json::<serde_json::Value>() {
                     if let Some(arr) = json.get("mirrors").and_then(|m| m.as_array()) {
-                        return arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+                        return arr
+                            .iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect();
                     }
                 }
             }
         }
         Vec::new()
-    }).join() {
+    })
+    .join()
+    {
         Ok(m) => m,
         Err(_) => Vec::new(),
     };
-    
-    let alt_mirror_link = active_mirrors.first()
+
+    let alt_mirror_link = active_mirrors
+        .first()
         .map(|m| format!(r#"<a href="http://{}" class="mirror-link">🧅 {}</a>"#, m, m))
-        .unwrap_or_else(|| "<span style='color: #888;'>No alternative mirrors available</span>".to_string());
-    
-    let html = format!(r#"<!DOCTYPE html>
+        .unwrap_or_else(|| {
+            "<span style='color: #888;'>No alternative mirrors available</span>".to_string()
+        });
+
+    let html = format!(
+        r#"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -1831,7 +1971,9 @@ fn serve_paused_mirror_page(_onion_address: &str) -> Response<Body> {
         </div>
     </div>
 </body>
-</html>"#, alt_mirror_link);
+</html>"#,
+        alt_mirror_link
+    );
 
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)

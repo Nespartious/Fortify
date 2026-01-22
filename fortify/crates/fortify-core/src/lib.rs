@@ -9,4 +9,4 @@ pub use config::*;
 pub use logging::*;
 pub use session::*;
 // Export trust types explicitly to avoid ambiguous Result re-export
-pub use trust::{Session, SessionToken, TrustTier, TrustError};
+pub use trust::{Session, SessionToken, TrustError, TrustTier};

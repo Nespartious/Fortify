@@ -1,14 +1,17 @@
 //! Settings panel UI
 
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
+use ratatui::{prelude::*, widgets::*};
 
 use crate::app::{App, Focus, SettingsTab};
 
 /// Draw settings screen
-pub fn draw(frame: &mut Frame, app: &App, area: Rect, current_tab: SettingsTab, field_index: usize) {
+pub fn draw(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    current_tab: SettingsTab,
+    field_index: usize,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(if app.focus == Focus::Settings {
@@ -25,9 +28,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect, current_tab: SettingsTab, 
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Tabs
-            Constraint::Min(10),    // Content
-            Constraint::Length(2),  // Footer
+            Constraint::Length(3), // Tabs
+            Constraint::Min(10),   // Content
+            Constraint::Length(2), // Footer
         ])
         .split(inner);
 
@@ -72,14 +75,21 @@ fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
 }
 
 fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
-    let logo_path = app.config.branding.logo_path.as_ref()
+    let logo_path = app
+        .config
+        .branding
+        .logo_path
+        .as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(none)".to_string());
-    
+
     let fields = [
         ("Service Name", app.config.branding.service_name.as_str()),
         ("Description", app.config.branding.description.as_str()),
-        ("Welcome Message", app.config.branding.welcome_message.as_str()),
+        (
+            "Welcome Message",
+            app.config.branding.welcome_message.as_str(),
+        ),
         ("Primary Color", app.config.branding.primary_color.as_str()),
         ("Logo Path", logo_path.as_str()),
     ];
@@ -88,7 +98,11 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
 }
 
 fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
-    let enabled = if app.config.captcha.enabled { "Yes" } else { "No" };
+    let enabled = if app.config.captcha.enabled {
+        "Yes"
+    } else {
+        "No"
+    };
     let pool = app.config.captcha.pool_size.to_string();
     let min_pool = app.config.captcha.min_pool_size.to_string();
     let max_pool = app.config.captcha.max_pool_size.to_string();
@@ -138,15 +152,22 @@ fn draw_thresholds(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
 fn draw_network(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let socks = app.config.network.socks_port.to_string();
     let ctrl = app.config.network.control_port.to_string();
-    let vg = if app.config.network.vanguards_enabled { "Yes" } else { "No" };
-    let vg_layers = format!("L2: {}, L3: {}", 
-        app.config.network.vanguards_layer2,
-        app.config.network.vanguards_layer3
+    let vg = if app.config.network.vanguards_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
+    let vg_layers = format!(
+        "L2: {}, L3: {}",
+        app.config.network.vanguards_layer2, app.config.network.vanguards_layer3
     );
     let data_dir = app.config.network.data_dir.display().to_string();
 
     let fields = [
-        ("Backend Address", app.config.network.backend_address.as_str()),
+        (
+            "Backend Address",
+            app.config.network.backend_address.as_str(),
+        ),
         ("HTTP Bind", app.config.network.http_bind.as_str()),
         ("Gate Bind", app.config.network.gate_bind.as_str()),
         ("SOCKS Port", socks.as_str()),
@@ -164,10 +185,14 @@ fn draw_mirrors(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let max = app.config.mirrors.max_mirrors.to_string();
     let standby = app.config.mirrors.standby_mirrors.to_string();
     let rotation = app.config.mirrors.rotation_interval_seconds.to_string();
-    let proactive = if app.config.mirrors.proactive_burn_enabled { "Yes" } else { "No" };
-    let burn_range = format!("{}-{} days",
-        app.config.mirrors.burn_interval_days_min,
-        app.config.mirrors.burn_interval_days_max
+    let proactive = if app.config.mirrors.proactive_burn_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
+    let burn_range = format!(
+        "{}-{} days",
+        app.config.mirrors.burn_interval_days_min, app.config.mirrors.burn_interval_days_max
     );
     let retire = app.config.mirrors.retirement_page_hours.to_string();
 
@@ -185,14 +210,22 @@ fn draw_mirrors(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
 }
 
 fn draw_vanity(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
-    let enabled = if app.config.vanity.enabled { "Yes" } else { "No" };
+    let enabled = if app.config.vanity.enabled {
+        "Yes"
+    } else {
+        "No"
+    };
     let prefix = if app.config.vanity.prefix.is_empty() {
         "(not set)".to_string()
     } else {
         app.config.vanity.prefix.clone()
     };
     let prefix_len = format!("{}/10 characters", app.config.vanity.prefix.len());
-    let safety_net = if app.config.vanity.safety_net_enabled { "Yes" } else { "No" };
+    let safety_net = if app.config.vanity.safety_net_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
     let timeout = format!("{} seconds", app.config.vanity.safety_net_timeout_seconds);
     let min_len = app.config.vanity.min_prefix_length.to_string();
     let warn = format!("{} chars", app.config.vanity.warn_threshold);
@@ -218,10 +251,18 @@ fn draw_vanity(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
             height: 2,
         };
         let warning = Paragraph::new(Line::from(vec![
-            Span::styled("  ⚠ WARNING: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("Prefix > {} chars may take hours/days to generate!", app.config.vanity.warn_threshold),
-                Style::default().fg(Color::Yellow)
+                "  ⚠ WARNING: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "Prefix > {} chars may take hours/days to generate!",
+                    app.config.vanity.warn_threshold
+                ),
+                Style::default().fg(Color::Yellow),
             ),
         ]));
         frame.render_widget(warning, warning_area);
@@ -231,15 +272,15 @@ fn draw_vanity(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
 fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selected: usize) {
     // Calculate available width for content (minus borders and padding)
     let content_width = area.width.saturating_sub(4) as usize;
-    let label_width = 22.min(content_width / 2);  // Max 22 chars for label
-    let value_width = content_width.saturating_sub(label_width + 6);  // Rest for value
-    
+    let label_width = 22.min(content_width / 2); // Max 22 chars for label
+    let value_width = content_width.saturating_sub(label_width + 6); // Rest for value
+
     let lines: Vec<Line> = fields
         .iter()
         .enumerate()
         .map(|(i, (label, value))| {
             let is_selected = i == selected;
-            
+
             // Colored dot indicator instead of arrow
             let dot = if is_selected { "●" } else { "○" };
             let dot_style = if is_selected {
@@ -247,15 +288,19 @@ fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selec
             } else {
                 Style::default().fg(Color::DarkGray)
             };
-            
+
             let label_style = if is_selected {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
 
             let value_style = if is_selected {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -266,7 +311,7 @@ fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selec
             } else {
                 (*label).to_string()
             };
-            
+
             // Truncate value if too long
             let truncated_value: String = if value.len() > value_width {
                 format!("{}…", &value[..value_width.saturating_sub(1)])

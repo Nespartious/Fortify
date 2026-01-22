@@ -3,10 +3,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
+use ratatui::{prelude::*, widgets::*};
 
 /// A gauge widget for showing percentages
 pub struct PercentGauge<'a> {
@@ -105,7 +102,8 @@ pub fn ascii_box(title: &str, width: u16) -> Vec<String> {
         format!(" {} ", title)
     };
 
-    let top = format!("╔{}{}{}╗", 
+    let top = format!(
+        "╔{}{}{}╗",
         "═".repeat((inner_width - title_padded.len()) / 2),
         title_padded,
         "═".repeat((inner_width - title_padded.len() + 1) / 2)

@@ -1,4 +1,7 @@
-use fortify_core::{logging::{init_logging, start_resource_logger}, SessionManager};
+use fortify_core::{
+    logging::{init_logging, start_resource_logger},
+    SessionManager,
+};
 use fortify_gate::{server::GateServer, Gate};
 use std::env;
 use std::net::SocketAddr;
@@ -25,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let verification_timeout = env::var("GATE_VERIFICATION_TIMEOUT")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(45);  // 45 seconds default - tighter window to prevent automation
+        .unwrap_or(45); // 45 seconds default - tighter window to prevent automation
     let static_dir = env::var("GATE_STATIC_DIR").unwrap_or_else(|_| "assets/html".to_string());
     let secret_key = env::var("SECRET_KEY")
         .unwrap_or_else(|_| "fortify-secret-key".to_string())

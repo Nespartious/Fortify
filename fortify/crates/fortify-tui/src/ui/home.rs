@@ -1,9 +1,6 @@
 //! Home screen UI
 
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
+use ratatui::{prelude::*, widgets::*};
 
 use crate::app::{App, Focus, MenuItem};
 
@@ -27,9 +24,9 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // Header/logo
-            Constraint::Min(10),    // Menu
-            Constraint::Length(3),  // Footer hints
+            Constraint::Length(6), // Header/logo
+            Constraint::Min(10),   // Menu
+            Constraint::Length(3), // Footer hints
         ])
         .split(inner);
 
@@ -48,23 +45,23 @@ fn draw_header(frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(Span::styled(
             "  ███████╗ ██████╗ ██████╗ ████████╗██╗███████╗██╗   ██╗",
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(Color::Cyan),
         )),
         Line::from(Span::styled(
             "  ██╔════╝██╔═══██╗██╔══██╗╚══██╔══╝██║██╔════╝╚██╗ ██╔╝",
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(Color::Cyan),
         )),
         Line::from(Span::styled(
             "  █████╗  ██║   ██║██████╔╝   ██║   ██║█████╗   ╚████╔╝ ",
-            Style::default().fg(Color::LightCyan)
+            Style::default().fg(Color::LightCyan),
         )),
         Line::from(Span::styled(
             "  ██╔══╝  ██║   ██║██╔══██╗   ██║   ██║██╔══╝    ╚██╔╝  ",
-            Style::default().fg(Color::LightCyan)
+            Style::default().fg(Color::LightCyan),
         )),
         Line::from(Span::styled(
             "  ██║     ╚██████╔╝██║  ██║   ██║   ██║██║        ██║   ",
-            Style::default().fg(Color::White)
+            Style::default().fg(Color::White),
         )),
     ];
 
@@ -79,13 +76,17 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
         .map(|(i, item)| {
             let is_selected = i == app.menu_index;
             let prefix = if is_selected { " ▶ " } else { "   " };
-            
+
             // Use item's color (Destroy is red)
             let base_color = item.color();
-            
+
             let style = if is_selected {
                 Style::default()
-                    .fg(if base_color == Color::Red { Color::LightRed } else { Color::Yellow })
+                    .fg(if base_color == Color::Red {
+                        Color::LightRed
+                    } else {
+                        Color::Yellow
+                    })
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(base_color)
@@ -94,7 +95,9 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
             let hotkey_style = if base_color == Color::Red {
                 Style::default().fg(Color::Red).add_modifier(Modifier::DIM)
             } else {
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM)
             };
 
             Line::from(vec![

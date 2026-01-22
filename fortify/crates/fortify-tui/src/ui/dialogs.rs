@@ -1,16 +1,13 @@
 //! Dialog rendering
 
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
+use ratatui::{prelude::*, widgets::*};
 
-use crate::app::{App, Dialog, DependencyState, DependencyCheckPhase};
+use crate::app::{App, DependencyCheckPhase, DependencyState, Dialog};
 
 /// Draw dialog overlay
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    
+
     // Calculate centered dialog area - wider for input dialogs (URLs can be long)
     let base_width = match &app.dialog {
         Dialog::Input { .. } => 90, // Wider for URL input
@@ -29,7 +26,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let x = (area.width.saturating_sub(dialog_width)) / 2;
     let y = (area.height.saturating_sub(dialog_height)) / 2;
-    
+
     let dialog_area = Rect {
         x,
         y,
@@ -38,8 +35,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     };
 
     // Draw semi-transparent overlay
-    let _overlay = Block::default()
-        .style(Style::default().bg(Color::Black));
+    let _overlay = Block::default().style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, dialog_area);
 
     // Draw dialog content
@@ -59,7 +55,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Dialog::Info { title, message } => {
             draw_info(frame, dialog_area, title, message);
         }
-        Dialog::DependencyCheck { statuses, phase, completed_at } => {
+        Dialog::DependencyCheck {
+            statuses,
+            phase,
+            completed_at,
+        } => {
             draw_dependency_check(frame, dialog_area, statuses, phase, completed_at);
         }
         Dialog::None => {}
@@ -107,7 +107,7 @@ fn draw_apply_changes(frame: &mut Frame, area: Rect, changes: &[String]) {
         Line::from(""),
         Line::from(Span::styled(
             "Configuration has been modified:",
-            Style::default().fg(Color::White)
+            Style::default().fg(Color::White),
         )),
         Line::from(""),
     ];
@@ -116,14 +116,14 @@ fn draw_apply_changes(frame: &mut Frame, area: Rect, changes: &[String]) {
     for change in changes.iter().take(5) {
         content.push(Line::from(Span::styled(
             format!("  • {}", change),
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(Color::Yellow),
         )));
     }
 
     if changes.len() > 5 {
         content.push(Line::from(Span::styled(
             format!("  ... and {} more", changes.len() - 5),
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::DarkGray),
         )));
     }
 
@@ -160,14 +160,13 @@ fn draw_input(frame: &mut Frame, area: Rect, title: &str, value: &str) {
     };
 
     // Draw input background
-    let input_bg = Block::default()
-        .style(Style::default().bg(Color::DarkGray));
+    let input_bg = Block::default().style(Style::default().bg(Color::DarkGray));
     frame.render_widget(input_bg, input_area);
 
     // Draw input value with cursor
     let display_value = format!("{}█", value);
-    let input = Paragraph::new(display_value)
-        .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+    let input =
+        Paragraph::new(display_value).style(Style::default().fg(Color::White).bg(Color::DarkGray));
     frame.render_widget(input, input_area);
 
     // Draw hints
@@ -177,7 +176,7 @@ fn draw_input(frame: &mut Frame, area: Rect, title: &str, value: &str) {
         Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
         Span::raw(" Cancel"),
     ]);
-    
+
     let hint_area = Rect {
         x: inner.x,
         y: inner.y + 4,
@@ -205,7 +204,7 @@ fn draw_error(frame: &mut Frame, area: Rect, message: &str) {
         Line::from(""),
         Line::from(Span::styled(
             "Press any key to continue",
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::DarkGray),
         )),
     ];
 
@@ -230,7 +229,7 @@ fn draw_info(frame: &mut Frame, area: Rect, title: &str, message: &str) {
         Line::from(""),
         Line::from(Span::styled(
             "Press any key to continue",
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::DarkGray),
         )),
     ];
 
@@ -239,8 +238,8 @@ fn draw_info(frame: &mut Frame, area: Rect, title: &str, message: &str) {
 }
 
 fn draw_dependency_check(
-    frame: &mut Frame, 
-    area: Rect, 
+    frame: &mut Frame,
+    area: Rect,
     statuses: &[crate::app::DependencyStatus],
     phase: &DependencyCheckPhase,
     completed_at: &Option<std::time::Instant>,
@@ -289,7 +288,9 @@ fn draw_dependency_check(
             Span::styled(format!("{} ", icon), Style::default().fg(color)),
             Span::styled(
                 format!("{}{}", status.name, req_marker),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" - "),
             Span::styled(&status.description, Style::default().fg(Color::Gray)),
@@ -319,18 +320,20 @@ fn draw_dependency_check(
 
     content.push(Line::from(Span::styled(
         status_msg,
-        Style::default().fg(match phase {
-            DependencyCheckPhase::Complete => Color::Green,
-            DependencyCheckPhase::Failed => Color::Red,
-            _ => Color::Cyan,
-        }).add_modifier(Modifier::ITALIC)
+        Style::default()
+            .fg(match phase {
+                DependencyCheckPhase::Complete => Color::Green,
+                DependencyCheckPhase::Failed => Color::Red,
+                _ => Color::Cyan,
+            })
+            .add_modifier(Modifier::ITALIC),
     )));
 
     // Show legend for required marker
     content.push(Line::from(""));
     content.push(Line::from(Span::styled(
         "  * = required dependency",
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(Color::DarkGray),
     )));
 
     let para = Paragraph::new(content);

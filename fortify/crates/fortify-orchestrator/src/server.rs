@@ -37,10 +37,13 @@ fn unauthorized() -> Response<Body> {
     Response::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::json!({
-            "error": "Unauthorized",
-            "message": "Valid authentication token required for administrative operations"
-        }).to_string()))
+        .body(Body::from(
+            serde_json::json!({
+                "error": "Unauthorized",
+                "message": "Valid authentication token required for administrative operations"
+            })
+            .to_string(),
+        ))
         .unwrap()
 }
 
@@ -107,7 +110,7 @@ async fn handle_request(
         "/mirror/resume",
         "/mirror/destroy",
     ];
-    
+
     if admin_endpoints.iter().any(|endpoint| path == *endpoint) {
         if !is_authenticated(&req) {
             tracing::warn!("🚫 Unauthorized attempt to access {} from {}", path, method);
@@ -131,23 +134,28 @@ async fn handle_request(
         ("GET", "/mirrors/extended") => list_extended_mirrors(Arc::clone(&orchestrator)),
         ("GET", "/status") => status_page(Arc::clone(&orchestrator)),
         ("POST", "/mirror/create") => create_mirror(Arc::clone(&orchestrator)).await,
-        ("POST", "/mirror/create-standby") => create_standby_mirror(Arc::clone(&orchestrator)).await,
-        ("POST", "/mirror/activate") => activate_standby_mirror(req, Arc::clone(&orchestrator)).await,
+        ("POST", "/mirror/create-standby") => {
+            create_standby_mirror(Arc::clone(&orchestrator)).await
+        }
+        ("POST", "/mirror/activate") => {
+            activate_standby_mirror(req, Arc::clone(&orchestrator)).await
+        }
         ("POST", "/mirror/pause") => pause_mirror(req, Arc::clone(&orchestrator)).await,
         ("POST", "/mirror/resume") => resume_mirror(req, Arc::clone(&orchestrator)).await,
         ("POST", "/mirror/destroy") => destroy_mirror(req, Arc::clone(&orchestrator)).await,
         _ => {
             // Check if this is a request to a paused mirror
-            let host = req.headers()
+            let host = req
+                .headers()
                 .get("Host")
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or("");
-            
+
             if host.contains(".onion") && orchestrator.is_mirror_paused(host) {
                 // Serve paused mirror page
                 return Ok(serve_paused_mirror_page(&orchestrator));
             }
-            
+
             // Forward all other requests to gate
             proxy_to_gate(req, gate_address).await
         }
@@ -209,8 +217,9 @@ fn list_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
 /// List ALL mirrors with status (for admin panel)
 fn list_all_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     let mirrors = orchestrator.get_all_mirrors();
-    
-    let mirror_data: Vec<serde_json::Value> = mirrors.iter()
+
+    let mirror_data: Vec<serde_json::Value> = mirrors
+        .iter()
         .map(|(id, onion, status)| {
             serde_json::json!({
                 "id": id,
@@ -236,8 +245,9 @@ fn list_all_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
 /// List ALL mirrors with extended info (PoW status, standby status, etc.)
 fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     let mirrors = orchestrator.get_all_mirrors_extended();
-    
-    let mirror_data: Vec<serde_json::Value> = mirrors.iter()
+
+    let mirror_data: Vec<serde_json::Value> = mirrors
+        .iter()
         .map(|m| {
             serde_json::json!({
                 "id": m.id,
@@ -249,7 +259,7 @@ fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
             })
         })
         .collect();
-    
+
     let active_count = mirrors.iter().filter(|m| m.status == "active").count();
     let standby_count = mirrors.iter().filter(|m| m.is_standby).count();
     let pow_count = mirrors.iter().filter(|m| m.pow_enabled).count();
@@ -273,15 +283,15 @@ fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
 /// Generate HTML list of active mirrors
 fn generate_mirror_list_html(orchestrator: &Orchestrator) -> String {
     let mirrors = orchestrator.get_all_mirrors_extended();
-    let active_mirrors: Vec<_> = mirrors.iter()
-        .filter(|m| m.status == "active")
-        .collect();
-    
+    let active_mirrors: Vec<_> = mirrors.iter().filter(|m| m.status == "active").collect();
+
     if active_mirrors.is_empty() {
-        return r#"<li class="no-mirrors">No active mirrors available at this time</li>"#.to_string();
+        return r#"<li class="no-mirrors">No active mirrors available at this time</li>"#
+            .to_string();
     }
-    
-    active_mirrors.iter()
+
+    active_mirrors
+        .iter()
         .map(|m| {
             let pow_badge = if m.pow_enabled {
                 r#"<span class="pow-badge">PoW</span>"#
@@ -300,7 +310,7 @@ fn generate_mirror_list_html(orchestrator: &Orchestrator) -> String {
 /// Serve a static page for paused/maintenance mirrors
 fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<Body> {
     let mirror_list = generate_mirror_list_html(orchestrator);
-    
+
     // Try to load the maintenance.html template
     let html = match std::fs::read_to_string("assets/html/maintenance.html") {
         Ok(template) => template.replace("{{MIRROR_LIST}}", &mirror_list),
@@ -315,8 +325,9 @@ fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<Body> {
                     .collect::<Vec<_>>()
                     .join("\n")
             };
-            
-            format!(r#"<!DOCTYPE html>
+
+            format!(
+                r#"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -357,7 +368,9 @@ fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<Body> {
         <p style="margin-top: 30px; font-size: 0.8em; color: #666;">🛡️ Protected by Fortify</p>
     </div>
 </body>
-</html>"#, alt_mirror_links)
+</html>"#,
+                alt_mirror_links
+            )
         }
     };
 
@@ -371,7 +384,7 @@ fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<Body> {
 /// Create a new mirror (triggered by admin panel)
 async fn create_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     tracing::info!("Admin requested new mirror creation");
-    
+
     match orchestrator.spawn_mirror().await {
         Ok(onion_addr) => {
             tracing::info!("Successfully created new mirror: {}", onion_addr);
@@ -407,15 +420,20 @@ async fn create_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
 /// Create a new standby mirror (paused, ready for activation)
 async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     tracing::info!("Admin requested new standby mirror creation");
-    
+
     match orchestrator.spawn_standby_mirror().await {
         Ok(mirror_id) => {
             // Get the onion address
-            let onion_addr = orchestrator.get_mirror(&mirror_id)
+            let onion_addr = orchestrator
+                .get_mirror(&mirror_id)
                 .and_then(|m| m.onion_address)
                 .unwrap_or_else(|| "unknown".to_string());
-            
-            tracing::info!("Successfully created standby mirror: {} ({})", mirror_id, onion_addr);
+
+            tracing::info!(
+                "Successfully created standby mirror: {} ({})",
+                mirror_id,
+                onion_addr
+            );
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
@@ -448,7 +466,10 @@ async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body
 }
 
 /// Activate a standby mirror (change from paused to active)
-async fn activate_standby_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Response<Body> {
+async fn activate_standby_mirror(
+    req: Request<Body>,
+    orchestrator: Arc<Orchestrator>,
+) -> Response<Body> {
     let body_bytes = match hyper::body::to_bytes(req.into_body()).await {
         Ok(b) => b,
         Err(_) => {
@@ -458,7 +479,7 @@ async fn activate_standby_mirror(req: Request<Body>, orchestrator: Arc<Orchestra
                 .unwrap();
         }
     };
-    
+
     let json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
         Ok(j) => j,
         Err(_) => {
@@ -468,7 +489,7 @@ async fn activate_standby_mirror(req: Request<Body>, orchestrator: Arc<Orchestra
                 .unwrap();
         }
     };
-    
+
     let onion_address = match json.get("onion_address").and_then(|v| v.as_str()) {
         Some(addr) => addr.to_string(),
         None => {
@@ -478,9 +499,12 @@ async fn activate_standby_mirror(req: Request<Body>, orchestrator: Arc<Orchestra
                 .unwrap();
         }
     };
-    
-    tracing::info!("Admin requested activation for standby mirror: {}", onion_address);
-    
+
+    tracing::info!(
+        "Admin requested activation for standby mirror: {}",
+        onion_address
+    );
+
     match orchestrator.activate_standby(&onion_address).await {
         Ok(_) => {
             tracing::info!("Successfully activated standby mirror: {}", onion_address);
@@ -525,7 +549,7 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
                 .unwrap();
         }
     };
-    
+
     let json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
         Ok(j) => j,
         Err(_) => {
@@ -535,7 +559,7 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
                 .unwrap();
         }
     };
-    
+
     let onion_address = match json.get("onion_address").and_then(|v| v.as_str()) {
         Some(addr) => addr.to_string(),
         None => {
@@ -545,9 +569,9 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
                 .unwrap();
         }
     };
-    
+
     tracing::info!("Admin requested pause for mirror: {}", onion_address);
-    
+
     match orchestrator.pause_mirror(&onion_address).await {
         Ok(_) => {
             tracing::info!("Successfully paused mirror: {}", onion_address);
@@ -591,7 +615,7 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
                 .unwrap();
         }
     };
-    
+
     let json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
         Ok(j) => j,
         Err(_) => {
@@ -601,7 +625,7 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
                 .unwrap();
         }
     };
-    
+
     let onion_address = match json.get("onion_address").and_then(|v| v.as_str()) {
         Some(addr) => addr.to_string(),
         None => {
@@ -611,9 +635,9 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
                 .unwrap();
         }
     };
-    
+
     tracing::info!("Admin requested resume for mirror: {}", onion_address);
-    
+
     match orchestrator.resume_mirror(&onion_address).await {
         Ok(_) => {
             tracing::info!("Successfully resumed mirror: {}", onion_address);
@@ -657,7 +681,7 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
                 .unwrap();
         }
     };
-    
+
     let json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
         Ok(j) => j,
         Err(_) => {
@@ -667,7 +691,7 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
                 .unwrap();
         }
     };
-    
+
     let onion_address = match json.get("onion_address").and_then(|v| v.as_str()) {
         Some(addr) => addr.to_string(),
         None => {
@@ -677,9 +701,9 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
                 .unwrap();
         }
     };
-    
+
     tracing::warn!("Admin requested DESTROY for mirror: {}", onion_address);
-    
+
     match orchestrator.destroy_mirror(&onion_address).await {
         Ok(_) => {
             tracing::warn!("Successfully destroyed mirror: {}", onion_address);
@@ -716,9 +740,12 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
 fn get_stats(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     let captcha_stats = orchestrator.captcha_pool_stats();
     let all_mirrors = orchestrator.get_all_mirrors_extended();
-    let active_count = all_mirrors.iter().filter(|m| m.status == "active" && !m.is_standby).count();
+    let active_count = all_mirrors
+        .iter()
+        .filter(|m| m.status == "active" && !m.is_standby)
+        .count();
     let standby_count = all_mirrors.iter().filter(|m| m.is_standby).count();
-    
+
     let stats = serde_json::json!({
         "captcha_pool": {
             "current_size": captcha_stats.current_size,
@@ -735,7 +762,7 @@ fn get_stats(orchestrator: Arc<Orchestrator>) -> Response<Body> {
         },
         "orchestrator_count": 1
     });
-    
+
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")

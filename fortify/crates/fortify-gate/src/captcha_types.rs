@@ -116,7 +116,11 @@ impl Default for CaptchaConfig {
             threat_captcha_type: CaptchaType::Emoji,
             threat_captcha_enabled: true,
             random_cycling: false,
-            cycling_types: vec![CaptchaType::BmpText, CaptchaType::Emoji, CaptchaType::Direction],
+            cycling_types: vec![
+                CaptchaType::BmpText,
+                CaptchaType::Emoji,
+                CaptchaType::Direction,
+            ],
             type_configs,
         }
     }
@@ -178,7 +182,7 @@ impl CaptchaTypeConfig {
             CaptchaType::Direction => Self {
                 enabled: true,
                 option_count: 4, // 4 arrows (up, down, left, right)
-                difficulty: 1,  // Simple
+                difficulty: 1,   // Simple
                 custom: HashMap::new(),
             },
             CaptchaType::Sequence => Self {
@@ -286,21 +290,21 @@ impl EmojiChallenge {
     pub fn generate(option_count: usize) -> Self {
         let categories = get_emoji_categories();
         let mut rng = rand::thread_rng();
-        
+
         // Pick a target category
         let target_idx = rng.gen_range(0..categories.len());
         let target = &categories[target_idx];
-        
+
         // Pick a random emoji from target category
         let correct_emoji_idx = rng.gen_range(0..target.emojis.len());
         let correct_emoji = target.emojis[correct_emoji_idx].to_string();
-        
+
         // Build options: one correct, rest from other categories
         let mut options: Vec<EmojiOption> = Vec::with_capacity(option_count);
         let correct_position = rng.gen_range(0..option_count);
-        
+
         let mut used_categories = vec![target_idx];
-        
+
         for i in 0..option_count {
             if i == correct_position {
                 options.push(EmojiOption {
@@ -319,7 +323,7 @@ impl EmojiChallenge {
                     }
                 }
                 used_categories.push(cat_idx);
-                
+
                 let other_cat = &categories[cat_idx];
                 let emoji_idx = rng.gen_range(0..other_cat.emojis.len());
                 options.push(EmojiOption {
@@ -328,7 +332,7 @@ impl EmojiChallenge {
                 });
             }
         }
-        
+
         Self {
             target_category: target.name.to_string(),
             target_description: target.description.to_string(),
@@ -400,8 +404,14 @@ impl ArrowDirection {
 
     pub fn all() -> Vec<ArrowDirection> {
         vec![
-            Self::Up, Self::Down, Self::Left, Self::Right,
-            Self::UpLeft, Self::UpRight, Self::DownLeft, Self::DownRight,
+            Self::Up,
+            Self::Down,
+            Self::Left,
+            Self::Right,
+            Self::UpLeft,
+            Self::UpRight,
+            Self::DownLeft,
+            Self::DownRight,
         ]
     }
 }
@@ -427,11 +437,11 @@ impl DirectionChallenge {
         } else {
             ArrowDirection::all_basic()
         };
-        
+
         let mut rng = rand::thread_rng();
         let target_idx = rng.gen_range(0..directions.len());
         let target = directions[target_idx];
-        
+
         // Use all directions as options
         let options: Vec<ArrowOption> = directions
             .iter()
@@ -441,7 +451,7 @@ impl DirectionChallenge {
                 index: i,
             })
             .collect();
-        
+
         Self {
             target_direction: target,
             options,
@@ -503,10 +513,10 @@ pub struct SequenceOption {
 impl SequenceChallenge {
     pub fn generate(option_count: usize) -> Self {
         let mut rng = rand::thread_rng();
-        
+
         // Generate different sequence types
         let sequence_type = rng.gen_range(0..5);
-        
+
         let (sequence, correct_answer, wrong_answers) = match sequence_type {
             0 => {
                 // Alphabet: A, B, C, ? -> D
@@ -522,7 +532,7 @@ impl SequenceChallenge {
                     })
                     .collect();
                 (seq, correct, wrongs)
-            },
+            }
             1 => {
                 // Numbers: 1, 2, 3, ? -> 4
                 let start = rng.gen_range(1..20);
@@ -539,7 +549,7 @@ impl SequenceChallenge {
                     })
                     .collect();
                 (seq, correct, wrongs)
-            },
+            }
             2 => {
                 // Even: 2, 4, 6, ? -> 8
                 let start = rng.gen_range(1..10) * 2;
@@ -551,7 +561,7 @@ impl SequenceChallenge {
                     (start + 5).to_string(),
                 ];
                 (seq, correct, wrongs)
-            },
+            }
             3 => {
                 // Odd: 1, 3, 5, ? -> 7
                 let start = rng.gen_range(0..10) * 2 + 1;
@@ -563,7 +573,7 @@ impl SequenceChallenge {
                     (start + 4).to_string(),
                 ];
                 (seq, correct, wrongs)
-            },
+            }
             _ => {
                 // Shapes alternating: ●, ○, ●, ? -> ○
                 let shapes_a = vec!["●", "■", "▲"];
@@ -575,7 +585,8 @@ impl SequenceChallenge {
                     shapes_a[shape_idx].to_string(),
                 ];
                 let correct = shapes_b[shape_idx].to_string();
-                let wrongs: Vec<String> = shapes_a.iter()
+                let wrongs: Vec<String> = shapes_a
+                    .iter()
                     .chain(shapes_b.iter())
                     .filter(|&&s| s != shapes_b[shape_idx])
                     .take(option_count - 1)
@@ -584,12 +595,12 @@ impl SequenceChallenge {
                 (seq, correct, wrongs)
             }
         };
-        
+
         // Build options with correct answer in random position
         let correct_position = rng.gen_range(0..option_count);
         let mut options: Vec<SequenceOption> = Vec::with_capacity(option_count);
         let mut wrong_iter = wrong_answers.into_iter();
-        
+
         for i in 0..option_count {
             if i == correct_position {
                 options.push(SequenceOption {
@@ -603,7 +614,7 @@ impl SequenceChallenge {
                 });
             }
         }
-        
+
         Self {
             sequence_display: sequence,
             question_text: "What comes next?".to_string(),
@@ -632,11 +643,10 @@ impl SequenceChallenge {
 
 /// Common words for unscrambling (4-6 letters)
 pub const UNSCRAMBLE_WORDS: &[&str] = &[
-    "apple", "table", "chair", "house", "water", "light", "music", "earth",
-    "cloud", "storm", "river", "ocean", "plant", "stone", "metal", "paper",
-    "clock", "phone", "radio", "field", "grass", "track", "train", "plane",
-    "coast", "beach", "frost", "flame", "flash", "globe", "grape", "lemon",
-    "melon", "peach", "pizza", "salad", "bread", "cream", "sugar", "spice",
+    "apple", "table", "chair", "house", "water", "light", "music", "earth", "cloud", "storm",
+    "river", "ocean", "plant", "stone", "metal", "paper", "clock", "phone", "radio", "field",
+    "grass", "track", "train", "plane", "coast", "beach", "frost", "flame", "flash", "globe",
+    "grape", "lemon", "melon", "peach", "pizza", "salad", "bread", "cream", "sugar", "spice",
 ];
 
 #[derive(Debug, Clone)]
@@ -652,7 +662,7 @@ impl WordUnscrambleChallenge {
         let mut rng = rand::thread_rng();
         let word_idx = rng.gen_range(0..UNSCRAMBLE_WORDS.len());
         let word = UNSCRAMBLE_WORDS[word_idx].to_string();
-        
+
         // Scramble the word
         let mut chars: Vec<char> = word.chars().collect();
         for _ in 0..word.len() * 2 {
@@ -660,7 +670,7 @@ impl WordUnscrambleChallenge {
             let j = rng.gen_range(0..chars.len());
             chars.swap(i, j);
         }
-        
+
         // Make sure it's actually scrambled (not same as original)
         let scrambled: String = chars.iter().collect();
         let scrambled = if scrambled == word {
@@ -669,14 +679,17 @@ impl WordUnscrambleChallenge {
         } else {
             scrambled
         };
-        
+
         // Add hint for easy difficulty
         let hint = if difficulty <= 1 {
-            Some(format!("Hint: First letter is '{}'", word.chars().next().unwrap_or(' ')))
+            Some(format!(
+                "Hint: First letter is '{}'",
+                word.chars().next().unwrap_or(' ')
+            ))
         } else {
             None
         };
-        
+
         Self {
             original_word: word,
             scrambled: scrambled.to_uppercase(),
@@ -760,16 +773,16 @@ pub struct RotationOption {
 impl ImageRotationChallenge {
     pub fn generate() -> Self {
         let mut rng = rand::thread_rng();
-        
+
         // Pick a shape
         let shape_idx = rng.gen_range(0..ROTATION_SHAPES.len());
         let (shape_name, shape_char) = ROTATION_SHAPES[shape_idx];
-        
+
         // The correct answer is always the upright one (Deg0)
         // We show rotated versions and user must pick the upright one
         let angles = RotationAngle::all();
         let correct_index = 0; // Deg0 is always correct
-        
+
         let options: Vec<RotationOption> = angles
             .iter()
             .enumerate()
@@ -779,7 +792,7 @@ impl ImageRotationChallenge {
                 display: format!("{} ({}°)", shape_char, angle.degrees()),
             })
             .collect();
-        
+
         Self {
             shape_name: shape_name.to_string(),
             shape_char: shape_char.to_string(),
@@ -859,22 +872,22 @@ impl SilhouetteChallenge {
     pub fn generate(option_count: usize) -> Self {
         let categories = get_silhouette_categories();
         let mut rng = rand::thread_rng();
-        
+
         // Pick correct category and symbol
         let correct_cat_idx = rng.gen_range(0..categories.len());
         let correct_cat = &categories[correct_cat_idx];
         let symbol_idx = rng.gen_range(0..correct_cat.symbols.len());
         let symbol = correct_cat.symbols[symbol_idx].to_string();
-        
+
         // Position correct answer randomly
         let correct_position = rng.gen_range(0..option_count.min(categories.len()));
-        
+
         // Build options
         let mut options: Vec<SilhouetteOption> = Vec::with_capacity(option_count);
         let mut cat_idx_iter = (0..categories.len())
             .filter(|&i| i != correct_cat_idx)
             .collect::<Vec<_>>();
-        
+
         for i in 0..option_count.min(categories.len()) {
             if i == correct_position {
                 options.push(SilhouetteOption {
@@ -891,7 +904,7 @@ impl SilhouetteChallenge {
                 });
             }
         }
-        
+
         Self {
             silhouette_symbol: symbol,
             correct_category: correct_cat.name.to_string(),
@@ -921,10 +934,7 @@ impl SilhouetteChallenge {
 /// Unified challenge that can hold any captcha type
 #[derive(Debug, Clone)]
 pub enum CaptchaData {
-    BmpText {
-        text: String,
-        image_data: Vec<u8>,
-    },
+    BmpText { text: String, image_data: Vec<u8> },
     Emoji(EmojiChallenge),
     Direction(DirectionChallenge),
     Sequence(SequenceChallenge),

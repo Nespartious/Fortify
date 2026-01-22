@@ -31,9 +31,9 @@ impl HealthChecker {
             .ok()
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or(9050);
-        
+
         let socks_proxy = format!("socks5h://127.0.0.1:{}", socks_port);
-        
+
         // Create HTTP client with SOCKS proxy
         let client = reqwest::Client::builder()
             .proxy(reqwest::Proxy::all(&socks_proxy)?)
@@ -53,10 +53,10 @@ impl HealthChecker {
     pub async fn run(mut self) {
         info!("Backend health checker started for {}", self.backend_url);
         info!("Using SOCKS proxy: {}", self.socks_proxy);
-        
+
         loop {
             let start = Instant::now();
-            
+
             // Perform health check
             match self.check_backend().await {
                 Ok(true) => {
@@ -69,10 +69,7 @@ impl HealthChecker {
                         self.is_reachable = true;
                         self.adjust_check_interval();
                     } else {
-                        info!(
-                            "Backend check: REACHABLE ({}ms)",
-                            duration.as_millis()
-                        );
+                        info!("Backend check: REACHABLE ({}ms)", duration.as_millis());
                     }
                 }
                 Ok(false) | Err(_) => {
@@ -92,7 +89,7 @@ impl HealthChecker {
                     }
                 }
             }
-            
+
             // Wait before next check
             sleep(Duration::from_secs(self.check_interval)).await;
         }

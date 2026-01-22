@@ -241,20 +241,22 @@ impl Node {
         // Get session - Try stateless token verification first
         let session = if let Ok(token) = SessionToken::decode(&session_id) {
             if token.verify(&self.secret_key).is_ok() && token.is_valid() {
-                 let mut s = Session::new(token.clone());
-                 s.token.trust_tier = token.trust_tier;
-                 s
+                let mut s = Session::new(token.clone());
+                s.token.trust_tier = token.trust_tier;
+                s
             } else {
-                 // Invalid token, try lookup in case it's a raw ID
-                 match self.session_manager.get_session(&session_id) {
+                // Invalid token, try lookup in case it's a raw ID
+                match self.session_manager.get_session(&session_id) {
                     Some(s) => s,
                     None => {
-                        return Ok(self.error_response(StatusCode::UNAUTHORIZED, "Invalid session token"));
+                        return Ok(
+                            self.error_response(StatusCode::UNAUTHORIZED, "Invalid session token")
+                        );
                     }
-                 }
+                }
             }
         } else {
-             // Not a token, try raw session ID lookup
+            // Not a token, try raw session ID lookup
             match self.session_manager.get_session(&session_id) {
                 Some(s) => s,
                 None => {
@@ -268,7 +270,11 @@ impl Node {
             let violations = self.violations.lock().unwrap();
             if let Some(viols) = violations.get(&session_id) {
                 if viols.len() >= self.config.violation_threshold as usize {
-                    tracing::warn!("Session {} has {} violations, redirecting to Gate", session_id, viols.len());
+                    tracing::warn!(
+                        "Session {} has {} violations, redirecting to Gate",
+                        session_id,
+                        viols.len()
+                    );
                     return Ok(self.redirect_to_gate());
                 }
             }
@@ -277,20 +283,24 @@ impl Node {
         // Check for new violations
         if let Err(e) = self.check_violations(&session_id, &req, &session) {
             self.metrics.lock().unwrap().record_request(false, 0.0);
-            
+
             // Check if this violation pushed them over the threshold
             let should_redirect = {
                 let violations = self.violations.lock().unwrap();
-                violations.get(&session_id)
+                violations
+                    .get(&session_id)
                     .map(|v| v.len() >= self.config.violation_threshold as usize)
                     .unwrap_or(false)
             };
-            
+
             if should_redirect {
-                tracing::warn!("Session {} reached violation threshold, redirecting to Gate", session_id);
+                tracing::warn!(
+                    "Session {} reached violation threshold, redirecting to Gate",
+                    session_id
+                );
                 return Ok(self.redirect_to_gate());
             }
-            
+
             return Ok(self.error_response(StatusCode::FORBIDDEN, &format!("Violation: {}", e)));
         }
 
@@ -369,7 +379,7 @@ impl Node {
 
         let limit = self.config.mode.max_requests_per_minute();
         tracing::debug!("Session {} request count: {}/{}", session_id, *count, limit);
-        
+
         if *count > limit {
             // Check if session qualifies for burst exception
             // Burst exception: Clean sessions (no violations) get ONE burst allowance
@@ -377,12 +387,14 @@ impl Node {
             let violations = self.violations.lock().unwrap();
             let session_violations = violations.get(session_id).map(|v| v.len()).unwrap_or(0);
             drop(violations); // Release lock before checking burst
-            
+
             if session_violations == 0 && *count <= 20 {
                 // Check if burst exception already used
                 let mut burst_exceptions = self.burst_exceptions.lock().unwrap();
-                let burst_used = burst_exceptions.entry(session_id.to_string()).or_insert(false);
-                
+                let burst_used = burst_exceptions
+                    .entry(session_id.to_string())
+                    .or_insert(false);
+
                 if !*burst_used {
                     // Grant one-time burst exception
                     *burst_used = true;
@@ -393,7 +405,7 @@ impl Node {
                     return Ok(()); // Allow burst
                 }
             }
-            
+
             tracing::warn!("Session {} RATE LIMITED ({}/{})", session_id, *count, limit);
             return Err(NodeError::RateLimitExceeded);
         }
@@ -437,8 +449,11 @@ impl Node {
 
         tracing::warn!(
             "VIOLATION recorded for session {}: {:?} - {} (total: {}/{})",
-            session_id, violation_type, description, 
-            violation_count, self.config.violation_threshold
+            session_id,
+            violation_type,
+            description,
+            violation_count,
+            self.config.violation_threshold
         );
 
         self.metrics.lock().unwrap().record_violation();
@@ -467,7 +482,7 @@ impl Node {
                             metrics.record_demotion();
                             let demotion_count = metrics.sessions_demoted as u8;
                             drop(metrics);
-                            
+
                             // Report to controller blacklist if callback set
                             if let Some(ref callback) = self.demotion_callback {
                                 callback(session_id.to_string(), demotion_count);
@@ -511,26 +526,33 @@ impl Node {
         &self,
         req: Request<Body>,
     ) -> std::result::Result<Response<Body>, String> {
-        let path = req.uri()
+        let path = req
+            .uri()
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or("/");
-            
+
         let backend_url = format!("{}{}", self.config.backend_address, path);
 
         // Build reqwest client with SOCKS proxy if backend is .onion
-        let client_builder = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none());  // Don't follow redirects - let the browser handle them
-            
+        let client_builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()); // Don't follow redirects - let the browser handle them
+
         let client = if self.config.backend_address.contains(".onion") {
             if let Some(socks_addr) = &self.config.socks_proxy {
                 // Use socks5h:// scheme for remote DNS resolution (required for .onion)
                 let socks_url = format!("socks5h://{}", socks_addr);
-                tracing::info!("Using SOCKS proxy {} for .onion backend: {}", socks_url, self.config.backend_address);
+                tracing::info!(
+                    "Using SOCKS proxy {} for .onion backend: {}",
+                    socks_url,
+                    self.config.backend_address
+                );
                 client_builder
-                    .proxy(reqwest::Proxy::all(&socks_url).map_err(|e| format!("Invalid proxy: {}", e))?)
-                    .timeout(Duration::from_secs(60))  // Longer timeout for Tor circuit building
-                    .connect_timeout(Duration::from_secs(30))  // Connection timeout
+                    .proxy(
+                        reqwest::Proxy::all(&socks_url)
+                            .map_err(|e| format!("Invalid proxy: {}", e))?,
+                    )
+                    .timeout(Duration::from_secs(60)) // Longer timeout for Tor circuit building
+                    .connect_timeout(Duration::from_secs(30)) // Connection timeout
                     .build()
                     .map_err(|e| format!("Failed to build client: {}", e))?
             } else {
@@ -549,32 +571,33 @@ impl Node {
         // Forward the request
         let method = req.method().clone();
         let headers = req.headers().clone();
-        
+
         // Read the body from the incoming request
         let body_bytes = hyper::body::to_bytes(req.into_body())
             .await
             .map_err(|e| format!("Failed to read request body: {}", e))?;
-        
+
         let mut req_builder = client.request(method, &backend_url);
         for (name, value) in headers.iter() {
             req_builder = req_builder.header(name, value);
         }
-        
+
         // Forward the body if present
         if !body_bytes.is_empty() {
             req_builder = req_builder.body(body_bytes.to_vec());
         }
-        
+
         match req_builder.send().await {
             Ok(resp) => {
                 // Convert reqwest response to hyper response
-                let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                let status = StatusCode::from_u16(resp.status().as_u16())
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                 let mut response = Response::builder().status(status);
-                
+
                 // Forward headers, rewriting Location and Set-Cookie as needed
                 for (name, value) in resp.headers().iter() {
                     let name_lower = name.as_str().to_lowercase();
-                    
+
                     if name_lower == "location" {
                         // Rewrite Location headers to use relative paths
                         if let Ok(location) = value.to_str() {
@@ -591,8 +614,11 @@ impl Node {
                         response = response.header(name, value);
                     }
                 }
-                
-                let body_bytes = resp.bytes().await.map_err(|e| format!("Failed to read body: {}", e))?;
+
+                let body_bytes = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| format!("Failed to read body: {}", e))?;
                 Ok(response.body(Body::from(body_bytes)).unwrap())
             }
             Err(e) => {
@@ -601,7 +627,7 @@ impl Node {
             }
         }
     }
-    
+
     /// Rewrite Location header to use relative path instead of absolute backend URL
     fn rewrite_location(&self, location: &str) -> String {
         // ONLY rewrite if Location points to our backend .onion address
@@ -617,12 +643,13 @@ impl Node {
             location.to_string()
         }
     }
-    
+
     /// Rewrite Set-Cookie header to remove domain restrictions
     fn rewrite_cookie(&self, cookie: &str) -> String {
         // Remove Domain= attributes so cookies work with any domain (proxy or direct)
         let parts: Vec<&str> = cookie.split(';').collect();
-        let filtered: Vec<&str> = parts.into_iter()
+        let filtered: Vec<&str> = parts
+            .into_iter()
             .filter(|part| {
                 let trimmed = part.trim().to_lowercase();
                 !trimmed.starts_with("domain=")
@@ -630,7 +657,7 @@ impl Node {
             .collect();
         filtered.join("; ")
     }
-    
+
     /// Serve fallback page when backend is unavailable
     fn serve_backend_fallback(&self) -> Response<Body> {
         let html = r#"<!DOCTYPE html>
@@ -710,9 +737,15 @@ impl Node {
             // Signal to proxy that this session should be demoted
             .header("X-Fortify-Demote", "true")
             // Clear the session cookie to force re-verification at Gate
-            .header("Set-Cookie", "fortify_session=; Path=/; Max-Age=0; HttpOnly")
+            .header(
+                "Set-Cookie",
+                "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+            )
             // Set the demoted cookie so Gate knows to show friendly message
-            .header("Set-Cookie", "fortify_demoted=1; Path=/; Max-Age=300; HttpOnly")
+            .header(
+                "Set-Cookie",
+                "fortify_demoted=1; Path=/; Max-Age=300; HttpOnly",
+            )
             .body(Body::from(html))
             .unwrap()
     }

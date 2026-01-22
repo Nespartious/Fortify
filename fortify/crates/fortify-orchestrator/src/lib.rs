@@ -85,7 +85,7 @@ impl RestorationPhase {
             RestorationPhase::Phase3 => 100,
         }
     }
-    
+
     /// Get the next phase (if any)
     pub fn next(&self) -> Option<RestorationPhase> {
         match self {
@@ -98,23 +98,38 @@ impl RestorationPhase {
 
 impl MirrorState {
     pub fn can_serve_traffic(&self) -> bool {
-        matches!(self, MirrorState::Active | MirrorState::Suspicious | MirrorState::Restoring)
+        matches!(
+            self,
+            MirrorState::Active | MirrorState::Suspicious | MirrorState::Restoring
+        )
     }
-    
+
     /// Whether this mirror should be visible in the discovery bar
     pub fn visible_in_discovery(&self) -> bool {
-        matches!(self, MirrorState::Active | MirrorState::Suspicious | MirrorState::Retiring | MirrorState::Restoring)
+        matches!(
+            self,
+            MirrorState::Active
+                | MirrorState::Suspicious
+                | MirrorState::Retiring
+                | MirrorState::Restoring
+        )
     }
-    
+
     /// Whether this mirror is in a transitional state (not stable)
     pub fn is_transitional(&self) -> bool {
-        matches!(self, MirrorState::Spawning | MirrorState::Burning | MirrorState::Retiring | MirrorState::Restoring)
+        matches!(
+            self,
+            MirrorState::Spawning
+                | MirrorState::Burning
+                | MirrorState::Retiring
+                | MirrorState::Restoring
+        )
     }
 
     pub fn should_replace(&self) -> bool {
         matches!(self, MirrorState::Burning | MirrorState::Burned)
     }
-    
+
     pub fn as_str(&self) -> &'static str {
         match self {
             MirrorState::Spawning => "spawning",
@@ -258,7 +273,7 @@ impl RetirementInfo {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Self {
             started_at: now,
             drain_ends_at: now + drain_seconds,
@@ -267,7 +282,7 @@ impl RetirementInfo {
             reason,
         }
     }
-    
+
     /// Check if we're still in the drain period
     pub fn is_draining(&self) -> bool {
         let now = SystemTime::now()
@@ -276,7 +291,7 @@ impl RetirementInfo {
             .as_secs();
         now < self.drain_ends_at
     }
-    
+
     /// Check if retirement page has expired (should go dormant)
     pub fn page_expired(&self) -> bool {
         let now = SystemTime::now()
@@ -310,7 +325,7 @@ impl ResurrectionInfo {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Self {
             dormant_since: now,
             connection_attempts: 0,
@@ -320,12 +335,12 @@ impl ResurrectionInfo {
             restoration_abort_count: 0,
         }
     }
-    
+
     /// Record a connection attempt (for silent evaluation)
     pub fn record_connection_attempt(&mut self) {
         self.connection_attempts += 1;
     }
-    
+
     /// Reset connection counter for new evaluation window
     pub fn reset_evaluation(&mut self) {
         self.connection_attempts = 0;
@@ -333,21 +348,21 @@ impl ResurrectionInfo {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_secs()
+                .as_secs(),
         );
     }
-    
+
     /// Start restoration process
     pub fn start_restoration(&mut self) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         self.restoration_phase = Some(RestorationPhase::Phase1);
         self.restoration_started_at = Some(now);
     }
-    
+
     /// Abort restoration and return to dormant
     pub fn abort_restoration(&mut self) {
         self.restoration_phase = None;
@@ -358,7 +373,7 @@ impl ResurrectionInfo {
             .unwrap()
             .as_secs();
     }
-    
+
     /// Advance to next restoration phase
     pub fn advance_phase(&mut self) -> bool {
         if let Some(current) = self.restoration_phase {
@@ -369,10 +384,12 @@ impl ResurrectionInfo {
         }
         false
     }
-    
+
     /// Check if fully restored (Phase 3 complete)
     pub fn is_fully_restored(&self, phase3_duration_secs: u64) -> bool {
-        if let (Some(RestorationPhase::Phase3), Some(started)) = (self.restoration_phase, self.restoration_started_at) {
+        if let (Some(RestorationPhase::Phase3), Some(started)) =
+            (self.restoration_phase, self.restoration_started_at)
+        {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -449,7 +466,7 @@ impl Mirror {
         self.deny_connections = false;
         self.save_metadata();
     }
-    
+
     /// Activate as a standby mirror (paused but ready)
     pub fn activate_as_standby(&mut self, onion_address: String) {
         self.onion_address = Some(onion_address);
@@ -458,11 +475,11 @@ impl Mirror {
         self.deny_connections = false;
         self.save_metadata();
     }
-    
+
     /// Save mirror metadata to disk for persistence across restarts
     pub fn save_metadata(&self) {
         let metadata_path = self.tor_data_dir.join("metadata.json");
-        
+
         #[derive(Serialize)]
         struct MirrorMetadata {
             is_standby: bool,
@@ -470,28 +487,28 @@ impl Mirror {
             created_at: u64,
             pow_enabled: bool,
         }
-        
+
         let metadata = MirrorMetadata {
             is_standby: self.is_standby,
             state: self.state.as_str().to_string(),
             created_at: self.created_at,
             pow_enabled: self.pow_enabled,
         };
-        
+
         if let Ok(data) = serde_json::to_string_pretty(&metadata) {
             if let Err(e) = std::fs::write(&metadata_path, data) {
                 tracing::error!("Failed to save mirror metadata for {}: {}", self.id, e);
             }
         }
     }
-    
+
     /// Load mirror metadata from disk
     pub fn load_metadata(&mut self) -> bool {
         let metadata_path = self.tor_data_dir.join("metadata.json");
         if !metadata_path.exists() {
             return false;
         }
-        
+
         #[derive(Deserialize)]
         struct MirrorMetadata {
             is_standby: bool,
@@ -501,7 +518,7 @@ impl Mirror {
             #[serde(default)]
             pow_enabled: bool,
         }
-        
+
         match std::fs::read_to_string(&metadata_path) {
             Ok(data) => {
                 match serde_json::from_str::<MirrorMetadata>(&data) {
@@ -525,7 +542,9 @@ impl Mirror {
                         }
                         tracing::debug!(
                             "Loaded metadata for {}: standby={}, state={}",
-                            self.id, self.is_standby, metadata.state
+                            self.id,
+                            self.is_standby,
+                            metadata.state
                         );
                         true
                     }
@@ -541,15 +560,24 @@ impl Mirror {
             }
         }
     }
-    
+
     /// Begin retirement process (graceful burn)
-    pub fn begin_retirement(&mut self, reason: RetirementReason, drain_seconds: u64, page_hours: u64) {
+    pub fn begin_retirement(
+        &mut self,
+        reason: RetirementReason,
+        drain_seconds: u64,
+        page_hours: u64,
+    ) {
         self.state = MirrorState::Retiring;
         self.retirement_info = Some(RetirementInfo::new(reason, drain_seconds, page_hours));
         self.deny_connections = false; // Still serving during retirement
-        tracing::info!("Mirror {} entering retirement (reason: {:?})", self.id, reason);
+        tracing::info!(
+            "Mirror {} entering retirement (reason: {:?})",
+            self.id,
+            reason
+        );
     }
-    
+
     /// Transition from retiring to dormant (after retirement page expires)
     pub fn go_dormant(&mut self) {
         self.state = MirrorState::Dormant;
@@ -557,7 +585,7 @@ impl Mirror {
         self.deny_connections = true; // Reject all connections at app layer
         tracing::info!("Mirror {} is now dormant (connections denied)", self.id);
     }
-    
+
     /// Begin restoration process (from dormant to gradually accepting traffic)
     pub fn begin_restoration(&mut self) {
         if let Some(ref mut info) = self.resurrection_info {
@@ -569,9 +597,12 @@ impl Mirror {
         }
         self.state = MirrorState::Restoring;
         self.deny_connections = false; // Accept connections again
-        tracing::info!("Mirror {} beginning restoration (Phase 1: 20% visibility)", self.id);
+        tracing::info!(
+            "Mirror {} beginning restoration (Phase 1: 20% visibility)",
+            self.id
+        );
     }
-    
+
     /// Abort restoration and return to dormant
     pub fn abort_restoration(&mut self) {
         if let Some(ref mut info) = self.resurrection_info {
@@ -579,9 +610,12 @@ impl Mirror {
         }
         self.state = MirrorState::Dormant;
         self.deny_connections = true;
-        tracing::warn!("Mirror {} restoration aborted, returning to dormant", self.id);
+        tracing::warn!(
+            "Mirror {} restoration aborted, returning to dormant",
+            self.id
+        );
     }
-    
+
     /// Complete restoration and return to active
     pub fn complete_restoration(&mut self) {
         self.state = MirrorState::Active;
@@ -590,7 +624,7 @@ impl Mirror {
         self.deny_connections = false;
         tracing::info!("Mirror {} fully restored to active", self.id);
     }
-    
+
     /// Permanently destroy mirror (for confirmed compromises)
     pub fn permanent_destroy(&mut self) {
         self.state = MirrorState::Burned;
@@ -599,13 +633,13 @@ impl Mirror {
         self.resurrection_info = None;
         tracing::warn!("Mirror {} permanently destroyed", self.id);
     }
-    
+
     /// Check if this mirror should accept a given connection (based on restoration phase)
     pub fn should_accept_connection(&self, random_percent: u8) -> bool {
         if self.deny_connections {
             return false;
         }
-        
+
         match self.state {
             MirrorState::Active | MirrorState::Suspicious => true,
             MirrorState::Retiring => {
@@ -786,7 +820,7 @@ impl Default for ResurrectionConfig {
         Self {
             enabled: true,
             daemon_keep_running: true,
-            wait_after_burn_seconds: 900,  // 15 minutes
+            wait_after_burn_seconds: 900,   // 15 minutes
             evaluation_window_seconds: 300, // 5 minutes
             threat_threshold_attempts: 50,
             safe_threshold_attempts: 10,
@@ -890,7 +924,7 @@ impl SpawnRateLimiter {
             last_resource_limit_hit: None,
         }
     }
-    
+
     /// Record a spawn
     pub fn record_spawn(&mut self) {
         let now = std::time::SystemTime::now()
@@ -901,7 +935,7 @@ impl SpawnRateLimiter {
         // Keep only last 60 seconds
         self.spawn_times.retain(|&t| now - t < 60);
     }
-    
+
     /// Record an activation
     pub fn record_activation(&mut self) {
         let now = std::time::SystemTime::now()
@@ -911,7 +945,7 @@ impl SpawnRateLimiter {
         self.activation_times.push(now);
         self.activation_times.retain(|&t| now - t < 60);
     }
-    
+
     /// Record resource limit hit
     pub fn record_resource_limit(&mut self) {
         let now = std::time::SystemTime::now()
@@ -920,17 +954,17 @@ impl SpawnRateLimiter {
             .as_secs();
         self.last_resource_limit_hit = Some(now);
     }
-    
+
     /// Count spawns in last minute
     pub fn spawns_last_minute(&self) -> u32 {
         self.spawn_times.len() as u32
     }
-    
+
     /// Count activations in last minute
     pub fn activations_last_minute(&self) -> u32 {
         self.activation_times.len() as u32
     }
-    
+
     /// Check if we're in cooldown after resource limit
     pub fn in_cooldown(&self, cooldown_seconds: u64) -> bool {
         if let Some(last_hit) = self.last_resource_limit_hit {
@@ -943,13 +977,13 @@ impl SpawnRateLimiter {
             false
         }
     }
-    
+
     /// Check if spawn is allowed
     pub fn can_spawn(&self, config: &AutoScalingConfig) -> bool {
         !self.in_cooldown(config.spawn_cooldown_seconds)
             && self.spawns_last_minute() < config.max_spawns_per_minute
     }
-    
+
     /// Check if activation is allowed
     pub fn can_activate(&self, config: &AutoScalingConfig) -> bool {
         self.activations_last_minute() < config.max_activations_per_minute
@@ -989,7 +1023,7 @@ impl Default for SelfCleaningConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            cleanup_interval_seconds: 300, // 5 minutes
+            cleanup_interval_seconds: 300,      // 5 minutes
             session_idle_timeout_seconds: 3600, // 1 hour
             max_log_size_mb: 100,
             log_retention_count: 10,
@@ -1029,7 +1063,7 @@ pub struct MultiDaemonConfig {
 impl Default for MultiDaemonConfig {
     fn default() -> Self {
         Self {
-            enabled: false, // Disabled by default, opt-in feature
+            enabled: false,     // Disabled by default, opt-in feature
             daemons_per_vps: 0, // Auto-detect
             cpu_affinity: true,
             base_socks_port: 9050,
@@ -1045,7 +1079,7 @@ impl Default for MultiDaemonConfig {
 // ========== Phase 4.8: 4-Core Architecture Layout ==========
 
 /// Core role assignment for the 4-core architecture
-/// 
+///
 /// Layout:
 /// - Core 0: Mirror A + Standby D + Healthy 0-4
 /// - Core 1: Mirror B + Standby C + Healthy 5-9  
@@ -1112,9 +1146,7 @@ pub enum CoreRole {
         healthy_nodes: Vec<usize>,
     },
     /// Threat core: handles threat/suspicious traffic
-    Threat {
-        threat_nodes: Vec<usize>,
-    },
+    Threat { threat_nodes: Vec<usize> },
     /// Flex core: dynamic role based on system state
     Flex,
 }
@@ -1234,12 +1266,12 @@ impl CaptchaPoolManager {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         // Create pool directory if needed
         if !pool_dir.exists() {
             let _ = std::fs::create_dir_all(&pool_dir);
         }
-        
+
         let mut manager = Self {
             config,
             pool: Arc::new(Mutex::new(Vec::new())),
@@ -1249,13 +1281,13 @@ impl CaptchaPoolManager {
             total_served: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             total_expired: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
-        
+
         // Load existing pool from disk
         manager.load_pool();
-        
+
         manager
     }
-    
+
     /// Load CAPTCHA pool from disk
     fn load_pool(&mut self) {
         let pool_file = self.pool_dir.join("captcha_pool.json");
@@ -1263,7 +1295,7 @@ impl CaptchaPoolManager {
             tracing::info!("No existing CAPTCHA pool found, starting fresh");
             return;
         }
-        
+
         match std::fs::read_to_string(&pool_file) {
             Ok(data) => {
                 match serde_json::from_str::<Vec<PregenCaptcha>>(&data) {
@@ -1273,20 +1305,22 @@ impl CaptchaPoolManager {
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
                             .as_secs();
-                        
+
                         // Filter out expired CAPTCHAs (older than rotation interval)
                         let max_age = self.config.rotation_interval_days as u64 * 24 * 3600;
-                        let valid: Vec<PregenCaptcha> = captchas.into_iter()
+                        let valid: Vec<PregenCaptcha> = captchas
+                            .into_iter()
                             .filter(|c| now - c.generated_at < max_age)
                             .collect();
-                        
+
                         let valid_count = valid.len();
                         *self.pool.lock().unwrap() = valid;
-                        
+
                         if valid_count < count {
                             tracing::info!(
                                 "Loaded {} CAPTCHAs from disk ({} expired and removed)",
-                                valid_count, count - valid_count
+                                valid_count,
+                                count - valid_count
                             );
                         } else {
                             tracing::info!("Loaded {} CAPTCHAs from disk", valid_count);
@@ -1301,7 +1335,7 @@ impl CaptchaPoolManager {
                 tracing::warn!("Failed to read CAPTCHA pool file: {}", e);
             }
         }
-        
+
         // Load rotation timestamp
         let rotation_file = self.pool_dir.join("last_rotation.txt");
         if let Ok(data) = std::fs::read_to_string(&rotation_file) {
@@ -1311,12 +1345,12 @@ impl CaptchaPoolManager {
             }
         }
     }
-    
+
     /// Save CAPTCHA pool to disk
     pub fn save_pool(&self) {
         let pool = self.pool.lock().unwrap();
         let pool_file = self.pool_dir.join("captcha_pool.json");
-        
+
         match serde_json::to_string(&*pool) {
             Ok(data) => {
                 if let Err(e) = std::fs::write(&pool_file, data) {
@@ -1327,7 +1361,7 @@ impl CaptchaPoolManager {
                 tracing::error!("Failed to serialize CAPTCHA pool: {}", e);
             }
         }
-        
+
         // Save rotation timestamp
         let rotation_file = self.pool_dir.join("last_rotation.txt");
         let ts = *self.last_rotation.lock().unwrap();
@@ -1351,7 +1385,8 @@ impl CaptchaPoolManager {
             None
         } else {
             // Take from the front (oldest first)
-            self.total_served.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.total_served
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Some(pool.remove(0))
         }
     }
@@ -1360,11 +1395,14 @@ impl CaptchaPoolManager {
     pub fn add_captcha(&self, captcha: PregenCaptcha) {
         let mut pool = self.pool.lock().unwrap();
         if pool.len() < self.config.max_pool_size {
-            self.total_generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.total_generated
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             pool.push(captcha);
-            
+
             // Save to disk every 50 CAPTCHAs for durability
-            let total = self.total_generated.load(std::sync::atomic::Ordering::Relaxed);
+            let total = self
+                .total_generated
+                .load(std::sync::atomic::Ordering::Relaxed);
             if total % 50 == 0 {
                 drop(pool); // Release lock before saving
                 self.save_pool();
@@ -1375,36 +1413,38 @@ impl CaptchaPoolManager {
     /// Generate a batch of CAPTCHAs (called from Flex Core)
     pub fn generate_batch(&self) -> Vec<PregenCaptcha> {
         let mut batch = Vec::with_capacity(self.config.batch_size);
-        
+
         for _ in 0..self.config.batch_size {
             let captcha = self.generate_single();
             batch.push(captcha);
         }
-        
+
         batch
     }
 
     fn generate_single(&self) -> PregenCaptcha {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        
+
         // Generate random text (6 chars)
         let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".chars().collect();
         let answer: String = (0..6)
             .map(|_| chars[rng.gen_range(0..chars.len())])
             .collect();
-        
+
         // Generate ID
-        let id: String = (0..16).map(|_| format!("{:02x}", rng.gen::<u8>())).collect();
-        
+        let id: String = (0..16)
+            .map(|_| format!("{:02x}", rng.gen::<u8>()))
+            .collect();
+
         // Generate image (this is the CPU-intensive part)
         let image_data = crate::bitmap_stub::generate_captcha_image(&answer);
-        
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         PregenCaptcha {
             id,
             answer,
@@ -1420,10 +1460,10 @@ impl CaptchaPoolManager {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         let last = *self.last_rotation.lock().unwrap();
         let rotation_interval_secs = self.config.rotation_interval_days * 24 * 3600;
-        
+
         now - last >= rotation_interval_secs
     }
 
@@ -1431,22 +1471,23 @@ impl CaptchaPoolManager {
     pub fn rotate_pool(&self) {
         let mut pool = self.pool.lock().unwrap();
         let remove_count = (pool.len() * self.config.rotation_percent as usize) / 100;
-        
+
         // Remove oldest (from front) and track as expired
         for _ in 0..remove_count {
             if !pool.is_empty() {
                 pool.remove(0);
-                self.total_expired.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.total_expired
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        
+
         // Update rotation timestamp
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         *self.last_rotation.lock().unwrap() = now;
-        
+
         tracing::info!(
             "CAPTCHA pool rotated: removed {} old CAPTCHAs, {} remaining",
             remove_count,
@@ -1461,10 +1502,10 @@ impl CaptchaPoolManager {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         let oldest_age = pool.first().map(|c| now - c.generated_at).unwrap_or(0);
         let newest_age = pool.last().map(|c| now - c.generated_at).unwrap_or(0);
-        
+
         CaptchaPoolStats {
             current_size: pool.len(),
             target_size: self.config.target_pool_size,
@@ -1473,9 +1514,13 @@ impl CaptchaPoolManager {
             oldest_age_seconds: oldest_age,
             newest_age_seconds: newest_age,
             needs_refill: pool.len() < self.config.min_pool_size,
-            total_generated: self.total_generated.load(std::sync::atomic::Ordering::Relaxed),
+            total_generated: self
+                .total_generated
+                .load(std::sync::atomic::Ordering::Relaxed),
             total_served: self.total_served.load(std::sync::atomic::Ordering::Relaxed),
-            total_expired: self.total_expired.load(std::sync::atomic::Ordering::Relaxed),
+            total_expired: self
+                .total_expired
+                .load(std::sync::atomic::Ordering::Relaxed),
         }
     }
 }
@@ -1543,7 +1588,12 @@ pub enum DaemonHealth {
 }
 
 impl TorDaemon {
-    pub fn new(id: usize, config: &MultiDaemonConfig, tor_data_dir: &Path, detected_cores: usize) -> Self {
+    pub fn new(
+        id: usize,
+        config: &MultiDaemonConfig,
+        tor_data_dir: &Path,
+        detected_cores: usize,
+    ) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -1551,11 +1601,19 @@ impl TorDaemon {
 
         // Use modulo to wrap daemon ID to valid core numbers
         // This ensures CPU affinity works on any hardware (2, 4, 8, 64+ cores)
-        let core_id = if detected_cores > 0 { id % detected_cores } else { id };
+        let core_id = if detected_cores > 0 {
+            id % detected_cores
+        } else {
+            id
+        };
 
         Self {
             id,
-            cpu_core: if config.cpu_affinity { Some(core_id) } else { None },
+            cpu_core: if config.cpu_affinity {
+                Some(core_id)
+            } else {
+                None
+            },
             socks_port: config.base_socks_port + id as u16,
             control_port: config.base_control_port + id as u16,
             pid: None,
@@ -1570,8 +1628,7 @@ impl TorDaemon {
 
     /// Check if this daemon can accept more mirrors
     pub fn can_accept_mirrors(&self, max_per_daemon: usize) -> bool {
-        self.health == DaemonHealth::Healthy 
-            && self.assigned_mirrors.len() < max_per_daemon
+        self.health == DaemonHealth::Healthy && self.assigned_mirrors.len() < max_per_daemon
     }
 }
 
@@ -1675,7 +1732,9 @@ CookieAuthentication 1
 
         tracing::info!(
             "Started Tor daemon {} with PID {}, core {:?}",
-            daemon_id, pid, daemon.cpu_core
+            daemon_id,
+            pid,
+            daemon.cpu_core
         );
 
         Ok(pid)
@@ -1706,10 +1765,9 @@ CookieAuthentication 1
         // Check if process is running
         if let Some(pid) = pid {
             // Try to connect to control port
-            let connect_result = tokio::net::TcpStream::connect(
-                format!("127.0.0.1:{}", control_port)
-            ).await;
-            
+            let connect_result =
+                tokio::net::TcpStream::connect(format!("127.0.0.1:{}", control_port)).await;
+
             match connect_result {
                 Ok(_) => {
                     // Can connect, daemon is healthy
@@ -1724,7 +1782,7 @@ CookieAuthentication 1
                     // Check if process still exists
                     let sys = sysinfo::System::new_all();
                     let process_exists = sys.process(sysinfo::Pid::from_u32(pid)).is_some();
-                    
+
                     let mut daemons = self.daemons.lock().unwrap();
                     if let Some(d) = daemons.get_mut(daemon_id) {
                         if process_exists {
@@ -1753,7 +1811,7 @@ CookieAuthentication 1
     /// Assign a mirror to the best available daemon
     pub fn assign_mirror(&self, mirror_id: &str) -> Option<usize> {
         let mut daemons = self.daemons.lock().unwrap();
-        
+
         // Find daemon with fewest mirrors that's healthy
         let best = daemons
             .iter_mut()
@@ -1837,11 +1895,11 @@ impl Default for OrchestratorConfig {
         } else {
             PathBuf::from("/tmp/fortify")
         };
-        
+
         Self {
             min_mirrors: 2,
             max_mirrors: 5,
-            standby_mirrors: 2, // 2 standby mirrors ready to activate
+            standby_mirrors: 2,              // 2 standby mirrors ready to activate
             rotation_interval_seconds: 3600, // 1 hour
             burn_threshold: 0.7,
             tor_data_dir: base_dir.join("tor").join("mirrors"),
@@ -1888,14 +1946,14 @@ impl Orchestrator {
             .public_bind_addr
             .parse()
             .unwrap_or_else(|_| "0.0.0.0:8080".parse().expect("valid default addr"));
-        
+
         // Configure vanity for mirrors
         let vanity_config = tor::VanityConfig {
             enabled: config.vanity_enabled,
             prefix: config.vanity_prefix.clone(),
             timeout: config.vanity_timeout,
         };
-        
+
         // Determine base data dir for torrc path
         let base_data_dir = config.base_data_dir.clone().unwrap_or_else(|| {
             if let Some(home) = std::env::var_os("HOME") {
@@ -1908,35 +1966,36 @@ impl Orchestrator {
                 PathBuf::from("/tmp/fortify")
             }
         });
-        
-        let tor_service = Arc::new(TorService::new(
-            config.tor_control_addr.clone(),
-            config.tor_cookie_path.clone(),
-        ).with_vanity(vanity_config)
-         .with_base_data_dir(base_data_dir));
-        
+
+        let tor_service = Arc::new(
+            TorService::new(
+                config.tor_control_addr.clone(),
+                config.tor_cookie_path.clone(),
+            )
+            .with_vanity(vanity_config)
+            .with_base_data_dir(base_data_dir),
+        );
+
         // Initialize multi-daemon manager if enabled
         let multi_daemon_manager = if config.multi_daemon.enabled {
-            let manager = MultiDaemonManager::new(
-                config.multi_daemon.clone(),
-                config.tor_data_dir.clone(),
-            );
+            let manager =
+                MultiDaemonManager::new(config.multi_daemon.clone(), config.tor_data_dir.clone());
             manager.initialize_daemons();
             Some(Arc::new(manager))
         } else {
             None
         };
-        
+
         // Initialize CAPTCHA pre-generation pool with disk persistence
         let captcha_pool_dir = config.tor_data_dir.join("captcha_pool");
         let captcha_pool = Arc::new(CaptchaPoolManager::new(
             config.multi_daemon.flex_core.captcha_pregen.clone(),
             captcha_pool_dir,
         ));
-        
+
         // Create shutdown broadcast channel for background tasks
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
-        
+
         Self {
             config,
             mirrors: Arc::new(Mutex::new(HashMap::new())),
@@ -1949,28 +2008,35 @@ impl Orchestrator {
             shutdown_tx,
         }
     }
-    
+
     /// Signal all background tasks to shutdown
     pub fn shutdown(&self) {
         tracing::info!("Orchestrator: signaling background tasks to shutdown");
         let _ = self.shutdown_tx.send(());
-        
+
         // Save CAPTCHA pool to disk before shutdown
         self.captcha_pool.save_pool();
     }
 
     /// Start the orchestrator
     pub async fn start(&self) -> anyhow::Result<()> {
-        tracing::info!("Orchestrator starting: gate={}, proxy_port={}, min_mirrors={}",
-            self.config.gate_address, self.config.proxy_port, self.config.min_mirrors);
+        tracing::info!(
+            "Orchestrator starting: gate={}, proxy_port={}, min_mirrors={}",
+            self.config.gate_address,
+            self.config.proxy_port,
+            self.config.min_mirrors
+        );
 
         // Start multi-daemon Tor instances if enabled
         if let Some(ref manager) = self.multi_daemon_manager {
-            tracing::info!("Starting multi-daemon mode with {} daemons", manager.daemon_count());
+            tracing::info!(
+                "Starting multi-daemon mode with {} daemons",
+                manager.daemon_count()
+            );
             manager.start_all().await?;
             self.start_daemon_health_task();
         }
-        
+
         // Start Flex Core CAPTCHA pre-generation task
         if self.config.multi_daemon.flex_core.captcha_pregen.enabled {
             self.start_flex_core_task();
@@ -1996,7 +2062,10 @@ impl Orchestrator {
     /// Load existing mirrors from data directory
     async fn load_mirrors(&self) {
         if !self.config.tor_data_dir.exists() {
-            tracing::info!("Tor data dir {:?} does not exist, skipping load", self.config.tor_data_dir);
+            tracing::info!(
+                "Tor data dir {:?} does not exist, skipping load",
+                self.config.tor_data_dir
+            );
             return;
         }
 
@@ -2017,41 +2086,50 @@ impl Orchestrator {
             }
 
             let mirror_id = path.file_name().unwrap().to_string_lossy().to_string();
-            
+
             // Skip non-mirror directories (e.g., captcha_pool, temp, etc.)
             if !mirror_id.starts_with("mirror-") {
                 tracing::debug!("Skipping non-mirror directory: {}", mirror_id);
                 continue;
             }
-            
+
             // Skip directories that are still being initialized (have .creating lock file)
             if path.join(".creating").exists() {
                 tracing::debug!("Skipping mirror {} - still being created", mirror_id);
                 continue;
             }
-            
+
             // Check if valid mirror directory (has hostname and private_key)
             if !path.join("hostname").exists() || !path.join("private_key").exists() {
                 // Only clean up directories older than 30 seconds to avoid race conditions
                 let should_cleanup = match path.metadata() {
                     Ok(meta) => {
                         if let Ok(modified) = meta.modified() {
-                            modified.elapsed().map(|d| d.as_secs() > 30).unwrap_or(false)
+                            modified
+                                .elapsed()
+                                .map(|d| d.as_secs() > 30)
+                                .unwrap_or(false)
                         } else {
                             false
                         }
                     }
                     Err(_) => false,
                 };
-                
+
                 if should_cleanup {
-                    tracing::warn!("Removing invalid/incomplete mirror directory: {}", mirror_id);
+                    tracing::warn!(
+                        "Removing invalid/incomplete mirror directory: {}",
+                        mirror_id
+                    );
                     // Clean up incomplete directories to prevent accumulation
                     if let Err(e) = std::fs::remove_dir_all(&path) {
                         tracing::error!("Failed to remove invalid mirror {}: {}", mirror_id, e);
                     }
                 } else {
-                    tracing::debug!("Skipping recent mirror {} - may still be initializing", mirror_id);
+                    tracing::debug!(
+                        "Skipping recent mirror {} - may still be initializing",
+                        mirror_id
+                    );
                 }
                 continue;
             }
@@ -2066,10 +2144,10 @@ impl Orchestrator {
             };
 
             let mut mirror = Mirror::new(mirror_id.clone(), path.clone());
-            
+
             // Load metadata to restore state (standby, active, etc.)
             let had_metadata = mirror.load_metadata();
-            
+
             // Set onion address (metadata determines if standby or active)
             if mirror.is_standby {
                 mirror.onion_address = Some(onion_address.clone());
@@ -2080,18 +2158,29 @@ impl Orchestrator {
                 mirror.state = MirrorState::Active;
                 tracing::info!("Restoring active mirror {} ({})", mirror_id, onion_address);
             }
-            
+
             // If no metadata existed, save it now for future restarts
             if !had_metadata {
                 mirror.save_metadata();
             }
 
             // Restore hidden service in Tor
-            if let Err(e) = self.tor_service.restore_hidden_service(&mut mirror, self.config.proxy_port) {
-                tracing::error!("Failed to restore hidden service for {}: {}. Cleaning up corrupted mirror.", mirror_id, e);
+            if let Err(e) = self
+                .tor_service
+                .restore_hidden_service(&mut mirror, self.config.proxy_port)
+            {
+                tracing::error!(
+                    "Failed to restore hidden service for {}: {}. Cleaning up corrupted mirror.",
+                    mirror_id,
+                    e
+                );
                 // Clean up the invalid mirror directory so we don't accumulate junk
                 if let Err(rm_err) = std::fs::remove_dir_all(&path) {
-                    tracing::error!("Failed to remove invalid mirror dir {}: {}", mirror_id, rm_err);
+                    tracing::error!(
+                        "Failed to remove invalid mirror dir {}: {}",
+                        mirror_id,
+                        rm_err
+                    );
                 }
                 continue;
             }
@@ -2099,13 +2188,13 @@ impl Orchestrator {
             // Add to map
             {
                 let mut mirrors = self.mirrors.lock().unwrap();
-                
+
                 // Only count as active if not standby
                 if !mirror.is_standby && mirror.state == MirrorState::Active {
                     let mut count = self.active_count.lock().unwrap();
                     *count += 1;
                 }
-                
+
                 mirrors.insert(mirror_id, mirror);
             }
         }
@@ -2116,7 +2205,7 @@ impl Orchestrator {
         // Count mirrors from filesystem to handle multiple orchestrator instances
         // This prevents each orchestrator from spawning its own full set of standbys
         let (filesystem_active, filesystem_standby) = self.count_mirrors_on_disk();
-        
+
         // First ensure active mirrors
         let active_needed = {
             let mirrors = self.mirrors.lock().unwrap();
@@ -2124,7 +2213,7 @@ impl Orchestrator {
                 .values()
                 .filter(|m| m.state == MirrorState::Active)
                 .count();
-            
+
             // Use max of in-memory and filesystem counts to be safe
             let total_active = std::cmp::max(in_memory_active, filesystem_active);
             self.config.min_mirrors.saturating_sub(total_active)
@@ -2133,7 +2222,7 @@ impl Orchestrator {
         for _ in 0..active_needed {
             self.spawn_mirror().await?;
         }
-        
+
         // Then ensure standby mirrors
         let standby_needed = {
             let mirrors = self.mirrors.lock().unwrap();
@@ -2141,49 +2230,53 @@ impl Orchestrator {
                 .values()
                 .filter(|m| m.is_standby && m.state == MirrorState::Paused)
                 .count();
-            
+
             // Use max of in-memory and filesystem counts
             let total_standby = std::cmp::max(in_memory_standby, filesystem_standby);
             self.config.standby_mirrors.saturating_sub(total_standby)
         };
-        
+
         for _ in 0..standby_needed {
             self.spawn_standby_mirror().await?;
         }
 
         Ok(())
     }
-    
+
     /// Count mirrors directly from the filesystem (for coordination between multiple orchestrators)
     fn count_mirrors_on_disk(&self) -> (usize, usize) {
         let mut active = 0usize;
         let mut standby = 0usize;
-        
+
         if let Ok(entries) = std::fs::read_dir(&self.config.tor_data_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() {
                     continue;
                 }
-                
+
                 let mirror_id = path.file_name().unwrap().to_string_lossy().to_string();
-                
+
                 // Only count mirror-* directories
                 if !mirror_id.starts_with("mirror-") {
                     continue;
                 }
-                
+
                 // Must have hostname to be valid
                 if !path.join("hostname").exists() {
                     continue;
                 }
-                
+
                 // Check metadata to determine if standby
                 let metadata_path = path.join("metadata.json");
                 if metadata_path.exists() {
                     if let Ok(content) = std::fs::read_to_string(&metadata_path) {
                         if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if meta.get("is_standby").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            if meta
+                                .get("is_standby")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                            {
                                 standby += 1;
                             } else {
                                 active += 1;
@@ -2192,16 +2285,20 @@ impl Orchestrator {
                         }
                     }
                 }
-                
+
                 // No metadata = assume active (legacy)
                 active += 1;
             }
         }
-        
-        tracing::debug!("Filesystem mirror count: {} active, {} standby", active, standby);
+
+        tracing::debug!(
+            "Filesystem mirror count: {} active, {} standby",
+            active,
+            standby
+        );
         (active, standby)
     }
-    
+
     /// Spawn a new standby mirror (created but paused)
     pub async fn spawn_standby_mirror(&self) -> Result<String> {
         let mirror_id = self.generate_mirror_id();
@@ -2220,7 +2317,11 @@ impl Orchestrator {
             mirrors.insert(mirror_id.clone(), mirror);
         }
 
-        tracing::info!("Standby mirror {} spawned: {} (paused, ready to activate)", mirror_id, onion_address);
+        tracing::info!(
+            "Standby mirror {} spawned: {} (paused, ready to activate)",
+            mirror_id,
+            onion_address
+        );
 
         Ok(mirror_id)
     }
@@ -2285,101 +2386,117 @@ impl Orchestrator {
     /// Pause a mirror (stop accepting new traffic but don't destroy)
     pub async fn pause_mirror(&self, onion_address: &str) -> Result<()> {
         let mut mirrors = self.mirrors.lock().unwrap();
-        
+
         // Find mirror by onion address
         let mirror = mirrors
             .values_mut()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
             .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?;
-        
+
         if mirror.state == MirrorState::Burned {
             return Err(OrchestratorError::MirrorBurned);
         }
-        
+
         tracing::info!("Pausing mirror {} ({})", mirror.id, onion_address);
         mirror.state = MirrorState::Paused;
-        
+
         Ok(())
     }
-    
+
     /// Retire a mirror gracefully (drain -> retirement page -> dormant)
     pub async fn retire_mirror(&self, onion_address: &str, reason: RetirementReason) -> Result<()> {
         let mut mirrors = self.mirrors.lock().unwrap();
-        
+
         // Find mirror by onion address
         let mirror = mirrors
             .values_mut()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
             .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?;
-        
+
         if mirror.state == MirrorState::Burned || mirror.state == MirrorState::Dormant {
             return Err(OrchestratorError::MirrorBurned);
         }
-        
+
         // For compromised mirrors, permanent destruction
         if reason == RetirementReason::Compromised {
-            tracing::warn!("Mirror {} ({}) permanently destroyed due to compromise", mirror.id, onion_address);
+            tracing::warn!(
+                "Mirror {} ({}) permanently destroyed due to compromise",
+                mirror.id,
+                onion_address
+            );
             mirror.permanent_destroy();
             return Ok(());
         }
-        
+
         // Begin normal retirement process
         let drain_secs = self.config.retirement.drain_period_seconds;
         let page_hours = self.config.retirement.retirement_page_hours;
-        
+
         tracing::info!(
             "Retiring mirror {} ({}) - reason: {:?}, drain: {}s, page: {}h",
-            mirror.id, onion_address, reason, drain_secs, page_hours
+            mirror.id,
+            onion_address,
+            reason,
+            drain_secs,
+            page_hours
         );
-        
+
         mirror.begin_retirement(reason, drain_secs, page_hours);
-        
+
         // Set allow_new_sessions based on config
         if let Some(ref mut info) = mirror.retirement_info {
             info.allow_new_sessions = self.config.retirement.allow_new_sessions_during_retirement;
         }
-        
+
         Ok(())
     }
-    
+
     /// Force resurrect a dormant mirror (admin override)
     pub async fn force_resurrect_mirror(&self, onion_address: &str) -> Result<()> {
         let mut mirrors = self.mirrors.lock().unwrap();
-        
+
         let mirror = mirrors
             .values_mut()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
             .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?;
-        
+
         if mirror.state != MirrorState::Dormant {
             return Err(OrchestratorError::MirrorNotPaused); // Reusing error for now
         }
-        
-        tracing::info!("Force resurrecting dormant mirror {} ({})", mirror.id, onion_address);
+
+        tracing::info!(
+            "Force resurrecting dormant mirror {} ({})",
+            mirror.id,
+            onion_address
+        );
         mirror.begin_restoration();
-        
+
         Ok(())
     }
-    
+
     /// Permanently destroy a dormant mirror (wipe keys forever)
     pub async fn permanently_destroy_mirror(&self, onion_address: &str) -> Result<()> {
         let mut mirrors = self.mirrors.lock().unwrap();
-        
+
         let mirror = mirrors
             .values_mut()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
             .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?;
-        
-        tracing::warn!("Permanently destroying mirror {} ({})", mirror.id, onion_address);
+
+        tracing::warn!(
+            "Permanently destroying mirror {} ({})",
+            mirror.id,
+            onion_address
+        );
         mirror.permanent_destroy();
-        
+
         // TODO: Also wipe the keys from disk here
         // let key_path = mirror.tor_data_dir.join("private_key");
         // if key_path.exists() { std::fs::remove_file(key_path)?; }
-        
+
         Ok(())
     }
-    
+
     /// Get list of mirrors visible for discovery bar
     pub fn get_discovery_mirrors(&self) -> Vec<MirrorInfo> {
         let mirrors = self.mirrors.lock().unwrap();
@@ -2397,7 +2514,7 @@ impl Orchestrator {
             })
             .collect()
     }
-    
+
     /// Get list of dormant mirrors (for admin panel)
     pub fn get_dormant_mirrors(&self) -> Vec<MirrorInfo> {
         let mirrors = self.mirrors.lock().unwrap();
@@ -2415,52 +2532,56 @@ impl Orchestrator {
             })
             .collect()
     }
-    
+
     /// Resume a paused mirror
     pub async fn resume_mirror(&self, onion_address: &str) -> Result<()> {
         let mut mirrors = self.mirrors.lock().unwrap();
-        
+
         // Find mirror by onion address
         let mirror = mirrors
             .values_mut()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
             .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?;
-        
+
         if mirror.state != MirrorState::Paused {
             return Err(OrchestratorError::MirrorNotPaused);
         }
-        
+
         tracing::info!("Resuming mirror {} ({})", mirror.id, onion_address);
         mirror.state = MirrorState::Active;
-        
+
         Ok(())
     }
-    
+
     /// Activate a standby mirror (change from paused standby to active)
     pub async fn activate_standby(&self, onion_address: &str) -> Result<()> {
         let mut mirrors = self.mirrors.lock().unwrap();
-        
+
         // Find mirror by onion address
         let mirror = mirrors
             .values_mut()
             .find(|m| m.onion_address.as_deref() == Some(onion_address))
             .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?;
-        
+
         if mirror.state == MirrorState::Burned {
             return Err(OrchestratorError::MirrorBurned);
         }
-        
+
         if mirror.state != MirrorState::Paused {
             return Err(OrchestratorError::MirrorNotPaused);
         }
-        
-        tracing::info!("Activating standby mirror {} ({})", mirror.id, onion_address);
+
+        tracing::info!(
+            "Activating standby mirror {} ({})",
+            mirror.id,
+            onion_address
+        );
         mirror.state = MirrorState::Active;
         mirror.is_standby = false; // No longer a standby
-        
+
         Ok(())
     }
-    
+
     /// Check if a mirror is paused by onion address
     pub fn is_mirror_paused(&self, onion_address: &str) -> bool {
         let mirrors = self.mirrors.lock().unwrap();
@@ -2481,9 +2602,9 @@ impl Orchestrator {
                 .map(|m| m.id.clone())
                 .ok_or_else(|| OrchestratorError::MirrorNotFound(onion_address.to_string()))?
         };
-        
+
         tracing::warn!("Destroying mirror {} ({})", mirror_id, onion_address);
-        
+
         // Remove the hidden service from Tor
         {
             let mut mirrors = self.mirrors.lock().unwrap();
@@ -2494,7 +2615,7 @@ impl Orchestrator {
                 mirror.complete_burn();
             }
         }
-        
+
         // Remove from data directory
         let mirror_path = self.config.tor_data_dir.join(&mirror_id);
         if mirror_path.exists() {
@@ -2502,21 +2623,23 @@ impl Orchestrator {
                 tracing::error!("Failed to remove mirror data dir {}: {}", mirror_id, e);
             }
         }
-        
+
         // Remove from active map
         {
             let mut mirrors = self.mirrors.lock().unwrap();
             mirrors.remove(&mirror_id);
-            
+
             let mut count = self.active_count.lock().unwrap();
             if *count > 0 {
                 *count -= 1;
             }
         }
-        
+
         // Spawn replacement to maintain minimum
-        self.ensure_minimum_mirrors().await.map_err(|_| OrchestratorError::SpawnFailed)?;
-        
+        self.ensure_minimum_mirrors()
+            .await
+            .map_err(|_| OrchestratorError::SpawnFailed)?;
+
         Ok(())
     }
 
@@ -2529,7 +2652,7 @@ impl Orchestrator {
             .filter_map(|m| m.onion_address.clone())
             .collect()
     }
-    
+
     /// Get all mirrors with extended status info (for admin panel)
     pub fn get_all_mirrors_extended(&self) -> Vec<MirrorInfo> {
         let mirrors = self.mirrors.lock().unwrap();
@@ -2546,36 +2669,38 @@ impl Orchestrator {
             })
             .collect()
     }
-    
+
     /// Get all mirrors with their status (for admin panel) - legacy format
     pub fn get_all_mirrors(&self) -> Vec<(String, String, String)> {
         let mirrors = self.mirrors.lock().unwrap();
         mirrors
             .values()
             .filter(|m| m.onion_address.is_some() && m.state != MirrorState::Burned)
-            .map(|m| (
-                m.id.clone(),
-                m.onion_address.clone().unwrap_or_default(),
-                m.state.as_str().to_string(),
-            ))
+            .map(|m| {
+                (
+                    m.id.clone(),
+                    m.onion_address.clone().unwrap_or_default(),
+                    m.state.as_str().to_string(),
+                )
+            })
             .collect()
     }
-    
+
     /// Get a pre-generated CAPTCHA from the pool
-    /// 
+    ///
     /// Returns a CAPTCHA if available, or None if pool is empty.
     /// The Gate should fall back to on-demand generation if None.
     pub fn take_pregen_captcha(&self) -> Option<PregenCaptcha> {
         self.captcha_pool.take_captcha()
     }
-    
+
     /// Get CAPTCHA pool statistics
-    /// 
+    ///
     /// Useful for monitoring and admin dashboard.
     pub fn captcha_pool_stats(&self) -> CaptchaPoolStats {
         self.captcha_pool.stats()
     }
-    
+
     /// Check if CAPTCHA pool has available CAPTCHAs
     pub fn has_pregen_captchas(&self) -> bool {
         self.captcha_pool.stats().current_size > 0
@@ -2846,7 +2971,7 @@ impl Orchestrator {
 
                 // Process restoring mirrors - advance phases or complete restoration
                 let phase_duration_secs = (config.discovery_period.total_duration_hours * 3600) / 3;
-                
+
                 let restoring_updates: Vec<(String, bool, bool)> = {
                     // (mirror_id, should_advance, should_complete)
                     let mirrors = mirrors.lock().unwrap();
@@ -2858,7 +2983,7 @@ impl Orchestrator {
                                 if let Some(started) = info.restoration_started_at {
                                     let elapsed = now - started;
                                     let current_phase = info.restoration_phase?;
-                                    
+
                                     match current_phase {
                                         RestorationPhase::Phase1 => {
                                             if elapsed >= phase_duration_secs {
@@ -2875,7 +3000,10 @@ impl Orchestrator {
                                             }
                                         }
                                         RestorationPhase::Phase3 => {
-                                            if elapsed >= config.discovery_period.total_duration_hours * 3600 {
+                                            if elapsed
+                                                >= config.discovery_period.total_duration_hours
+                                                    * 3600
+                                            {
                                                 Some((m.id.clone(), false, true))
                                             } else {
                                                 None
@@ -2899,7 +3027,10 @@ impl Orchestrator {
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             if should_complete {
                                 mirror.complete_restoration();
-                                tracing::info!("Mirror {} restoration complete, now active", mirror_id);
+                                tracing::info!(
+                                    "Mirror {} restoration complete, now active",
+                                    mirror_id
+                                );
                             } else if should_advance {
                                 if let Some(ref mut info) = mirror.resurrection_info {
                                     let old_phase = info.restoration_phase;
@@ -2907,7 +3038,9 @@ impl Orchestrator {
                                     let new_phase = info.restoration_phase;
                                     tracing::info!(
                                         "Mirror {} advancing from {:?} to {:?}",
-                                        mirror_id, old_phase, new_phase
+                                        mirror_id,
+                                        old_phase,
+                                        new_phase
                                     );
                                 }
                             }
@@ -2939,7 +3072,8 @@ impl Orchestrator {
                         if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                             tracing::warn!(
                                 "Mirror {} has been dormant for {} days, permanently destroying",
-                                mirror_id, config.max_dormant_days
+                                mirror_id,
+                                config.max_dormant_days
                             );
                             mirror.permanent_destroy();
                         }
@@ -2983,8 +3117,14 @@ impl Orchestrator {
                 // Gather current state
                 let (active_count, standby_count, total_count) = {
                     let mirrors = mirrors.lock().unwrap();
-                    let active = mirrors.values().filter(|m| m.state == MirrorState::Active).count();
-                    let standby = mirrors.values().filter(|m| m.is_standby && m.state == MirrorState::Paused).count();
+                    let active = mirrors
+                        .values()
+                        .filter(|m| m.state == MirrorState::Active)
+                        .count();
+                    let standby = mirrors
+                        .values()
+                        .filter(|m| m.is_standby && m.state == MirrorState::Paused)
+                        .count();
                     let total = mirrors.len();
                     (active, standby, total)
                 };
@@ -2994,7 +3134,7 @@ impl Orchestrator {
                     // Use sysinfo to check resources
                     let mut sys = sysinfo::System::new_all();
                     sys.refresh_all();
-                    
+
                     let cpu_usage = sys.global_cpu_info().cpu_usage();
                     let memory_total = sys.total_memory() / 1024 / 1024; // MB
                     let memory_used = sys.used_memory() / 1024 / 1024;
@@ -3004,7 +3144,8 @@ impl Orchestrator {
                     if cpu_usage >= config.max_cpu_percent {
                         tracing::debug!(
                             "Auto-scaling: CPU usage {:.1}% exceeds limit {:.1}%",
-                            cpu_usage, config.max_cpu_percent
+                            cpu_usage,
+                            config.max_cpu_percent
                         );
                         let mut rl = rate_limiter.lock().unwrap();
                         rl.record_resource_limit();
@@ -3012,7 +3153,8 @@ impl Orchestrator {
                     } else if memory_percent >= config.max_memory_percent {
                         tracing::debug!(
                             "Auto-scaling: Memory usage {:.1}% exceeds limit {:.1}%",
-                            memory_percent, config.max_memory_percent
+                            memory_percent,
+                            config.max_memory_percent
                         );
                         let mut rl = rate_limiter.lock().unwrap();
                         rl.record_resource_limit();
@@ -3020,7 +3162,8 @@ impl Orchestrator {
                     } else if memory_available < config.min_memory_available_mb {
                         tracing::debug!(
                             "Auto-scaling: Available memory {}MB below minimum {}MB",
-                            memory_available, config.min_memory_available_mb
+                            memory_available,
+                            config.min_memory_available_mb
                         );
                         let mut rl = rate_limiter.lock().unwrap();
                         rl.record_resource_limit();
@@ -3039,16 +3182,17 @@ impl Orchestrator {
                 };
 
                 // Determine if we need more standby mirrors
-                let needs_standby = standby_count < config.target_standby 
+                let needs_standby = standby_count < config.target_standby
                     && standby_count < config.max_standby
                     && total_count < max_mirrors
-                    && can_spawn 
+                    && can_spawn
                     && spawn_allowed;
 
                 if needs_standby {
                     tracing::debug!(
                         "Auto-scaling: standby mirrors {}/{}, spawning...",
-                        standby_count, config.target_standby
+                        standby_count,
+                        config.target_standby
                     );
 
                     // Record the spawn attempt
@@ -3068,20 +3212,17 @@ impl Orchestrator {
                     // Create and spawn the standby mirror
                     let mirror_data_dir = tor_data_dir.join(&mirror_id);
                     let mut mirror = Mirror::new(mirror_id.clone(), mirror_data_dir.clone());
-                    
+
                     // Get onion address from Tor service (not async)
                     match tor_service.create_hidden_service(&mut mirror, proxy_port) {
                         Ok(onion_address) => {
                             // Mark as standby (paused but ready)
                             mirror.activate_as_standby(onion_address);
-                            
+
                             let mut mirrors = mirrors.lock().unwrap();
                             mirrors.insert(mirror_id.clone(), mirror);
-                            
-                            tracing::info!(
-                                "Standby mirror ready: {}",
-                                mirror_id
-                            );
+
+                            tracing::info!("Standby mirror ready: {}", mirror_id);
                         }
                         Err(e) => {
                             tracing::error!("Auto-scaling: Failed to create standby mirror: {}", e);
@@ -3093,7 +3234,8 @@ impl Orchestrator {
                 if standby_count > config.max_standby {
                     tracing::debug!(
                         "Auto-scaling: Excess standbys ({} > {}), removing",
-                        standby_count, config.max_standby
+                        standby_count,
+                        config.max_standby
                     );
 
                     let excess = standby_count - config.max_standby;
@@ -3123,7 +3265,8 @@ impl Orchestrator {
                 if active_count < min_mirrors {
                     tracing::info!(
                         "Auto-scaling: Active mirrors ({}) below minimum ({}), activating standby",
-                        active_count, min_mirrors
+                        active_count,
+                        min_mirrors
                     );
 
                     // Try to activate a standby
@@ -3148,13 +3291,14 @@ impl Orchestrator {
                             if let Some(mirror) = mirrors.get_mut(&mirror_id) {
                                 mirror.is_standby = false;
                                 mirror.state = MirrorState::Active;
-                                
+
                                 let mut rl = rate_limiter.lock().unwrap();
                                 rl.record_activation();
-                                
+
                                 tracing::info!(
                                     "Auto-scaling: Activated standby mirror {} (now: {} active)",
-                                    mirror_id, active_count + 1
+                                    mirror_id,
+                                    active_count + 1
                                 );
                             }
                         } else {
@@ -3184,9 +3328,9 @@ impl Orchestrator {
         }
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                std::time::Duration::from_secs(config.cleanup_interval_seconds)
-            );
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                config.cleanup_interval_seconds,
+            ));
 
             loop {
                 tokio::select! {
@@ -3251,7 +3395,8 @@ impl Orchestrator {
                             // Check if directory is old enough to remove
                             if let Ok(metadata) = path.metadata() {
                                 if let Ok(modified) = metadata.modified() {
-                                    if let Ok(duration) = SystemTime::now().duration_since(modified) {
+                                    if let Ok(duration) = SystemTime::now().duration_since(modified)
+                                    {
                                         let days_old = duration.as_secs() / 86400;
                                         if days_old >= config.destroyed_data_retention_days {
                                             tracing::info!(
@@ -3261,7 +3406,8 @@ impl Orchestrator {
                                             if let Err(e) = std::fs::remove_dir_all(&path) {
                                                 tracing::warn!(
                                                     "Failed to remove orphaned directory {:?}: {}",
-                                                    path, e
+                                                    path,
+                                                    e
                                                 );
                                             }
                                         }
@@ -3273,25 +3419,23 @@ impl Orchestrator {
                 }
 
                 // 3. Clean temporary files
-                let temp_dirs = [
-                    PathBuf::from("/tmp/fortify"),
-                    tor_data_dir.join("tmp"),
-                ];
-                
+                let temp_dirs = [PathBuf::from("/tmp/fortify"), tor_data_dir.join("tmp")];
+
                 let max_age_secs = config.temp_file_max_age_hours * 3600;
-                
+
                 for temp_dir in &temp_dirs {
                     if !temp_dir.exists() {
                         continue;
                     }
-                    
+
                     if let Ok(entries) = std::fs::read_dir(temp_dir) {
                         for entry in entries.flatten() {
                             let path = entry.path();
-                            
+
                             if let Ok(metadata) = path.metadata() {
                                 if let Ok(modified) = metadata.modified() {
-                                    if let Ok(duration) = SystemTime::now().duration_since(modified) {
+                                    if let Ok(duration) = SystemTime::now().duration_since(modified)
+                                    {
                                         if duration.as_secs() > max_age_secs {
                                             tracing::debug!(
                                                 "Self-cleaning: Removing old temp file {:?}",
@@ -3314,13 +3458,14 @@ impl Orchestrator {
                 let mut sys = sysinfo::System::new_all();
                 sys.refresh_memory();
                 let memory_used_mb = sys.used_memory() / 1024 / 1024;
-                
+
                 if memory_used_mb > config.memory_high_water_mb {
                     tracing::warn!(
                         "Self-cleaning: Memory usage {}MB exceeds high-water mark {}MB",
-                        memory_used_mb, config.memory_high_water_mb
+                        memory_used_mb,
+                        config.memory_high_water_mb
                     );
-                    
+
                     // Trigger garbage collection hints
                     // In a real system, we'd free caches, compact data structures, etc.
                     // For now, just log the warning
@@ -3328,18 +3473,25 @@ impl Orchestrator {
 
                 // 5. Log cleanup stats periodically
                 let mirror_count = mirrors.lock().unwrap().len();
-                let active_count = mirrors.lock().unwrap()
+                let active_count = mirrors
+                    .lock()
+                    .unwrap()
                     .values()
                     .filter(|m| m.state == MirrorState::Active)
                     .count();
-                let burned_count = mirrors.lock().unwrap()
+                let burned_count = mirrors
+                    .lock()
+                    .unwrap()
                     .values()
                     .filter(|m| m.state == MirrorState::Burned)
                     .count();
-                
+
                 tracing::debug!(
                     "Self-cleaning cycle complete: {} mirrors ({} active, {} burned), {}MB memory",
-                    mirror_count, active_count, burned_count, memory_used_mb
+                    mirror_count,
+                    active_count,
+                    burned_count,
+                    memory_used_mb
                 );
             }
         });
@@ -3354,9 +3506,9 @@ impl Orchestrator {
         let config = self.config.multi_daemon.clone();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                std::time::Duration::from_secs(config.health_check_interval_seconds)
-            );
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                config.health_check_interval_seconds,
+            ));
 
             loop {
                 interval.tick().await;
@@ -3367,7 +3519,7 @@ impl Orchestrator {
                 // Check each daemon's health
                 for i in 0..daemon_count {
                     let health = manager.check_daemon_health(i).await;
-                    
+
                     match health {
                         DaemonHealth::Healthy => {
                             // All good
@@ -3391,13 +3543,13 @@ impl Orchestrator {
                 if config.auto_restart_daemons {
                     for daemon_id in unhealthy_daemons {
                         tracing::info!("Auto-restarting daemon {}", daemon_id);
-                        
+
                         // Stop existing daemon if running
                         let _ = manager.stop_daemon(daemon_id);
-                        
+
                         // Wait a moment before restart
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        
+
                         // Start daemon again
                         match manager.start_daemon(daemon_id).await {
                             Ok(pid) => {
@@ -3412,7 +3564,10 @@ impl Orchestrator {
 
                 // Log daemon status summary
                 let statuses = manager.get_daemon_statuses();
-                let healthy = statuses.iter().filter(|d| d.health == DaemonHealth::Healthy).count();
+                let healthy = statuses
+                    .iter()
+                    .filter(|d| d.health == DaemonHealth::Healthy)
+                    .count();
                 let total = statuses.len();
                 tracing::debug!("Daemon health: {}/{} healthy", healthy, total);
             }
@@ -3420,7 +3575,7 @@ impl Orchestrator {
     }
 
     /// Flex Core background task for CAPTCHA pre-generation
-    /// 
+    ///
     /// This task runs on Core 2 (Flex Core) and manages the CAPTCHA pool:
     /// - Generates CAPTCHAs during low CPU usage periods
     /// - Pauses generation when CPU exceeds threshold
@@ -3430,27 +3585,26 @@ impl Orchestrator {
         let pool_manager = Arc::clone(&self.captcha_pool);
         let config = self.config.multi_daemon.flex_core.captcha_pregen.clone();
         let mut shutdown_rx = self.shutdown_tx.subscribe();
-        
+
         tracing::info!(
             "Starting Flex Core CAPTCHA pre-generation task (target: {}, rotation: {}% every {} days)",
             config.target_pool_size,
             config.rotation_percent,
             config.rotation_interval_days
         );
-        
+
         tokio::spawn(async move {
             // Track rotation timing
             let mut last_rotation = std::time::Instant::now();
-            let rotation_interval = std::time::Duration::from_secs(
-                config.rotation_interval_days as u64 * 24 * 60 * 60
-            );
-            
+            let rotation_interval =
+                std::time::Duration::from_secs(config.rotation_interval_days as u64 * 24 * 60 * 60);
+
             // Track last logged count to avoid spam
             let mut last_logged_generated: u64 = 0;
-            
+
             // Main generation loop - check every 5 seconds
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-            
+
             loop {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
@@ -3462,27 +3616,33 @@ impl Orchestrator {
                         // Continue with normal processing
                     }
                 }
-                
+
                 // Check if rotation is due
                 if last_rotation.elapsed() >= rotation_interval {
-                    tracing::info!("CAPTCHA pool rotation triggered ({}% refresh)", config.rotation_percent);
+                    tracing::info!(
+                        "CAPTCHA pool rotation triggered ({}% refresh)",
+                        config.rotation_percent
+                    );
                     pool_manager.rotate_pool();
                     pool_manager.save_pool(); // Persist after rotation
                     last_rotation = std::time::Instant::now();
                 }
-                
+
                 // Get current pool stats
                 let stats = pool_manager.stats();
-                
+
                 // Skip generation if pool is full
                 if stats.current_size >= config.max_pool_size {
-                    tracing::debug!("CAPTCHA pool at max capacity ({}), skipping generation", stats.current_size);
+                    tracing::debug!(
+                        "CAPTCHA pool at max capacity ({}), skipping generation",
+                        stats.current_size
+                    );
                     continue;
                 }
-                
+
                 // Check CPU usage before generating (simulated - would use sys-info crate in production)
                 let cpu_usage = Self::get_cpu_usage().await;
-                
+
                 if cpu_usage > config.pause_cpu_threshold {
                     tracing::debug!(
                         "CPU usage {:.1}% exceeds threshold {:.1}%, pausing CAPTCHA generation",
@@ -3491,16 +3651,16 @@ impl Orchestrator {
                     );
                     continue;
                 }
-                
+
                 // Generate a batch if below target
                 if stats.current_size < config.target_pool_size {
                     let batch = pool_manager.generate_batch();
                     let batch_count = batch.len();
-                    
+
                     for captcha in batch {
                         pool_manager.add_captcha(captcha);
                     }
-                    
+
                     let new_stats = pool_manager.stats();
                     tracing::debug!(
                         "Generated {} CAPTCHAs, pool now at {}/{} (target: {})",
@@ -3509,17 +3669,20 @@ impl Orchestrator {
                         config.max_pool_size,
                         config.target_pool_size
                     );
-                    
+
                     // Save when we reach target to persist
-                    if new_stats.current_size >= config.target_pool_size && stats.current_size < config.target_pool_size {
+                    if new_stats.current_size >= config.target_pool_size
+                        && stats.current_size < config.target_pool_size
+                    {
                         tracing::info!("CAPTCHA pool reached target, persisting to disk");
                         pool_manager.save_pool();
                     }
-                    
+
                     // Brief delay between batches to avoid CPU spike
-                    tokio::time::sleep(std::time::Duration::from_millis(config.batch_delay_ms)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(config.batch_delay_ms))
+                        .await;
                 }
-                
+
                 // Log stats periodically (only when total_generated increases by 500)
                 if stats.total_generated >= last_logged_generated + 500 {
                     tracing::info!(
@@ -3534,16 +3697,16 @@ impl Orchestrator {
             }
         });
     }
-    
+
     /// Get current CPU usage percentage
-    /// 
+    ///
     /// In production, this would use sys-info crate or /proc/stat parsing.
     /// Currently returns a simulated value for development.
     async fn get_cpu_usage() -> f32 {
         // Read /proc/stat for actual CPU usage
         // For now, return a low value to enable generation
         // TODO: Implement actual CPU monitoring via sys-info crate
-        
+
         // Simulate some variance for realistic behavior
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -3617,7 +3780,7 @@ mod tests {
             1.0,
             "Critical failures".into(),
         ));
-        
+
         // Add one more to push over threshold
         mirror.add_signal(CompromiseSignal::new(
             SignalType::RepeatedFailures,

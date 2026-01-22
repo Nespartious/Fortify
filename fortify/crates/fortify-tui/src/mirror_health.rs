@@ -1,9 +1,8 @@
 ///! Mirror health checking and Tor connectivity verification
-
 use anyhow::Result;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
-use tracing::{debug, warn, info};
+use tracing::{debug, info, warn};
 
 /// Mirror health status
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,22 +48,22 @@ impl MirrorHealthChecker {
     /// Check if a mirror is reachable via Tor
     pub async fn check_mirror(&self, onion_address: &str) -> MirrorHealthResult {
         let start = Instant::now();
-        
+
         // Normalize address
         let address = if onion_address.ends_with(".onion") {
             onion_address.to_string()
         } else {
             format!("{}.onion", onion_address)
         };
-        
+
         info!("Checking mirror health: {}", address);
-        
+
         // Try to connect via curl through Tor SOCKS proxy
         let url = format!("http://{}/health", address);
         let result = self.check_via_curl(&url).await;
-        
+
         let duration_ms = start.elapsed().as_millis() as u64;
-        
+
         match result {
             Ok(true) => {
                 info!("Mirror {} is HEALTHY ({}ms)", address, duration_ms);
@@ -98,43 +97,46 @@ impl MirrorHealthChecker {
             }
         }
     }
-    
+
     /// Check multiple mirrors in parallel
     pub async fn check_mirrors(&self, addresses: &[String]) -> Vec<MirrorHealthResult> {
         let mut handles = vec![];
-        
+
         for address in addresses {
             let checker = self.clone();
             let addr = address.clone();
-            handles.push(tokio::spawn(async move {
-                checker.check_mirror(&addr).await
-            }));
+            handles.push(tokio::spawn(
+                async move { checker.check_mirror(&addr).await },
+            ));
         }
-        
+
         let mut results = vec![];
         for handle in handles {
             if let Ok(result) = handle.await {
                 results.push(result);
             }
         }
-        
+
         results
     }
-    
+
     /// Use curl with Tor SOCKS proxy to check connectivity
     async fn check_via_curl(&self, url: &str) -> Result<bool> {
         let output = Command::new("curl")
             .args(&[
-                "-s",  // Silent
-                "-f",  // Fail on HTTP errors
-                "--socks5-hostname", &self.socks_proxy,  // Use Tor SOCKS proxy with remote DNS
-                "--max-time", &format!("{}", self.check_timeout.as_secs()),
-                "--connect-timeout", "10",
+                "-s", // Silent
+                "-f", // Fail on HTTP errors
+                "--socks5-hostname",
+                &self.socks_proxy, // Use Tor SOCKS proxy with remote DNS
+                "--max-time",
+                &format!("{}", self.check_timeout.as_secs()),
+                "--connect-timeout",
+                "10",
                 url,
             ])
             .output()
             .await?;
-        
+
         // Consider it healthy if curl succeeded (exit code 0)
         Ok(output.status.success())
     }
@@ -162,7 +164,7 @@ impl MirrorHealthTracker {
             results: std::sync::Arc::new(tokio::sync::Mutex::new(vec![])),
         }
     }
-    
+
     /// Start monitoring mirrors with adaptive check frequency
     /// - Every 5 seconds for first 2 minutes (initial deployment)
     /// - Every 30 seconds for next 3 minutes (stabilization)
@@ -174,7 +176,7 @@ impl MirrorHealthTracker {
     ) -> tokio::task::JoinHandle<()> {
         let checker = self.checker.clone();
         let results = self.results.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 // Determine check interval based on deployment age
@@ -189,38 +191,55 @@ impl MirrorHealthTracker {
                     // After 5 minutes: check every 60 seconds
                     Duration::from_secs(60)
                 };
-                
-                debug!("Checking {} mirrors (age: {:?}, interval: {:?})", addresses.len(), age, interval);
-                
+
+                debug!(
+                    "Checking {} mirrors (age: {:?}, interval: {:?})",
+                    addresses.len(),
+                    age,
+                    interval
+                );
+
                 // Check all mirrors
                 let check_results = checker.check_mirrors(&addresses).await;
-                
+
                 // Update stored results
                 let mut results_lock = results.lock().await;
                 *results_lock = check_results;
                 drop(results_lock);
-                
+
                 // Wait until next check
                 tokio::time::sleep(interval).await;
             }
         })
     }
-    
+
     /// Get latest health results
     pub async fn get_results(&self) -> Vec<MirrorHealthResult> {
         self.results.lock().await.clone()
     }
-    
+
     /// Get health summary
     pub async fn get_summary(&self) -> MirrorHealthSummary {
         let results = self.results.lock().await;
-        
+
         let total = results.len();
-        let healthy = results.iter().filter(|r| r.health == MirrorHealth::Healthy).count();
-        let checking = results.iter().filter(|r| r.health == MirrorHealth::Checking).count();
-        let unreachable = results.iter().filter(|r| r.health == MirrorHealth::Unreachable).count();
-        let errors = results.iter().filter(|r| r.health == MirrorHealth::Error).count();
-        
+        let healthy = results
+            .iter()
+            .filter(|r| r.health == MirrorHealth::Healthy)
+            .count();
+        let checking = results
+            .iter()
+            .filter(|r| r.health == MirrorHealth::Checking)
+            .count();
+        let unreachable = results
+            .iter()
+            .filter(|r| r.health == MirrorHealth::Unreachable)
+            .count();
+        let errors = results
+            .iter()
+            .filter(|r| r.health == MirrorHealth::Error)
+            .count();
+
         MirrorHealthSummary {
             total,
             healthy,
@@ -244,11 +263,11 @@ impl MirrorHealthSummary {
     pub fn all_healthy(&self) -> bool {
         self.total > 0 && self.healthy == self.total
     }
-    
+
     pub fn any_healthy(&self) -> bool {
         self.healthy > 0
     }
-    
+
     pub fn health_percentage(&self) -> f64 {
         if self.total == 0 {
             0.0

@@ -1,5 +1,5 @@
 //! Settings management - loading, saving, validation
-//! 
+//!
 //! This module re-exports types from config and adds settings-specific utilities.
 
 #![allow(dead_code)]
@@ -10,29 +10,25 @@ pub use crate::config::*;
 /// Validate a setting value
 pub fn validate_setting(field: &str, value: &str) -> Result<(), String> {
     match field {
-        "Pool Size" | "Min Pool" | "Max Pool" | "Min Mirrors" | "Max Mirrors" | "Standby Mirrors" => {
-            value.parse::<usize>()
-                .map(|_| ())
-                .map_err(|_| "Must be a positive integer".to_string())
-        }
+        "Pool Size" | "Min Pool" | "Max Pool" | "Min Mirrors" | "Max Mirrors"
+        | "Standby Mirrors" => value
+            .parse::<usize>()
+            .map(|_| ())
+            .map_err(|_| "Must be a positive integer".to_string()),
         "Difficulty" | "Difficulty (1-10)" | "Probe Sensitivity (1-10)" => {
             match value.parse::<u8>() {
                 Ok(v) if (1..=10).contains(&v) => Ok(()),
                 _ => Err("Must be 1-10".to_string()),
             }
         }
-        "Rotation %" => {
-            match value.parse::<u8>() {
-                Ok(v) if v <= 100 => Ok(()),
-                _ => Err("Must be 0-100".to_string()),
-            }
-        }
-        "Rotation Days" => {
-            match value.parse::<u32>() {
-                Ok(v) if v > 0 => Ok(()),
-                _ => Err("Must be positive integer".to_string()),
-            }
-        }
+        "Rotation %" => match value.parse::<u8>() {
+            Ok(v) if v <= 100 => Ok(()),
+            _ => Err("Must be 0-100".to_string()),
+        },
+        "Rotation Days" => match value.parse::<u32>() {
+            Ok(v) if v > 0 => Ok(()),
+            _ => Err("Must be positive integer".to_string()),
+        },
         "Burn Threshold" | "Threat Threshold" | "Suspicion Threshold" => {
             match value.parse::<f32>() {
                 Ok(v) if (0.0..=1.0).contains(&v) => Ok(()),
@@ -46,12 +42,10 @@ pub fn validate_setting(field: &str, value: &str) -> Result<(), String> {
                 Err("Must be hex color (#RRGGBB)".to_string())
             }
         }
-        "SOCKS Port" | "Control Port" => {
-            match value.parse::<u16>() {
-                Ok(v) if v > 0 => Ok(()),
-                _ => Err("Must be valid port (1-65535)".to_string()),
-            }
-        }
+        "SOCKS Port" | "Control Port" => match value.parse::<u16>() {
+            Ok(v) if v > 0 => Ok(()),
+            _ => Err("Must be valid port (1-65535)".to_string()),
+        },
         "Backend Address" | "HTTP Bind" | "Gate Bind" => {
             if value.contains(':') {
                 Ok(())

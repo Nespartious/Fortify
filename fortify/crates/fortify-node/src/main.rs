@@ -1,4 +1,7 @@
-use fortify_core::{logging::{init_logging, start_resource_logger}, SessionManager};
+use fortify_core::{
+    logging::{init_logging, start_resource_logger},
+    SessionManager,
+};
 use fortify_node::{server::NodeServer, Node, NodeConfig, NodeMode};
 use std::env;
 use std::sync::Arc;

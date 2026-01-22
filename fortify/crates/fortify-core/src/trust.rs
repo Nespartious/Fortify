@@ -54,7 +54,10 @@ impl TrustTier {
 
     /// Check if this tier requires gate challenges
     pub fn requires_gate(&self) -> bool {
-        matches!(self, TrustTier::Unknown | TrustTier::Burned | TrustTier::Suspicious)
+        matches!(
+            self,
+            TrustTier::Unknown | TrustTier::Burned | TrustTier::Suspicious
+        )
     }
 
     /// Check if promotion is possible from this tier
@@ -81,7 +84,12 @@ pub struct SessionToken {
 
 impl SessionToken {
     /// Create a new session token
-    pub fn new(session_id: String, trust_tier: TrustTier, lifetime_seconds: u64, user_agent: &str) -> Self {
+    pub fn new(
+        session_id: String,
+        trust_tier: TrustTier,
+        lifetime_seconds: u64,
+        user_agent: &str,
+    ) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -150,7 +158,7 @@ impl SessionToken {
             expires_at: self.expires_at,
             user_agent_hash: &self.user_agent_hash,
         };
-        
+
         Ok(serde_json::to_vec(&payload)?)
     }
 

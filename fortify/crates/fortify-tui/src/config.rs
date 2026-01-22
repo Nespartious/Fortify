@@ -1,8 +1,8 @@
 //! Configuration types and management for Fortify TUI
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use anyhow::Result;
 
 /// Root configuration for a Fortify deployment
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,7 +243,7 @@ impl Default for NetworkConfig {
         } else {
             PathBuf::from("/tmp/fortify")
         };
-        
+
         Self {
             backend_address: "http://127.0.0.1:9000".to_string(),
             socks_port: 9150,
@@ -294,7 +294,7 @@ impl FortifyConfig {
         let mut config: FortifyConfig = toml::from_str(&content)?;
         config.config_path = Some(path.to_path_buf());
         config.dirty = false;
-        
+
         // Load logo if path specified
         if let Some(ref logo_path) = config.branding.logo_path {
             if logo_path.exists() {
@@ -306,7 +306,7 @@ impl FortifyConfig {
                 }
             }
         }
-        
+
         Ok(config)
     }
 
@@ -321,12 +321,12 @@ impl FortifyConfig {
                 default
             }
         };
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         let content = toml::to_string_pretty(self)?;
         std::fs::write(&path, content)?;
         Ok(())
@@ -335,12 +335,12 @@ impl FortifyConfig {
     /// Save to a specific path
     pub fn save_to(&self, path: &Path) -> Result<()> {
         let content = toml::to_string_pretty(self)?;
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         std::fs::write(path, content)?;
         Ok(())
     }

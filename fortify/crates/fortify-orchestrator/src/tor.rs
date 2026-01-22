@@ -31,14 +31,14 @@ pub struct VanityConfig {
 }
 
 /// Tor hidden service manager
-/// 
+///
 /// PoW (Proof-of-Work) Strategy:
 /// 1. First try ADD_ONION with PoWDefensesEnabled (requires Tor 0.4.9.2+)
 /// 2. If that fails, fall back to file-based hidden service with PoW via torrc
-/// 
+///
 /// File-based PoW uses a torrc include file that Tor reads on SIGHUP/reload.
 /// This enables PoW on Tor 0.4.8+ even without ADD_ONION PoW support.
-/// 
+///
 /// Vanity Address Strategy:
 /// - When enabled, uses mkp224o to generate vanity .onion addresses for mirrors
 /// - Falls back to random address if mkp224o is unavailable or times out
@@ -66,7 +66,7 @@ impl TorService {
             },
             _ => TorBackend::Disabled,
         };
-        Self { 
+        Self {
             backend,
             vanity: VanityConfig::default(),
             base_data_dir: if let Some(home) = std::env::var_os("HOME") {
@@ -80,18 +80,20 @@ impl TorService {
             },
         }
     }
-    
+
     /// Set base data directory for torrc path resolution
     pub fn with_base_data_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.base_data_dir = dir;
         self
     }
-    
+
     /// Configure vanity address generation for mirrors
     pub fn with_vanity(mut self, config: VanityConfig) -> Self {
         tracing::info!(
             "TorService vanity configured: enabled={}, prefix='{}', timeout={}",
-            config.enabled, config.prefix, config.timeout
+            config.enabled,
+            config.prefix,
+            config.timeout
         );
         self.vanity = config;
         self
@@ -101,12 +103,13 @@ impl TorService {
     pub fn create_hidden_service(&self, mirror: &mut Mirror, target_port: u16) -> Result<String> {
         fs::create_dir_all(&mirror.tor_data_dir)
             .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
-        
+
         // Create lock file to prevent other orchestrators from deleting this dir while we're initializing
         let lock_file = mirror.tor_data_dir.join(".creating");
-        fs::write(&lock_file, format!("{}", std::process::id()))
-            .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to create lock: {}", e)))?;
-        
+        fs::write(&lock_file, format!("{}", std::process::id())).map_err(|e| {
+            OrchestratorError::TorConfigError(format!("Failed to create lock: {}", e))
+        })?;
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -122,13 +125,13 @@ impl TorService {
             }
             TorBackend::ControlPort { .. } => self.create_via_control_port(mirror, target_port),
         };
-        
+
         // On error, clean up the directory we created to prevent accumulation
         if result.is_err() {
             let _ = fs::remove_file(&lock_file);
             let _ = fs::remove_dir_all(&mirror.tor_data_dir);
         }
-        
+
         result
     }
 
@@ -151,17 +154,26 @@ impl TorService {
                     break;
                 }
                 Err(e) if attempt < 2 => {
-                    tracing::debug!("Tor control connect attempt {} failed: {}, retrying...", attempt + 1, e);
-                    std::thread::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1)));
+                    tracing::debug!(
+                        "Tor control connect attempt {} failed: {}, retrying...",
+                        attempt + 1,
+                        e
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        100 * (attempt as u64 + 1),
+                    ));
                     continue;
                 }
                 Err(e) => {
-                    tracing::error!("Failed to connect to Tor control port after 3 attempts: {}", e);
+                    tracing::error!(
+                        "Failed to connect to Tor control port after 3 attempts: {}",
+                        e
+                    );
                     return Err(OrchestratorError::TorConfigError(e.to_string()));
                 }
             }
         }
-        
+
         let mut stream = stream.ok_or_else(|| {
             tracing::error!("Failed to connect to Tor control port at {}", addr);
             OrchestratorError::TorConfigError("Failed to connect to Tor control port".to_string())
@@ -176,12 +188,12 @@ impl TorService {
 
         // Strategy: Try ADD_ONION with PoW first (Tor 0.4.9.2+), fall back to standard ADD_ONION
         tracing::info!("Creating hidden service on port {}", target_port);
-        
+
         let pow_cmd = format!(
             "ADD_ONION NEW:ED25519-V3 Port=80,127.0.0.1:{} Flags=Detach,PoWDefensesEnabled",
             target_port
         );
-        
+
         tracing::debug!("Trying ADD_ONION with PoW (requires Tor 0.4.9.2+)");
         match self.run_command(&mut stream, &pow_cmd) {
             Ok(response) => {
@@ -193,18 +205,22 @@ impl TorService {
                 tracing::info!("Hidden service created: {}.onion", service_id);
                 let private_key = Self::extract_private_key(&response)?;
                 let onion = format!("{}.onion", service_id);
-                
+
                 mirror.tor_service_id = Some(service_id);
                 mirror.pow_enabled = true;
                 self.write_hostname(&mirror.tor_data_dir, &onion)?;
                 self.write_private_key(&mirror.tor_data_dir, &private_key)?;
-                
+
                 return Ok(onion);
             }
-            Err(OrchestratorError::TorConfigError(msg)) if msg.contains("512") || msg.contains("552") => {
+            Err(OrchestratorError::TorConfigError(msg))
+                if msg.contains("512") || msg.contains("552") =>
+            {
                 // PoW flag not supported (Tor < 0.4.9.2), fall back to file-based PoW
                 if !POW_FILE_LOGGED.swap(true, Ordering::Relaxed) {
-                    tracing::info!("ADD_ONION PoW not supported, using file-based hidden service with PoW");
+                    tracing::info!(
+                        "ADD_ONION PoW not supported, using file-based hidden service with PoW"
+                    );
                 }
             }
             Err(e) => {
@@ -212,13 +228,13 @@ impl TorService {
                 return Err(e);
             }
         }
-        
+
         // Fall back to file-based hidden service with PoW enabled via torrc
         tracing::debug!("Falling back to file-based PoW service");
         drop(stream); // Release the connection
         self.create_file_based_pow_service(mirror, target_port, addr, cookie_path)
     }
-    
+
     /// Create a file-based hidden service with PoW enabled via torrc include
     /// This works on Tor 0.4.8+ by writing config to a file and signaling Tor to reload
     /// Supports vanity address generation for mirrors
@@ -231,20 +247,23 @@ impl TorService {
     ) -> Result<String> {
         // Create the hidden service directory
         let hs_dir = mirror.tor_data_dir.join("hs");
-        fs::create_dir_all(&hs_dir)
-            .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to create hs dir: {}", e)))?;
-        
+        fs::create_dir_all(&hs_dir).map_err(|e| {
+            OrchestratorError::TorConfigError(format!("Failed to create hs dir: {}", e))
+        })?;
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&hs_dir, fs::Permissions::from_mode(0o700))
                 .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
         }
-        
+
         // Generate vanity keys if enabled
         tracing::debug!(
             "Vanity config: enabled={}, prefix='{}', timeout={}s",
-            self.vanity.enabled, self.vanity.prefix, self.vanity.timeout
+            self.vanity.enabled,
+            self.vanity.prefix,
+            self.vanity.timeout
         );
         let vanity_address = if self.vanity.enabled && !self.vanity.prefix.is_empty() {
             match self.generate_vanity_keys(&hs_dir, &self.vanity.prefix, self.vanity.timeout) {
@@ -261,46 +280,47 @@ impl TorService {
             tracing::debug!("Vanity disabled or empty prefix, using random address");
             None
         };
-        
+
         // Write torrc snippet for this hidden service with PoW
         // Since Tor regenerates its torrc and removes %include directives,
         // we append mirror configs directly to the main torrc file
         let torrc_path = self.base_data_dir.join("tor").join("torrc");
-        
+
         let torrc_content = format!(
             "# Fortify mirror: {}\nHiddenServiceDir {}\nHiddenServicePort 80 127.0.0.1:{}\nHiddenServicePoWDefensesEnabled 1\n",
             mirror.id,
             hs_dir.to_string_lossy(),
             target_port
         );
-        
+
         // Append to main torrc file (Tor will read appended configs)
         std::fs::OpenOptions::new()
             .append(true)
             .open(&torrc_path)
             .and_then(|mut file| std::io::Write::write_all(&mut file, torrc_content.as_bytes()))
-            .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to append to torrc: {}", e)))?;
-        
+            .map_err(|e| {
+                OrchestratorError::TorConfigError(format!("Failed to append to torrc: {}", e))
+            })?;
+
         tracing::debug!("Appended mirror config to main {}", torrc_path.display());
-        
+
         // Also write the old-style torrc.inc for backward compatibility
         // (in case some code still reads from the mirrors/orch-*/mirror-*/torrc.inc path)
         let torrc_inc_path = mirror.tor_data_dir.join("torrc.inc");
-        fs::write(&torrc_inc_path, &torrc_content)
-            .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to write torrc.inc: {}", e)))?;
-        
+        fs::write(&torrc_inc_path, &torrc_content).map_err(|e| {
+            OrchestratorError::TorConfigError(format!("Failed to write torrc.inc: {}", e))
+        })?;
+
         // Signal Tor to reload configuration (with retry)
-        let stream_result = (0..3).find_map(|attempt| {
-            match TcpStream::connect(addr) {
-                Ok(s) => Some(s),
-                Err(_) if attempt < 2 => {
-                    std::thread::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1)));
-                    None
-                }
-                Err(_) => None,
+        let stream_result = (0..3).find_map(|attempt| match TcpStream::connect(addr) {
+            Ok(s) => Some(s),
+            Err(_) if attempt < 2 => {
+                std::thread::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1)));
+                None
             }
+            Err(_) => None,
         });
-        
+
         if let Some(mut stream) = stream_result {
             if self.authenticate(&mut stream, cookie_path).is_ok() {
                 match self.run_command(&mut stream, "SIGNAL RELOAD") {
@@ -311,7 +331,7 @@ impl TorService {
         } else {
             tracing::warn!("Could not connect to Tor control to signal reload");
         }
-        
+
         // If vanity address was generated, use it directly (keys already in place)
         // Otherwise wait for Tor to create the hostname file
         let hostname_path = hs_dir.join("hostname");
@@ -329,7 +349,8 @@ impl TorService {
                     }
                 }
                 attempts += 1;
-                if attempts > 40 { // 10 seconds total
+                if attempts > 40 {
+                    // 10 seconds total
                     tracing::warn!("File-based PoW setup timed out waiting for hostname");
                     // Last resort fallback to ephemeral without PoW
                     return self.create_standard_ephemeral(mirror, target_port, addr, cookie_path);
@@ -337,13 +358,13 @@ impl TorService {
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
         };
-        
+
         let service_id = onion.replace(".onion", "");
         mirror.tor_service_id = Some(service_id);
         mirror.pow_enabled = true;
         mirror.file_based = true;
         self.write_hostname(&mirror.tor_data_dir, &onion)?;
-        
+
         // Copy the private key if Tor generated one
         let key_path = hs_dir.join("hs_ed25519_secret_key");
         if key_path.exists() {
@@ -353,11 +374,11 @@ impl TorService {
                 self.write_private_key(&mirror.tor_data_dir, &key_hex)?;
             }
         }
-        
+
         tracing::info!("✅ Created file-based PoW mirror: {}", onion);
         Ok(onion)
     }
-    
+
     /// Create standard ephemeral service without PoW (last resort fallback)
     fn create_standard_ephemeral(
         &self,
@@ -375,25 +396,31 @@ impl TorService {
                     break;
                 }
                 Err(e) if attempt < 2 => {
-                    std::thread::sleep(std::time::Duration::from_millis(100 * (attempt as u64 + 1)));
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        100 * (attempt as u64 + 1),
+                    ));
                     continue;
                 }
                 Err(e) => return Err(OrchestratorError::TorConfigError(e.to_string())),
             }
         }
-        
-        let mut stream = stream.ok_or_else(|| OrchestratorError::TorConfigError("Failed to connect to Tor control port".to_string()))?;
+
+        let mut stream = stream.ok_or_else(|| {
+            OrchestratorError::TorConfigError("Failed to connect to Tor control port".to_string())
+        })?;
         self.authenticate(&mut stream, cookie_path)?;
-        
+
         let cmd = format!(
             "ADD_ONION NEW:ED25519-V3 Port=80,127.0.0.1:{} Flags=Detach",
             target_port
         );
-        
+
         if !POW_STATUS_LOGGED.swap(true, Ordering::Relaxed) {
-            tracing::info!("Using standard ephemeral services (Fortify's own DDoS protection active)");
+            tracing::info!(
+                "Using standard ephemeral services (Fortify's own DDoS protection active)"
+            );
         }
-        
+
         let response = self.run_command(&mut stream, &cmd)?;
         let service_id = Self::extract_service_id(&response)?;
         let private_key = Self::extract_private_key(&response)?;
@@ -412,26 +439,27 @@ impl TorService {
             TorBackend::ControlPort { addr, cookie_path } => (addr, cookie_path),
             _ => return Ok(()),
         };
-        
+
         // Check if this is a file-based mirror FIRST (before attempting ADD_ONION)
         // File-based mirrors have a torrc.inc file and hs directory from initial setup
         let torrc_inc_path = mirror.tor_data_dir.join("torrc.inc");
         let hs_dir = mirror.tor_data_dir.join("hs");
-        
+
         if torrc_inc_path.exists() && hs_dir.exists() {
             // This is a file-based mirror with PoW support - restore by appending to torrc
             // Read the torrc.inc content (which has the hidden service configuration)
-            let torrc_content = fs::read_to_string(&torrc_inc_path)
-                .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to read torrc.inc: {}", e)))?;
-            
+            let torrc_content = fs::read_to_string(&torrc_inc_path).map_err(|e| {
+                OrchestratorError::TorConfigError(format!("Failed to read torrc.inc: {}", e))
+            })?;
+
             // Append to main torrc (same as create_file_based_pow_service does)
             let main_torrc = self.base_data_dir.join("tor").join("torrc");
-            
+
             // Check if this mirror's config is already in torrc to avoid duplicates
             if main_torrc.exists() {
                 let existing = fs::read_to_string(&main_torrc).unwrap_or_default();
                 let mirror_marker = format!("# Fortify mirror: {}", mirror.id);
-                
+
                 if existing.contains(&mirror_marker) {
                     tracing::info!("Mirror {} already in torrc, skipping append", mirror.id);
                 } else {
@@ -439,33 +467,47 @@ impl TorService {
                     fs::OpenOptions::new()
                         .append(true)
                         .open(&main_torrc)
-                        .and_then(|mut file| std::io::Write::write_all(&mut file, torrc_content.as_bytes()))
-                        .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to append to torrc: {}", e)))?;
-                    
+                        .and_then(|mut file| {
+                            std::io::Write::write_all(&mut file, torrc_content.as_bytes())
+                        })
+                        .map_err(|e| {
+                            OrchestratorError::TorConfigError(format!(
+                                "Failed to append to torrc: {}",
+                                e
+                            ))
+                        })?;
+
                     tracing::debug!("Appended restored mirror {} to torrc", mirror.id);
                 }
             }
-            
+
             // Signal Tor to reload configuration
-            let mut stream = TcpStream::connect(addr)
-                .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to connect: {}", e)))?;
+            let mut stream = TcpStream::connect(addr).map_err(|e| {
+                OrchestratorError::TorConfigError(format!("Failed to connect: {}", e))
+            })?;
             stream.set_nodelay(true).ok();
             self.authenticate(&mut stream, cookie_path)?;
             let _ = self.run_command(&mut stream, "SIGNAL RELOAD");
-            
+
             mirror.file_based = true;
             mirror.pow_enabled = true;
             if let Some(onion) = &mirror.onion_address {
                 mirror.tor_service_id = Some(onion.replace(".onion", ""));
-                tracing::info!("Restored file-based mirror {} via torrc append: {}", mirror.id, onion);
+                tracing::info!(
+                    "Restored file-based mirror {} via torrc append: {}",
+                    mirror.id,
+                    onion
+                );
             }
-            
+
             return Ok(());
         }
 
         // Read private key for ephemeral service restoration
-        let private_key = fs::read_to_string(mirror.tor_data_dir.join("private_key"))
-            .map_err(|e| OrchestratorError::TorConfigError(format!("Missing private key: {}", e)))?;
+        let private_key =
+            fs::read_to_string(mirror.tor_data_dir.join("private_key")).map_err(|e| {
+                OrchestratorError::TorConfigError(format!("Missing private key: {}", e))
+            })?;
         let private_key = private_key.trim();
 
         let mut stream = TcpStream::connect(addr)
@@ -474,8 +516,8 @@ impl TorService {
 
         // Attempt to clean up potential existing service with same key (derived from hostname)
         if let Some(onion) = &mirror.onion_address {
-             let service_id = onion.replace(".onion", "");
-             let _ = self.run_command(&mut stream, &format!("DEL_ONION {}", service_id));
+            let service_id = onion.replace(".onion", "");
+            let _ = self.run_command(&mut stream, &format!("DEL_ONION {}", service_id));
         }
 
         // Try to restore with PoW first (Tor 0.4.9.2+)
@@ -483,13 +525,15 @@ impl TorService {
             "ADD_ONION {} Port=80,127.0.0.1:{} Flags=Detach,PoWDefensesEnabled",
             private_key, target_port
         );
-        
+
         let response = match self.run_command(&mut stream, &pow_cmd) {
             Ok(r) => {
                 mirror.pow_enabled = true;
                 r
             }
-            Err(OrchestratorError::TorConfigError(msg)) if msg.contains("512") || msg.contains("552") => {
+            Err(OrchestratorError::TorConfigError(msg))
+                if msg.contains("512") || msg.contains("552") =>
+            {
                 // PoW not supported via ADD_ONION, fall back to standard ADD_ONION without PoW
                 let cmd = format!(
                     "ADD_ONION {} Port=80,127.0.0.1:{} Flags=Detach",
@@ -498,23 +542,28 @@ impl TorService {
                 mirror.pow_enabled = false;
                 self.run_command(&mut stream, &cmd)?
             }
-            Err(OrchestratorError::TorConfigError(msg)) if msg.contains("550") && msg.to_lowercase().contains("collision") => {
+            Err(OrchestratorError::TorConfigError(msg))
+                if msg.contains("550") && msg.to_lowercase().contains("collision") =>
+            {
                 // Service already exists (collision), reusing.
                 tracing::debug!("Tor service already active, reusing existing onion");
-                
+
                 if let Some(onion) = &mirror.onion_address {
-                     let service_id = onion.replace(".onion", "");
-                     mirror.tor_service_id = Some(service_id);
-                     return Ok(());
+                    let service_id = onion.replace(".onion", "");
+                    mirror.tor_service_id = Some(service_id);
+                    return Ok(());
                 } else {
-                     return Err(OrchestratorError::TorConfigError(format!("Collision detected but no onion addr to reuse. Msg: {}", msg)));
+                    return Err(OrchestratorError::TorConfigError(format!(
+                        "Collision detected but no onion addr to reuse. Msg: {}",
+                        msg
+                    )));
                 }
             }
             Err(e) => return Err(e),
         };
         let service_id = Self::extract_service_id(&response)?;
         mirror.tor_service_id = Some(service_id);
-        
+
         Ok(())
     }
 
@@ -559,11 +608,11 @@ impl TorService {
 
             let code = trimmed.get(0..3).unwrap_or("");
             if code.starts_with('5') {
-               // Allow failure for DEL_ONION if service doesn't exist
-               if command.starts_with("DEL_ONION") && trimmed.contains("552") {
-                   return Ok(vec![trimmed]);
-               }
-               return Err(OrchestratorError::TorConfigError(trimmed));
+                // Allow failure for DEL_ONION if service doesn't exist
+                if command.starts_with("DEL_ONION") && trimmed.contains("552") {
+                    return Ok(vec![trimmed]);
+                }
+                return Err(OrchestratorError::TorConfigError(trimmed));
             }
 
             lines.push(trimmed.clone());
@@ -608,8 +657,7 @@ impl TorService {
             use std::os::unix::fs::PermissionsExt;
             // Write key with strict permissions
             let path = dir.join("private_key");
-            fs::write(&path, key)
-                .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
+            fs::write(&path, key).map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
             fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
                 .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
         }
@@ -618,11 +666,11 @@ impl TorService {
             fs::write(dir.join("private_key"), key)
                 .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
         }
-        
+
         // Remove the lock file now that both hostname and private_key are written
         let lock_file = dir.join(".creating");
         let _ = fs::remove_file(&lock_file); // Ignore errors - file might not exist
-        
+
         Ok(())
     }
 
@@ -642,32 +690,32 @@ impl TorService {
                 self.delete_onion(service_id)?;
             }
         }
-        
+
         // Clean up include directive from main torrc if this was a file-based service
         if mirror.file_based {
             self.remove_torrc_include(mirror);
         }
-        
+
         if mirror.tor_data_dir.exists() {
             fs::remove_dir_all(&mirror.tor_data_dir)
                 .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
         }
         Ok(())
     }
-    
+
     /// Remove the %include directive for a mirror from the main torrc file
     fn remove_torrc_include(&self, mirror: &Mirror) {
         // Use base_data_dir for torrc path
         let main_torrc = self.base_data_dir.join("tor").join("torrc");
-        
+
         if !main_torrc.exists() {
             return;
         }
-        
+
         let torrc_path = mirror.tor_data_dir.join("torrc.inc");
         let include_line = format!("%include {}", torrc_path.to_string_lossy());
         let comment_line = format!("# Fortify mirror: {}", mirror.id);
-        
+
         if let Ok(content) = fs::read_to_string(&main_torrc) {
             // Filter out lines related to this mirror
             let new_content: String = content
@@ -675,47 +723,54 @@ impl TorService {
                 .filter(|line| !line.contains(&include_line) && !line.contains(&comment_line))
                 .collect::<Vec<_>>()
                 .join("\n");
-            
+
             // Also remove any extra blank lines
             let cleaned = new_content.replace("\n\n\n", "\n\n");
-            
+
             if let Err(e) = fs::write(&main_torrc, cleaned) {
                 tracing::warn!("Failed to update torrc after mirror removal: {}", e);
             }
         }
     }
-    
+
     /// Generate vanity keys using mkp224o for mirror addresses
     /// Implements progressive prefix reduction: if generation times out,
     /// removes the last character from prefix and retries until success or min length reached
-    fn generate_vanity_keys(&self, hs_dir: &Path, prefix: &str, timeout: u64) -> std::result::Result<String, String> {
+    fn generate_vanity_keys(
+        &self,
+        hs_dir: &Path,
+        prefix: &str,
+        timeout: u64,
+    ) -> std::result::Result<String, String> {
         use std::process::Command;
-        
+
         // Check if mkp224o is available
         let which_result = Command::new("which").arg("mkp224o").output();
         if which_result.is_err() || !which_result.unwrap().status.success() {
             return Err("mkp224o not found in PATH".into());
         }
-        
+
         // Progressive prefix reduction - start with full prefix and shorten on timeout
         let mut current_prefix = prefix.to_string();
         let min_prefix_len = 1; // Minimum prefix length before giving up
-        
+
         while current_prefix.len() >= min_prefix_len {
             // Create temp directory for mkp224o output
-            let temp_dir = std::env::temp_dir().join(format!("fortify-vanity-{}-{}", 
-                std::process::id(), 
+            let temp_dir = std::env::temp_dir().join(format!(
+                "fortify-vanity-{}-{}",
+                std::process::id(),
                 rand::random::<u32>()
             ));
             fs::create_dir_all(&temp_dir)
                 .map_err(|e| format!("Failed to create temp dir: {}", e))?;
-            
+
             let timeout_arg = format!("{}s", timeout);
             tracing::debug!(
-                "Running mkp224o: prefix='{}', timeout={}s", 
-                current_prefix, timeout
+                "Running mkp224o: prefix='{}', timeout={}s",
+                current_prefix,
+                timeout
             );
-            
+
             // Run mkp224o with timeout
             let output = Command::new("timeout")
                 .arg(&timeout_arg)
@@ -727,21 +782,22 @@ impl TorService {
                 .arg(&current_prefix)
                 .output()
                 .map_err(|e| format!("Failed to run mkp224o: {}", e))?;
-            
+
             // Check for timeout (exit code 124)
             let _timed_out = output.status.code() == Some(124);
-            
+
             // Check if we got a result
             match self.find_vanity_key_dir(&temp_dir, &current_prefix) {
                 Ok(key_dir) => {
-                    let dir_name = key_dir.file_name()
+                    let dir_name = key_dir
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .ok_or("Invalid key directory name")?
                         .to_string();
-                    
+
                     // mkp224o creates directories like "prefix...xxx.onion", strip the suffix if present
                     let onion_name = dir_name.strip_suffix(".onion").unwrap_or(&dir_name);
-                    
+
                     // Copy key files to hidden service directory
                     for file in &["hs_ed25519_public_key", "hs_ed25519_secret_key", "hostname"] {
                         let src = key_dir.join(file);
@@ -749,40 +805,47 @@ impl TorService {
                         if src.exists() {
                             fs::copy(&src, &dst)
                                 .map_err(|e| format!("Failed to copy {}: {}", file, e))?;
-                            
+
                             // Set proper permissions
                             #[cfg(unix)]
                             {
                                 use std::os::unix::fs::PermissionsExt;
-                                let mode = if *file == "hs_ed25519_secret_key" { 0o600 } else { 0o644 };
+                                let mode = if *file == "hs_ed25519_secret_key" {
+                                    0o600
+                                } else {
+                                    0o644
+                                };
                                 fs::set_permissions(&dst, fs::Permissions::from_mode(mode)).ok();
                             }
                         }
                     }
-                    
+
                     // Cleanup temp directory
                     let _ = fs::remove_dir_all(&temp_dir);
-                    
+
                     let onion_address = format!("{}.onion", onion_name);
                     if current_prefix.len() < prefix.len() {
                         tracing::debug!("Used shortened prefix '{}' for vanity", current_prefix);
                     }
-                    
+
                     return Ok(onion_address);
                 }
                 Err(e) => {
                     // Cleanup temp directory
                     let _ = fs::remove_dir_all(&temp_dir);
-                    
+
                     // Check if it was actually a timeout (exit code 124) or mkp224o just didn't find anything
                     let was_timeout = output.status.code() == Some(124);
-                    
+
                     if was_timeout {
                         // Real timeout - try with shorter prefix
                         if current_prefix.len() > min_prefix_len {
                             let new_prefix = &current_prefix[..current_prefix.len() - 1];
-                            tracing::warn!("Vanity generation timed out for '{}', reducing to '{}'", 
-                                current_prefix, new_prefix);
+                            tracing::warn!(
+                                "Vanity generation timed out for '{}', reducing to '{}'",
+                                current_prefix,
+                                new_prefix
+                            );
                             current_prefix = new_prefix.to_string();
                         } else {
                             tracing::warn!("Vanity generation timed out at minimum prefix length");
@@ -790,12 +853,19 @@ impl TorService {
                         }
                     } else {
                         // mkp224o exited without finding a match (or we couldn't find the output)
-                        tracing::warn!("mkp224o exited (code {:?}) but no matching directory found: {}", 
-                            output.status.code(), e);
+                        tracing::warn!(
+                            "mkp224o exited (code {:?}) but no matching directory found: {}",
+                            output.status.code(),
+                            e
+                        );
                         // Try with shorter prefix since this one seems problematic
                         if current_prefix.len() > min_prefix_len {
                             let new_prefix = &current_prefix[..current_prefix.len() - 1];
-                            tracing::warn!("Reducing prefix from '{}' to '{}'", current_prefix, new_prefix);
+                            tracing::warn!(
+                                "Reducing prefix from '{}' to '{}'",
+                                current_prefix,
+                                new_prefix
+                            );
                             current_prefix = new_prefix.to_string();
                         } else {
                             break;
@@ -803,7 +873,7 @@ impl TorService {
                     }
                 }
             }
-            
+
             if !output.status.success() && output.status.code() != Some(124) {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 if !stderr.is_empty() {
@@ -811,13 +881,20 @@ impl TorService {
                 }
             }
         }
-        
+
         // All attempts failed
-        Err(format!("Vanity generation failed for all prefix lengths from '{}' to {}", prefix, min_prefix_len))
+        Err(format!(
+            "Vanity generation failed for all prefix lengths from '{}' to {}",
+            prefix, min_prefix_len
+        ))
     }
-    
+
     /// Find the directory containing the generated vanity key
-    fn find_vanity_key_dir(&self, temp_dir: &Path, prefix: &str) -> std::result::Result<PathBuf, String> {
+    fn find_vanity_key_dir(
+        &self,
+        temp_dir: &Path,
+        prefix: &str,
+    ) -> std::result::Result<PathBuf, String> {
         // Debug: list what mkp224o actually created
         let mut found_dirs: Vec<String> = Vec::new();
         if let Ok(entries) = fs::read_dir(temp_dir) {
@@ -830,8 +907,9 @@ impl TorService {
                         // mkp224o creates dirs like "sigil...xxx.onion" (62 chars = 56 + ".onion")
                         let name_lower = name.to_lowercase();
                         let prefix_lower = prefix.to_lowercase();
-                        if name_lower.starts_with(&prefix_lower) && 
-                           (name.len() == 56 || name.ends_with(".onion")) {
+                        if name_lower.starts_with(&prefix_lower)
+                            && (name.len() == 56 || name.ends_with(".onion"))
+                        {
                             tracing::info!("Found vanity key directory: {}", name);
                             return Ok(path);
                         }
@@ -840,7 +918,11 @@ impl TorService {
             }
         }
         tracing::debug!("Directories in temp_dir: {:?}", found_dirs);
-        Err(format!("No vanity key generated with prefix '{}' (found {} dirs)", prefix, found_dirs.len()))
+        Err(format!(
+            "No vanity key generated with prefix '{}' (found {} dirs)",
+            prefix,
+            found_dirs.len()
+        ))
     }
 
     fn delete_onion(&self, service_id: &str) -> Result<()> {

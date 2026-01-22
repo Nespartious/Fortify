@@ -9,7 +9,7 @@ use std::time::Duration;
 pub struct ControllerConfig {
     // Base data directory for all Fortify components
     pub data_dir: std::path::PathBuf,
-    
+
     // Service limits
     pub min_orchestrators: usize,
     pub max_orchestrators: usize,
@@ -47,20 +47,20 @@ pub struct ControllerConfig {
     pub secret_key: String,
     pub tor_control_addr: Option<String>,
     pub tor_cookie_path: Option<String>,
-    
+
     // Vanguards configuration
     pub vanguards_enabled: bool,
     pub vanguards_layer2_guards: u8,
     pub vanguards_layer3_guards: u8,
     pub vanguards_circ_max_age_hours: u32,
     pub vanguards_circ_max_megabytes: u32,
-    
+
     // Vanity address configuration for mirrors (forwarded to orchestrators)
     // Note: Nodes do NOT use vanity addresses - only mirrors do
     pub vanity_enabled: bool,
     pub vanity_prefix: String,
     pub vanity_timeout_seconds: u64,
-    
+
     // CAPTCHA configuration (forwarded to orchestrators)
     pub captcha_enabled: bool,
     pub captcha_pool_size: usize,
@@ -82,7 +82,7 @@ impl Default for ControllerConfig {
         } else {
             std::path::PathBuf::from("/tmp/fortify")
         };
-        
+
         Self {
             data_dir,
             min_orchestrators: 2,
@@ -133,7 +133,7 @@ impl Default for ControllerConfig {
 impl ControllerConfig {
     pub fn from_env() -> Result<Self> {
         let mut config = ControllerConfig::default();
-        
+
         // Base data directory - passed from TUI
         if let Ok(val) = env::var("FORTIFY_DATA_DIR") {
             config.data_dir = std::path::PathBuf::from(val);
@@ -230,7 +230,7 @@ impl ControllerConfig {
         if let Ok(val) = env::var("VANITY_TIMEOUT") {
             config.vanity_timeout_seconds = val.parse().unwrap_or(30);
         }
-        
+
         // CAPTCHA configuration
         if let Ok(val) = env::var("CAPTCHA_ENABLED") {
             config.captcha_enabled = val.parse().unwrap_or(true);

@@ -114,10 +114,11 @@ fn metrics_endpoint(node: Arc<Node>) -> Response<Body> {
 /// Extract session ID from request header or cookie
 fn extract_session_id(req: &Request<Body>) -> Option<String> {
     // Priority 1: X-Session-ID header (API/Programmatic)
-    if let Some(id) = req.headers()
+    if let Some(id) = req
+        .headers()
         .get("X-Session-ID")
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string()) 
+        .map(|s| s.to_string())
     {
         return Some(id);
     }

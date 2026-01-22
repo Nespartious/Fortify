@@ -216,13 +216,26 @@ pub fn captcha_css() -> &'static str {
 
 /// Generate HTML for BMP Text captcha (current/default)
 pub fn render_bmp_text_captcha(session_id: &str, captcha_id: &str, is_threat: bool) -> String {
-    render_bmp_text_captcha_with_message(session_id, captcha_id, is_threat, "▸ SECURE GATEWAY ACCESS ◂", "Type the characters shown below")
+    render_bmp_text_captcha_with_message(
+        session_id,
+        captcha_id,
+        is_threat,
+        "▸ SECURE GATEWAY ACCESS ◂",
+        "Type the characters shown below",
+    )
 }
 
-pub fn render_bmp_text_captcha_with_message(session_id: &str, captcha_id: &str, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_bmp_text_captcha_with_message(
+    session_id: &str,
+    captcha_id: &str,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -256,17 +269,40 @@ pub fn render_bmp_text_captcha_with_message(session_id: &str, captcha_id: &str, 
         </div>
     </div>
 </body>
-</html>"#, captcha_css(), panel_class, subtitle, instruction, captcha_id, session_id)
+</html>"#,
+        captcha_css(),
+        panel_class,
+        subtitle,
+        instruction,
+        captcha_id,
+        session_id
+    )
 }
 
 /// Generate HTML for Emoji Selection captcha
-pub fn render_emoji_captcha(session_id: &str, challenge: &EmojiChallenge, is_threat: bool) -> String {
-    render_emoji_captcha_with_message(session_id, challenge, is_threat, "▸ EMOJI VERIFICATION ◂", &format!("Select all <strong>{}</strong>", challenge.target_category))
+pub fn render_emoji_captcha(
+    session_id: &str,
+    challenge: &EmojiChallenge,
+    is_threat: bool,
+) -> String {
+    render_emoji_captcha_with_message(
+        session_id,
+        challenge,
+        is_threat,
+        "▸ EMOJI VERIFICATION ◂",
+        &format!("Select all <strong>{}</strong>", challenge.target_category),
+    )
 }
 
-pub fn render_emoji_captcha_with_message(session_id: &str, challenge: &EmojiChallenge, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_emoji_captcha_with_message(
+    session_id: &str,
+    challenge: &EmojiChallenge,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
+
     let mut options_html = String::new();
     for opt in &challenge.options {
         options_html.push_str(&format!(
@@ -274,8 +310,9 @@ pub fn render_emoji_captcha_with_message(session_id: &str, challenge: &EmojiChal
             opt.index, opt.emoji
         ));
     }
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -306,9 +343,9 @@ pub fn render_emoji_captcha_with_message(session_id: &str, challenge: &EmojiChal
         </div>
     </div>
 </body>
-</html>"#, 
-        captcha_css(), 
-        panel_class, 
+</html>"#,
+        captcha_css(),
+        panel_class,
         subtitle,
         instruction,
         options_html,
@@ -317,13 +354,32 @@ pub fn render_emoji_captcha_with_message(session_id: &str, challenge: &EmojiChal
 }
 
 /// Generate HTML for Direction/Arrow captcha
-pub fn render_direction_captcha(session_id: &str, challenge: &DirectionChallenge, is_threat: bool) -> String {
-    render_direction_captcha_with_message(session_id, challenge, is_threat, "▸ DIRECTION VERIFICATION ◂", &format!("Click the arrow pointing <strong>{}</strong>", challenge.target_direction.name()))
+pub fn render_direction_captcha(
+    session_id: &str,
+    challenge: &DirectionChallenge,
+    is_threat: bool,
+) -> String {
+    render_direction_captcha_with_message(
+        session_id,
+        challenge,
+        is_threat,
+        "▸ DIRECTION VERIFICATION ◂",
+        &format!(
+            "Click the arrow pointing <strong>{}</strong>",
+            challenge.target_direction.name()
+        ),
+    )
 }
 
-pub fn render_direction_captcha_with_message(session_id: &str, challenge: &DirectionChallenge, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_direction_captcha_with_message(
+    session_id: &str,
+    challenge: &DirectionChallenge,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
+
     let mut options_html = String::new();
     for opt in &challenge.options {
         options_html.push_str(&format!(
@@ -331,8 +387,9 @@ pub fn render_direction_captcha_with_message(session_id: &str, challenge: &Direc
             opt.index, opt.direction.arrow_char()
         ));
     }
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -365,9 +422,9 @@ pub fn render_direction_captcha_with_message(session_id: &str, challenge: &Direc
         </div>
     </div>
 </body>
-</html>"#, 
-        captcha_css(), 
-        panel_class, 
+</html>"#,
+        captcha_css(),
+        panel_class,
         subtitle,
         instruction,
         options_html,
@@ -376,23 +433,36 @@ pub fn render_direction_captcha_with_message(session_id: &str, challenge: &Direc
 }
 
 /// Generate HTML for Sequence captcha
-pub fn render_sequence_captcha(session_id: &str, challenge: &SequenceChallenge, is_threat: bool) -> String {
-    render_sequence_captcha_with_message(session_id, challenge, is_threat, "▸ SEQUENCE VERIFICATION ◂", &challenge.question_text)
+pub fn render_sequence_captcha(
+    session_id: &str,
+    challenge: &SequenceChallenge,
+    is_threat: bool,
+) -> String {
+    render_sequence_captcha_with_message(
+        session_id,
+        challenge,
+        is_threat,
+        "▸ SEQUENCE VERIFICATION ◂",
+        &challenge.question_text,
+    )
 }
 
-pub fn render_sequence_captcha_with_message(session_id: &str, challenge: &SequenceChallenge, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_sequence_captcha_with_message(
+    session_id: &str,
+    challenge: &SequenceChallenge,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
+
     // Build sequence display
     let mut sequence_html = String::new();
     for item in &challenge.sequence_display {
-        sequence_html.push_str(&format!(
-            r#"<span class="sequence-item">{}</span>"#,
-            item
-        ));
+        sequence_html.push_str(&format!(r#"<span class="sequence-item">{}</span>"#, item));
     }
     sequence_html.push_str(r#"<span class="sequence-item question">?</span>"#);
-    
+
     // Build options
     let mut options_html = String::new();
     for opt in &challenge.options {
@@ -401,8 +471,9 @@ pub fn render_sequence_captcha_with_message(session_id: &str, challenge: &Sequen
             opt.index, opt.display
         ));
     }
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -437,9 +508,9 @@ pub fn render_sequence_captcha_with_message(session_id: &str, challenge: &Sequen
         </div>
     </div>
 </body>
-</html>"#, 
-        captcha_css(), 
-        panel_class, 
+</html>"#,
+        captcha_css(),
+        panel_class,
         subtitle,
         instruction,
         sequence_html,
@@ -449,20 +520,37 @@ pub fn render_sequence_captcha_with_message(session_id: &str, challenge: &Sequen
 }
 
 /// Generate HTML for Word Unscramble captcha
-pub fn render_word_unscramble_captcha(session_id: &str, challenge: &WordUnscrambleChallenge, is_threat: bool) -> String {
-    render_word_unscramble_captcha_with_message(session_id, challenge, is_threat, "▸ WORD VERIFICATION ◂", "Unscramble the letters to form a word")
+pub fn render_word_unscramble_captcha(
+    session_id: &str,
+    challenge: &WordUnscrambleChallenge,
+    is_threat: bool,
+) -> String {
+    render_word_unscramble_captcha_with_message(
+        session_id,
+        challenge,
+        is_threat,
+        "▸ WORD VERIFICATION ◂",
+        "Unscramble the letters to form a word",
+    )
 }
 
-pub fn render_word_unscramble_captcha_with_message(session_id: &str, challenge: &WordUnscrambleChallenge, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_word_unscramble_captcha_with_message(
+    session_id: &str,
+    challenge: &WordUnscrambleChallenge,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
+
     let hint_html = if let Some(ref hint) = challenge.hint {
         format!(r#"<div class="hint">{}</div>"#, hint)
     } else {
         String::new()
     };
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -496,9 +584,9 @@ pub fn render_word_unscramble_captcha_with_message(session_id: &str, challenge: 
         </div>
     </div>
 </body>
-</html>"#, 
-        captcha_css(), 
-        panel_class, 
+</html>"#,
+        captcha_css(),
+        panel_class,
         subtitle,
         instruction,
         challenge.scrambled,
@@ -508,13 +596,32 @@ pub fn render_word_unscramble_captcha_with_message(session_id: &str, challenge: 
 }
 
 /// Generate HTML for Image Rotation captcha
-pub fn render_image_rotation_captcha(session_id: &str, challenge: &ImageRotationChallenge, is_threat: bool) -> String {
-    render_image_rotation_captcha_with_message(session_id, challenge, is_threat, "▸ ROTATION VERIFICATION ◂", &format!("Click the <strong>{}</strong> that is upright", challenge.shape_name))
+pub fn render_image_rotation_captcha(
+    session_id: &str,
+    challenge: &ImageRotationChallenge,
+    is_threat: bool,
+) -> String {
+    render_image_rotation_captcha_with_message(
+        session_id,
+        challenge,
+        is_threat,
+        "▸ ROTATION VERIFICATION ◂",
+        &format!(
+            "Click the <strong>{}</strong> that is upright",
+            challenge.shape_name
+        ),
+    )
 }
 
-pub fn render_image_rotation_captcha_with_message(session_id: &str, challenge: &ImageRotationChallenge, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_image_rotation_captcha_with_message(
+    session_id: &str,
+    challenge: &ImageRotationChallenge,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
+
     let mut options_html = String::new();
     for opt in &challenge.options {
         // CSS transform for rotation
@@ -529,8 +636,9 @@ pub fn render_image_rotation_captcha_with_message(session_id: &str, challenge: &
             opt.index, transform, challenge.shape_char
         ));
     }
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -561,9 +669,9 @@ pub fn render_image_rotation_captcha_with_message(session_id: &str, challenge: &
         </div>
     </div>
 </body>
-</html>"#, 
-        captcha_css(), 
-        panel_class, 
+</html>"#,
+        captcha_css(),
+        panel_class,
         subtitle,
         instruction,
         options_html,
@@ -572,13 +680,29 @@ pub fn render_image_rotation_captcha_with_message(session_id: &str, challenge: &
 }
 
 /// Generate HTML for Silhouette captcha
-pub fn render_silhouette_captcha(session_id: &str, challenge: &SilhouetteChallenge, is_threat: bool) -> String {
-    render_silhouette_captcha_with_message(session_id, challenge, is_threat, "▸ SILHOUETTE VERIFICATION ◂", &format!("What does this silhouette show?"))
+pub fn render_silhouette_captcha(
+    session_id: &str,
+    challenge: &SilhouetteChallenge,
+    is_threat: bool,
+) -> String {
+    render_silhouette_captcha_with_message(
+        session_id,
+        challenge,
+        is_threat,
+        "▸ SILHOUETTE VERIFICATION ◂",
+        &format!("What does this silhouette show?"),
+    )
 }
 
-pub fn render_silhouette_captcha_with_message(session_id: &str, challenge: &SilhouetteChallenge, is_threat: bool, subtitle: &str, instruction: &str) -> String {
+pub fn render_silhouette_captcha_with_message(
+    session_id: &str,
+    challenge: &SilhouetteChallenge,
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+) -> String {
     let panel_class = if is_threat { "panel threat" } else { "panel" };
-    
+
     let mut options_html = String::new();
     for opt in &challenge.options {
         options_html.push_str(&format!(
@@ -586,8 +710,9 @@ pub fn render_silhouette_captcha_with_message(session_id: &str, challenge: &Silh
             opt.index, opt.description
         ));
     }
-    
-    format!(r#"<!DOCTYPE html>
+
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -620,9 +745,9 @@ pub fn render_silhouette_captcha_with_message(session_id: &str, challenge: &Silh
         </div>
     </div>
 </body>
-</html>"#, 
-        captcha_css(), 
-        panel_class, 
+</html>"#,
+        captcha_css(),
+        panel_class,
         subtitle,
         instruction,
         challenge.silhouette_symbol,
@@ -650,34 +775,65 @@ pub fn reason_message(reason: Option<&str>) -> (&'static str, &'static str) {
     }
 }
 
-pub fn render_captcha_page(session_id: &str, captcha_id: &str, data: &CaptchaData, is_threat: bool) -> String {
+pub fn render_captcha_page(
+    session_id: &str,
+    captcha_id: &str,
+    data: &CaptchaData,
+    is_threat: bool,
+) -> String {
     render_captcha_page_with_reason(session_id, captcha_id, data, is_threat, None)
 }
 
-pub fn render_captcha_page_with_reason(session_id: &str, captcha_id: &str, data: &CaptchaData, is_threat: bool, reason: Option<&str>) -> String {
+pub fn render_captcha_page_with_reason(
+    session_id: &str,
+    captcha_id: &str,
+    data: &CaptchaData,
+    is_threat: bool,
+    reason: Option<&str>,
+) -> String {
     let (title, message) = reason_message(reason);
     match data {
-        CaptchaData::BmpText { .. } => render_bmp_text_captcha_with_message(session_id, captcha_id, is_threat, title, message),
+        CaptchaData::BmpText { .. } => {
+            render_bmp_text_captcha_with_message(session_id, captcha_id, is_threat, title, message)
+        }
         CaptchaData::Emoji(challenge) => {
             // For emoji CAPTCHA, we need the specific instruction, not the generic message
             let instruction = format!("Select all <strong>{}</strong>", challenge.target_category);
             render_emoji_captcha_with_message(session_id, challenge, is_threat, title, &instruction)
-        },
+        }
         CaptchaData::Direction(challenge) => {
             // For direction CAPTCHA, we need the specific instruction
-            let instruction = format!("Click the arrow pointing <strong>{}</strong>", challenge.target_direction.name());
-            render_direction_captcha_with_message(session_id, challenge, is_threat, title, &instruction)
-        },
-        CaptchaData::Sequence(challenge) => render_sequence_captcha_with_message(session_id, challenge, is_threat, title, message),
-        CaptchaData::WordUnscramble(challenge) => render_word_unscramble_captcha_with_message(session_id, challenge, is_threat, title, message),
-        CaptchaData::ImageRotation(challenge) => render_image_rotation_captcha_with_message(session_id, challenge, is_threat, title, message),
-        CaptchaData::Silhouette(challenge) => render_silhouette_captcha_with_message(session_id, challenge, is_threat, title, message),
+            let instruction = format!(
+                "Click the arrow pointing <strong>{}</strong>",
+                challenge.target_direction.name()
+            );
+            render_direction_captcha_with_message(
+                session_id,
+                challenge,
+                is_threat,
+                title,
+                &instruction,
+            )
+        }
+        CaptchaData::Sequence(challenge) => {
+            render_sequence_captcha_with_message(session_id, challenge, is_threat, title, message)
+        }
+        CaptchaData::WordUnscramble(challenge) => render_word_unscramble_captcha_with_message(
+            session_id, challenge, is_threat, title, message,
+        ),
+        CaptchaData::ImageRotation(challenge) => render_image_rotation_captcha_with_message(
+            session_id, challenge, is_threat, title, message,
+        ),
+        CaptchaData::Silhouette(challenge) => {
+            render_silhouette_captcha_with_message(session_id, challenge, is_threat, title, message)
+        }
     }
 }
 
 /// CSS for countdown timer
 pub fn timer_css(timeout_seconds: u64) -> String {
-    format!(r#"
+    format!(
+        r#"
     .timer-container {{
         text-align: center;
         margin-bottom: 15px;
@@ -779,12 +935,15 @@ pub fn timer_css(timeout_seconds: u64) -> String {
         color: #fff;
         box-shadow: 0 0 20px var(--neon-pink);
     }}
-    "#, timeout_seconds)
+    "#,
+        timeout_seconds
+    )
 }
 
 /// Generate the timer HTML component
 pub fn timer_html(timeout_seconds: u64) -> String {
-    format!(r#"
+    format!(
+        r#"
     <div class="timer-container">
         <div class="timer-bar">
             <div class="timer-progress"></div>
@@ -799,30 +958,59 @@ pub fn timer_html(timeout_seconds: u64) -> String {
             <a href="" class="refresh-btn">⟳ REFRESH</a>
         </div>
     </div>
-    "#, timeout_seconds)
+    "#,
+        timeout_seconds
+    )
 }
 
 /// Render captcha page with countdown timer
-pub fn render_captcha_page_with_timer(session_id: &str, captcha_id: &str, data: &CaptchaData, is_threat: bool, timeout_seconds: u64) -> String {
-    render_captcha_page_with_timer_and_reason(session_id, captcha_id, data, is_threat, timeout_seconds, None)
+pub fn render_captcha_page_with_timer(
+    session_id: &str,
+    captcha_id: &str,
+    data: &CaptchaData,
+    is_threat: bool,
+    timeout_seconds: u64,
+) -> String {
+    render_captcha_page_with_timer_and_reason(
+        session_id,
+        captcha_id,
+        data,
+        is_threat,
+        timeout_seconds,
+        None,
+    )
 }
 
-pub fn render_captcha_page_with_timer_and_reason(session_id: &str, captcha_id: &str, data: &CaptchaData, is_threat: bool, timeout_seconds: u64, reason: Option<&str>) -> String {
-    let base_page = render_captcha_page_with_reason(session_id, captcha_id, data, is_threat, reason);
-    
+pub fn render_captcha_page_with_timer_and_reason(
+    session_id: &str,
+    captcha_id: &str,
+    data: &CaptchaData,
+    is_threat: bool,
+    timeout_seconds: u64,
+    reason: Option<&str>,
+) -> String {
+    let base_page =
+        render_captcha_page_with_reason(session_id, captcha_id, data, is_threat, reason);
+
     // Inject timer CSS into the <style> block and timer HTML after the panel opening
     let timer_css_content = timer_css(timeout_seconds);
     let timer_html_content = timer_html(timeout_seconds);
-    
+
     // Insert timer CSS before </style>
     let with_css = base_page.replace("</style>", &format!("{}</style>", timer_css_content));
-    
+
     // Insert timer HTML after the panel div opening (after class="panel...">)
     // We'll insert after the subtitle div for better placement
     let with_timer = if with_css.contains("<div class=\"subtitle\">") {
         // Insert after subtitle closing tag
-        with_css.replacen("</div>\n    <div class=\"instruction\">", 
-            &format!("</div>\n    {}\n    <div class=\"instruction\">", timer_html_content), 1)
+        with_css.replacen(
+            "</div>\n    <div class=\"instruction\">",
+            &format!(
+                "</div>\n    {}\n    <div class=\"instruction\">",
+                timer_html_content
+            ),
+            1,
+        )
     } else if with_css.contains("</h1>") {
         // Fallback: insert after h1
         with_css.replacen("</h1>", &format!("</h1>\n    {}", timer_html_content), 1)
@@ -830,6 +1018,6 @@ pub fn render_captcha_page_with_timer_and_reason(session_id: &str, captcha_id: &
         // Last resort: just append to beginning of body
         with_css
     };
-    
+
     with_timer
 }

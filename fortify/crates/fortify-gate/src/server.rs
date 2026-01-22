@@ -1,7 +1,9 @@
+use crate::captcha_html::{
+    render_captcha_page_with_timer, render_captcha_page_with_timer_and_reason,
+};
+use crate::captcha_types::CaptchaData;
 use crate::Gate;
 use crate::GateError;
-use crate::captcha_types::CaptchaData;
-use crate::captcha_html::{render_captcha_page_with_timer_and_reason, render_captcha_page_with_timer};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use std::convert::Infallible;
@@ -50,35 +52,37 @@ async fn handle_request(
 ) -> Result<Response<Body>, Infallible> {
     let path = req.uri().path();
     let method = req.method();
-    
+
     // Extract cookies for session tracking
-    let cookies = req.headers()
+    let cookies = req
+        .headers()
         .get("Cookie")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    
+
     // Check if user was demoted (has the demoted cookie from node redirect)
     let was_demoted = cookies.contains("fortify_demoted=1");
-    
+
     // Extract existing session ID for preservation (even if demoted)
     // This is stored when user is demoted so we can track them across re-verifications
-    let existing_session_id = cookies.split(';')
+    let existing_session_id = cookies
+        .split(';')
         .map(|c| c.trim())
         .find(|c| c.starts_with("fortify_original_session="))
         .and_then(|c| c.strip_prefix("fortify_original_session="))
         .map(String::from);
-    
+
     // Also check for pending session from HTTP proxy (new visitors assigned session before reaching Gate)
-    let pending_session_id = cookies.split(';')
+    let pending_session_id = cookies
+        .split(';')
         .map(|c| c.trim())
         .find(|c| c.starts_with("fortify_pending_session="))
         .and_then(|c| c.strip_prefix("fortify_pending_session="))
         .map(String::from);
-    
+
     // Use existing session > pending session > generate new
-    let session_id_for_captcha = existing_session_id.clone()
-        .or(pending_session_id);
-    
+    let session_id_for_captcha = existing_session_id.clone().or(pending_session_id);
+
     // Cookie compliance check - filter out bots that don't handle cookies
     let has_cookie_test = cookies.contains("fortify_test=1");
     let query = req.uri().query().unwrap_or("");
@@ -93,16 +97,19 @@ async fn handle_request(
                 return Ok(Response::builder()
                     .status(StatusCode::FOUND)
                     .header("Location", "/Fortify?check=1")
-                    .header("Set-Cookie", "fortify_test=1; Path=/; Max-Age=60; HttpOnly; SameSite=Lax")
+                    .header(
+                        "Set-Cookie",
+                        "fortify_test=1; Path=/; Max-Age=60; HttpOnly; SameSite=Lax",
+                    )
                     .body(Body::empty())
                     .unwrap());
             }
-            
+
             if is_cookie_check && !has_cookie_test {
                 // Came back without cookie - likely a bot
                 return Ok(serve_cookie_blocked_page());
             }
-            
+
             if was_demoted {
                 // Demoted user: show "hold position" friendly message, clear demoted cookie
                 serve_demoted_page(gate)
@@ -110,36 +117,40 @@ async fn handle_request(
                 // New user: show the landing page (gate.html)
                 serve_landing_page(gate)
             }
-        },
-        
+        }
+
         // The captcha challenge page - accessible by all
         // Pass the session ID from cookie (pending or existing) to preserve identity
         (&Method::GET, "/Fortify/Portcullis") => {
             // Parse query parameters for reason
-            let reason = query.split('&')
+            let reason = query
+                .split('&')
                 .find(|p| p.starts_with("reason="))
                 .and_then(|p| p.strip_prefix("reason="));
             serve_captcha_challenge(gate, session_id_for_captcha, reason)
-        },
-        
+        }
+
         // Dynamic routes
         (&Method::POST, "/gate/verify") => verify_submission(req, gate).await,
         (&Method::POST, "/gate/upgrade-token") => handle_token_upgrade(req, gate).await,
         (&Method::GET, p) if p.starts_with("/gate/captcha/") => serve_captcha_image(p, gate).await,
-        
+
         // Admin API: update captcha configuration
-        (&Method::POST, "/gate/admin/captcha-config") => handle_update_captcha_config(req, gate).await,
-        
+        (&Method::POST, "/gate/admin/captcha-config") => {
+            handle_update_captcha_config(req, gate).await
+        }
+
         // Catch-all: redirect everyone to /Fortify landing
         // Also clear any stale session cookie to prevent redirect loops
-        _ => {
-            Response::builder()
-                .status(StatusCode::FOUND)
-                .header("Location", "/Fortify")
-                .header("Set-Cookie", "fortify_session=; Path=/; Max-Age=0; HttpOnly")
-                .body(Body::empty())
-                .unwrap()
-        }
+        _ => Response::builder()
+            .status(StatusCode::FOUND)
+            .header("Location", "/Fortify")
+            .header(
+                "Set-Cookie",
+                "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+            )
+            .body(Body::empty())
+            .unwrap(),
     };
 
     Ok(response)
@@ -351,12 +362,15 @@ fn serve_landing_page(_gate: Arc<Gate>) -> Response<Body> {
     </div>
 </body>
 </html>"###;
-    
+
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
         // Clear any stale fortify_session cookie to break redirect loops after service restart
-        .header("Set-Cookie", "fortify_session=; Path=/; Max-Age=0; HttpOnly")
+        .header(
+            "Set-Cookie",
+            "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+        )
         .body(Body::from(html))
         .unwrap()
 }
@@ -365,15 +379,15 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
     // Demoted users get an inline captcha on the same page
     // This reduces the friction vs requiring another click
     // Use HARD difficulty for demoted users as they've exhibited suspicious behavior
-    
+
     // Create a verification session with harder difficulty
     let session_id = uuid::Uuid::new_v4().to_string();
-    
+
     // Get captcha type from config - use threat captcha type for demoted users
     let config = gate.get_captcha_config();
     let captcha_type = config.get_captcha_type(true); // threat mode
     let timeout_seconds = gate.get_verification_timeout();
-    
+
     // Force create with hard difficulty for demoted users using configured captcha type
     let captcha_state = match gate.create_verification_with_type(
         session_id.clone(),
@@ -385,13 +399,18 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
         Err(_) => {
             // Fallback: use default captcha type but still set threat mode for 2 captchas
             match gate.create_verification_with_type(
-                session_id.clone(), 
-                crate::CaptchaType::BmpText,  // Default type
+                session_id.clone(),
+                crate::CaptchaType::BmpText, // Default type
                 crate::CaptchaDifficulty::Hard,
-                true,  // CRITICAL: still threat mode for 2 captchas
+                true, // CRITICAL: still threat mode for 2 captchas
             ) {
                 Ok(s) => s,
-                Err(e) => return error_response(StatusCode::SERVICE_UNAVAILABLE, &format!("Gate busy: {}", e)),
+                Err(e) => {
+                    return error_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        &format!("Gate busy: {}", e),
+                    )
+                }
             }
         }
     };
@@ -401,13 +420,16 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
         return Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/html")
-            .header("Set-Cookie", "fortify_demoted=; Path=/; Max-Age=0; HttpOnly")
+            .header(
+                "Set-Cookie",
+                "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
+            )
             .body(Body::from(render_captcha_page_with_timer(
-                &captcha_state.session_id, 
-                &captcha_state.session_id, 
-                captcha_data, 
+                &captcha_state.session_id,
+                &captcha_state.session_id,
+                captcha_data,
                 true, // threat styling
-                timeout_seconds
+                timeout_seconds,
             )))
             .unwrap();
     }
@@ -415,7 +437,8 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
     let captcha_id = &captcha_state.session_id;
 
     // Amber warning theme with inline captcha - harder difficulty for demoted users
-    let html = format!(r###"<!DOCTYPE html>
+    let html = format!(
+        r###"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -606,32 +629,49 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
         </div>
     </div>
 </body>
-</html>"###, captcha_id = captcha_id);
-    
+</html>"###,
+        captcha_id = captcha_id
+    );
+
     // Build response - clear demoted cookie after showing the page
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
-        .header("Set-Cookie", "fortify_demoted=; Path=/; Max-Age=0; HttpOnly")
+        .header(
+            "Set-Cookie",
+            "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
+        )
         .body(Body::from(html))
         .unwrap();
-    response.headers_mut().append("Set-Cookie", "fortify_session=; Path=/; Max-Age=0; HttpOnly".parse().unwrap());
+    response.headers_mut().append(
+        "Set-Cookie",
+        "fortify_session=; Path=/; Max-Age=0; HttpOnly"
+            .parse()
+            .unwrap(),
+    );
     response
 }
 
 /// Render a page for the second captcha challenge (for demoted/threat sessions)
 /// Uses the existing captcha page renderer and adds a progress indicator
-fn render_second_captcha_page(session_id: &str, captcha_id: &str, captcha_data: &CaptchaData, captchas_solved: u8, timeout_seconds: u64) -> String {
+fn render_second_captcha_page(
+    session_id: &str,
+    captcha_id: &str,
+    captcha_data: &CaptchaData,
+    captchas_solved: u8,
+    timeout_seconds: u64,
+) -> String {
     // Use the existing captcha page renderer (with threat mode styling)
-    let base_page = render_captcha_page_with_timer(session_id, captcha_id, captcha_data, true, timeout_seconds);
-    
+    let base_page =
+        render_captcha_page_with_timer(session_id, captcha_id, captcha_data, true, timeout_seconds);
+
     // Add a progress badge to indicate this is the second captcha
     let step = captchas_solved + 1;
     let progress_badge = format!(
         r#"<div style="display: inline-block; background: #e4bc5e; color: #141417; padding: 6px 16px; font-size: 0.75rem; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 15px; border-radius: 2px;">Step {} of 2</div>"#,
         step
     );
-    
+
     // Insert the progress badge after the opening panel div
     // Look for the title element and insert before it
     if base_page.contains("<h1") {
@@ -641,11 +681,15 @@ fn render_second_captcha_page(session_id: &str, captcha_id: &str, captcha_data: 
     }
 }
 
-fn serve_captcha_challenge(gate: Arc<Gate>, existing_session_id: Option<String>, reason: Option<&str>) -> Response<Body> {
+fn serve_captcha_challenge(
+    gate: Arc<Gate>,
+    existing_session_id: Option<String>,
+    reason: Option<&str>,
+) -> Response<Body> {
     // Preserve existing session ID if available (demoted user re-verifying)
     // This keeps the same session ID so we can continue tracking them
     let session_id = existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    
+
     // Check if this is an existing threat session - if so, don't overwrite it!
     // This prevents demoted users who navigate to /Fortify/Portcullis from losing their threat status
     if let Some(existing_state) = gate.get_verification_state(&session_id) {
@@ -653,7 +697,14 @@ fn serve_captcha_challenge(gate: Arc<Gate>, existing_session_id: Option<String>,
             // This is an existing threat session - return the existing captcha page
             let timeout_seconds = gate.get_verification_timeout();
             if let Some(ref captcha_data) = existing_state.captcha_data {
-                let html = render_captcha_page_with_timer_and_reason(&session_id, &session_id, captcha_data, true, timeout_seconds, reason);
+                let html = render_captcha_page_with_timer_and_reason(
+                    &session_id,
+                    &session_id,
+                    captcha_data,
+                    true,
+                    timeout_seconds,
+                    reason,
+                );
                 return Response::builder()
                     .status(StatusCode::OK)
                     .header("Content-Type", "text/html")
@@ -662,12 +713,12 @@ fn serve_captcha_challenge(gate: Arc<Gate>, existing_session_id: Option<String>,
             }
         }
     }
-    
+
     // Get captcha type from configuration (supports random cycling)
     let config = gate.get_captcha_config();
     let captcha_type = config.get_captcha_type(false); // not threat mode
     let timeout_seconds = gate.get_verification_timeout();
-    
+
     let state = match gate.create_verification_with_type(
         session_id.clone(),
         captcha_type,
@@ -675,16 +726,29 @@ fn serve_captcha_challenge(gate: Arc<Gate>, existing_session_id: Option<String>,
         false, // not threat mode
     ) {
         Ok(s) => s,
-        Err(e) => return error_response(StatusCode::SERVICE_UNAVAILABLE, &format!("Gate busy: {}", e)),
+        Err(e) => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &format!("Gate busy: {}", e),
+            )
+        }
     };
 
     // Render the appropriate captcha page based on type
     let html = if let Some(ref captcha_data) = state.captcha_data {
-        render_captcha_page_with_timer_and_reason(&state.session_id, &state.session_id, captcha_data, false, timeout_seconds, reason)
+        render_captcha_page_with_timer_and_reason(
+            &state.session_id,
+            &state.session_id,
+            captcha_data,
+            false,
+            timeout_seconds,
+            reason,
+        )
     } else {
         // Fallback to legacy BMP text captcha page if no captcha_data
         let captcha_id = &state.session_id;
-        format!(r#"<!DOCTYPE html>
+        format!(
+            r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -862,7 +926,9 @@ fn serve_captcha_challenge(gate: Arc<Gate>, existing_session_id: Option<String>,
         </div>
     </div>
 </body>
-</html>"#, captcha_id, session_id)
+</html>"#,
+            captcha_id, session_id
+        )
     };
 
     Response::builder()
@@ -873,10 +939,7 @@ fn serve_captcha_challenge(gate: Arc<Gate>, existing_session_id: Option<String>,
 }
 
 /// Handle verification token upgrade to session token
-async fn handle_token_upgrade(
-    mut req: Request<Body>,
-    gate: Arc<Gate>,
-) -> Response<Body> {
+async fn handle_token_upgrade(mut req: Request<Body>, gate: Arc<Gate>) -> Response<Body> {
     // Parse JSON body
     let body_bytes = match hyper::body::to_bytes(req.body_mut()).await {
         Ok(b) => b,
@@ -909,13 +972,17 @@ async fn handle_token_upgrade(
     }
 
     // Validate User-Agent matches
-    let current_ua = req.headers()
+    let current_ua = req
+        .headers()
         .get("user-agent")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("unknown");
 
     if !verification_token.validate_user_agent(current_ua) {
-        tracing::warn!("User-Agent mismatch for token {}", verification_token.user_id);
+        tracing::warn!(
+            "User-Agent mismatch for token {}",
+            verification_token.user_id
+        );
         return error_response(StatusCode::UNAUTHORIZED, "User-Agent mismatch");
     }
 
@@ -924,16 +991,25 @@ async fn handle_token_upgrade(
     match cache.get_mut(&verification_token.user_id) {
         Some(cached_token) => {
             if cached_token.uses_remaining == 0 {
-                tracing::warn!("Verification token already used: {}", verification_token.user_id);
+                tracing::warn!(
+                    "Verification token already used: {}",
+                    verification_token.user_id
+                );
                 return error_response(StatusCode::UNAUTHORIZED, "Token already used");
             }
 
             // Mark token as used
             cached_token.mark_used();
-            tracing::info!("Upgraded verification token {} to session", verification_token.user_id);
+            tracing::info!(
+                "Upgraded verification token {} to session",
+                verification_token.user_id
+            );
         }
         None => {
-            tracing::warn!("Verification token not found in cache: {}", verification_token.user_id);
+            tracing::warn!(
+                "Verification token not found in cache: {}",
+                verification_token.user_id
+            );
             return error_response(StatusCode::UNAUTHORIZED, "Token not found");
         }
     }
@@ -941,12 +1017,15 @@ async fn handle_token_upgrade(
 
     // Create session token (long-lived, Verified tier) with User-Agent binding
     let session_token = gate.create_session_token(
-        &verification_token.user_id, 
+        &verification_token.user_id,
         fortify_core::TrustTier::Verified,
-        current_ua
+        current_ua,
     );
 
-    tracing::info!("Created session token for user {}, tier: Verified", verification_token.user_id);
+    tracing::info!(
+        "Created session token for user {}, tier: Verified",
+        verification_token.user_id
+    );
 
     // Return session token as JSON
     let response_json = serde_json::json!({
@@ -994,43 +1073,51 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<Body> {
     match gate.get_captcha_challenge(id) {
         Some(challenge) => {
             if !challenge.image_data.is_empty() {
-                 Response::builder()
+                Response::builder()
                     .status(StatusCode::OK)
                     .header("Content-Type", "image/bmp")
                     .header("Cache-Control", "no-store, no-cache, must-revalidate")
                     .body(Body::from(challenge.image_data.clone()))
                     .unwrap()
             } else {
-                 not_found()
+                not_found()
             }
-        },
+        }
         None => not_found(),
     }
 }
 
-async fn verify_submission(
-    mut req: Request<Body>,
-    gate: Arc<Gate>,
-) -> Response<Body> {
+async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<Body> {
     let body_bytes = match hyper::body::to_bytes(req.body_mut()).await {
         Ok(b) => b,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid body"),
     };
 
-    let params: std::collections::HashMap<String, String> = form_urlencoded::parse(&body_bytes)
-        .into_owned()
-        .collect();
+    let params: std::collections::HashMap<String, String> =
+        form_urlencoded::parse(&body_bytes).into_owned().collect();
 
     let session_id = match params.get("session_id") {
         Some(s) => s,
-        None => return styled_error_response(StatusCode::BAD_REQUEST, "Missing session_id", "Session ID not found in form submission"),
+        None => {
+            return styled_error_response(
+                StatusCode::BAD_REQUEST,
+                "Missing session_id",
+                "Session ID not found in form submission",
+            )
+        }
     };
 
-    // Check for captcha answer - new captchas use 'selection' for button clicks, 
+    // Check for captcha answer - new captchas use 'selection' for button clicks,
     // while text-based captchas use 'captcha'
     let captcha = match params.get("captcha").or_else(|| params.get("selection")) {
         Some(c) => c,
-        None => return styled_error_response(StatusCode::BAD_REQUEST, "Missing Response", "No captcha answer was submitted. Please try again."),
+        None => {
+            return styled_error_response(
+                StatusCode::BAD_REQUEST,
+                "Missing Response",
+                "No captcha answer was submitted. Please try again.",
+            )
+        }
     };
 
     let pow_nonce = match params.get("pow_nonce") {
@@ -1043,7 +1130,9 @@ async fn verify_submission(
     let captchas_remaining = gate.get_captchas_remaining(session_id);
     tracing::info!(
         "Verify submission for session {}: is_threat={}, captchas_remaining={}",
-        session_id, is_threat, captchas_remaining
+        session_id,
+        is_threat,
+        captchas_remaining
     );
 
     // Verify
@@ -1051,35 +1140,43 @@ async fn verify_submission(
         Ok(_token) => {
             // Success - Issue verification token instead of session token
             // Get User-Agent for binding
-            let user_agent = req.headers()
+            let user_agent = req
+                .headers()
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("unknown");
-            
+
             // Create verification token (60s TTL, single-use)
             let verification_token = crate::VerificationToken::new(user_agent);
             let token_string = verification_token.encode();
-            
+
             tracing::info!(
                 "Issued verification token {} for User-Agent: {} (session will upgrade on first use)",
                 verification_token.user_id, user_agent
             );
-            
+
             // Store token in cache to track usage
             {
                 let mut cache = crate::VERIFICATION_TOKEN_CACHE.lock().unwrap();
-                cache.insert(verification_token.user_id.clone(), verification_token.clone());
+                cache.insert(
+                    verification_token.user_id.clone(),
+                    verification_token.clone(),
+                );
             }
-            
+
             // Success page with verification token cookie
             // Random delay between 7-13 seconds for auto-redirect
             let delay_secs = {
                 use std::time::{SystemTime, UNIX_EPOCH};
-                let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .subsec_nanos();
                 7 + (seed % 7) // 7 to 13 seconds
             };
-            
-            let html = format!(r###"<!DOCTYPE html>>
+
+            let html = format!(
+                r###"<!DOCTYPE html>>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1307,15 +1404,29 @@ async fn verify_submission(
         </div>
     </div>
 </body>
-</html>"###, delay = delay_secs);
+</html>"###,
+                delay = delay_secs
+            );
 
-             // Set verification token cookie (60s expiry, single-use)
-             // User must use this token on their next request to get a session token
-             Response::builder()
+            // Set verification token cookie (60s expiry, single-use)
+            // User must use this token on their next request to get a session token
+            Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/html")
-                .header("Set-Cookie", format!("fortify_verification={}; Path=/; HttpOnly; Max-Age=60; SameSite=Strict", token_string))
-                .header("Set-Cookie", format!("fortify_original_session={}; Path=/; HttpOnly; Max-Age=86400", session_id))
+                .header(
+                    "Set-Cookie",
+                    format!(
+                        "fortify_verification={}; Path=/; HttpOnly; Max-Age=60; SameSite=Strict",
+                        token_string
+                    ),
+                )
+                .header(
+                    "Set-Cookie",
+                    format!(
+                        "fortify_original_session={}; Path=/; HttpOnly; Max-Age=86400",
+                        session_id
+                    ),
+                )
                 .body(Body::from(html))
                 .unwrap()
         }
@@ -1324,7 +1435,7 @@ async fn verify_submission(
             // Get the threat captcha type from config and generate new captcha
             let captcha_config = gate.get_captcha_config();
             let second_captcha_type = captcha_config.threat_captcha_type;
-            
+
             // Regenerate captcha with the threat type for second challenge
             if let Err(_) = gate.regenerate_captcha(session_id, second_captcha_type) {
                 return styled_error_response(
@@ -1333,16 +1444,22 @@ async fn verify_submission(
                     "Failed to generate second verification challenge. Please start over.",
                 );
             }
-            
+
             // Get the new captcha data and render the page
             let state = gate.get_verification_state(session_id);
             let captchas_solved = gate.get_captchas_solved(session_id);
             let timeout_seconds = gate.get_verification_timeout();
-            
+
             let html = match state {
                 Some(s) => {
                     if let Some(ref captcha_data) = s.captcha_data {
-                        render_second_captcha_page(session_id, &s.session_id, captcha_data, captchas_solved, timeout_seconds)
+                        render_second_captcha_page(
+                            session_id,
+                            &s.session_id,
+                            captcha_data,
+                            captchas_solved,
+                            timeout_seconds,
+                        )
                     } else {
                         return styled_error_response(
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1350,7 +1467,7 @@ async fn verify_submission(
                             "Failed to generate second captcha. Please start over.",
                         );
                     }
-                },
+                }
                 None => {
                     return styled_error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1359,7 +1476,7 @@ async fn verify_submission(
                     );
                 }
             };
-            
+
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/html")
@@ -1370,9 +1487,10 @@ async fn verify_submission(
             // Get failed attempts and calculate delay
             let failed_attempts = gate.get_failed_attempts(session_id);
             let delay_seconds = gate.calculate_delay(failed_attempts);
-            
+
             // Generate themed error page with retry functionality and progressive delay
-            let html = format!(r###"<!DOCTYPE html>
+            let html = format!(
+                r###"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1470,7 +1588,7 @@ async fn verify_submission(
                 delay_display = if delay_seconds > 0 { "block" } else { "none" },
                 attempts = failed_attempts
             );
-            
+
             Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .header("Content-Type", "text/html")
@@ -1481,27 +1599,24 @@ async fn verify_submission(
 }
 
 /// Handle admin request to update captcha configuration
-async fn handle_update_captcha_config(
-    mut req: Request<Body>,
-    gate: Arc<Gate>,
-) -> Response<Body> {
+async fn handle_update_captcha_config(mut req: Request<Body>, gate: Arc<Gate>) -> Response<Body> {
     // Read request body
     let body_bytes = match hyper::body::to_bytes(req.body_mut()).await {
         Ok(b) => b,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid body"),
     };
-    
+
     // Parse JSON body into CaptchaConfig
     let config: crate::captcha_types::CaptchaConfig = match serde_json::from_slice(&body_bytes) {
         Ok(c) => c,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e)),
     };
-    
+
     // Update the gate's captcha config
     gate.update_captcha_config(config);
-    
+
     tracing::info!("Gate captcha config updated via admin API");
-    
+
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
@@ -1525,7 +1640,8 @@ fn error_response(status: StatusCode, msg: &str) -> Response<Body> {
 
 /// Styled error response matching Fortify theme
 fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Response<Body> {
-    let html = format!(r###"<!DOCTYPE html>
+    let html = format!(
+        r###"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1665,7 +1781,11 @@ fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Resp
         </div>
     </div>
 </body>
-</html>"###, title = title, status_code = status.as_u16(), message = message);
+</html>"###,
+        title = title,
+        status_code = status.as_u16(),
+        message = message
+    );
 
     Response::builder()
         .status(status)

@@ -17,7 +17,9 @@ mod ui;
 mod widgets;
 
 pub use app::App;
-pub use config::{FortifyConfig, BrandingConfig, CaptchaConfig, ThresholdConfig};
-pub use deployment::{DeploymentState, DeploymentManager};
+pub use config::{BrandingConfig, CaptchaConfig, FortifyConfig, ThresholdConfig};
+pub use deployment::{DeploymentManager, DeploymentState};
 pub use logging::LogEntry;
-pub use mirror_health::{MirrorHealthChecker, MirrorHealthTracker, MirrorHealth, MirrorHealthResult, MirrorHealthSummary};
+pub use mirror_health::{
+    MirrorHealth, MirrorHealthChecker, MirrorHealthResult, MirrorHealthSummary, MirrorHealthTracker,
+};

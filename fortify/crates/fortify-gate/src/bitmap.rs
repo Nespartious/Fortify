@@ -25,33 +25,33 @@ pub fn generate_bmp(text: &str) -> Vec<u8> {
 pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -> Vec<u8> {
     let width = 300u32;
     let height = 100u32;
-    
+
     // BMP lines must be padded to multiples of 4 bytes
     let row_size_bytes = width * 3;
     let padding = (4 - (row_size_bytes % 4)) % 4;
     let stride = row_size_bytes + padding;
-    
+
     let mut pixel_data = vec![0u8; (stride * height) as usize];
     let mut rng = rand::thread_rng();
-    
+
     // Fill background with slight variation based on difficulty
     let (base_r, base_g, base_b) = (0x15, 0x05, 0x20);
     for y in 0..height {
         for x in 0..width {
             let idx = (y * stride + x * 3) as usize;
             pixel_data[idx] = base_b;
-            pixel_data[idx+1] = base_g;
-            pixel_data[idx+2] = base_r;
+            pixel_data[idx + 1] = base_g;
+            pixel_data[idx + 2] = base_r;
         }
     }
-    
+
     // Add noise based on difficulty
     let noise_density = match difficulty {
         CaptchaDifficulty::Easy => 0,
         CaptchaDifficulty::Medium => 800,
         CaptchaDifficulty::Hard => 2500,
     };
-    
+
     // Add random noise pixels
     for _ in 0..noise_density {
         let x = rng.gen_range(0..width);
@@ -60,15 +60,15 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
         if idx + 2 < pixel_data.len() {
             // Random colors in theme palette
             let colors = [
-                (0x00, 0x80, 0x00),  // Dark green
-                (0x80, 0x00, 0x80),  // Purple
-                (0x00, 0x40, 0x00),  // Darker green
-                (0x40, 0x20, 0x40),  // Dark magenta
+                (0x00, 0x80, 0x00), // Dark green
+                (0x80, 0x00, 0x80), // Purple
+                (0x00, 0x40, 0x00), // Darker green
+                (0x40, 0x20, 0x40), // Dark magenta
             ];
             let (r, g, b) = colors[rng.gen_range(0..colors.len())];
             pixel_data[idx] = b;
-            pixel_data[idx+1] = g;
-            pixel_data[idx+2] = r;
+            pixel_data[idx + 1] = g;
+            pixel_data[idx + 2] = r;
         }
     }
 
@@ -78,18 +78,28 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
         CaptchaDifficulty::Medium => 4u32,
         CaptchaDifficulty::Hard => 3u32,
     };
-    
+
     let char_pixel_width = 5 * scale;
     let char_pixel_height = 7 * scale;
     let spacing = scale;
-    
+
     let total_chars = text.len() as u32;
-    if total_chars == 0 { return vec![]; }
+    if total_chars == 0 {
+        return vec![];
+    }
 
     let total_text_width = (total_chars * char_pixel_width) + ((total_chars - 1) * spacing);
-    
-    let start_x = if total_text_width < width { (width - total_text_width) / 2 } else { 0 };
-    let start_y = if char_pixel_height < height { (height - char_pixel_height) / 2 } else { 0 };
+
+    let start_x = if total_text_width < width {
+        (width - total_text_width) / 2
+    } else {
+        0
+    };
+    let start_y = if char_pixel_height < height {
+        (height - char_pixel_height) / 2
+    } else {
+        0
+    };
 
     for (i, c) in text.chars().enumerate() {
         // Add per-character vertical offset for hard difficulty (wavy effect)
@@ -98,30 +108,30 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
             CaptchaDifficulty::Medium => rng.gen_range(-2..=2),
             CaptchaDifficulty::Hard => rng.gen_range(-6..=6),
         };
-        
+
         let char_x = start_x + (i as u32 * (char_pixel_width + spacing));
         let char_y = (start_y as i32 + y_offset).max(0) as u32;
-        
+
         draw_char_bottom_up(
-            &mut pixel_data, 
-            width, 
-            height, 
-            stride, 
-            c, 
-            char_x, 
+            &mut pixel_data,
+            width,
+            height,
+            stride,
+            c,
+            char_x,
             char_y.min(height - char_pixel_height),
             scale,
             difficulty,
         );
     }
-    
+
     // Add interference lines for medium/hard
     let line_count = match difficulty {
         CaptchaDifficulty::Easy => 0,
         CaptchaDifficulty::Medium => 2,
         CaptchaDifficulty::Hard => 5,
     };
-    
+
     for _ in 0..line_count {
         draw_interference_line(&mut pixel_data, width, height, stride, &mut rng);
     }
@@ -153,25 +163,31 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
     bmp
 }
 
-fn draw_interference_line(pixels: &mut [u8], width: u32, height: u32, stride: u32, rng: &mut impl Rng) {
+fn draw_interference_line(
+    pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    stride: u32,
+    rng: &mut impl Rng,
+) {
     // Draw a semi-random line across the image
-    let y_start = rng.gen_range(20..height-20);
-    let y_end = rng.gen_range(20..height-20);
-    
+    let y_start = rng.gen_range(20..height - 20);
+    let y_end = rng.gen_range(20..height - 20);
+
     for x in 0..width {
         // Linear interpolation for y position
         let progress = x as f32 / width as f32;
         let y = (y_start as f32 + (y_end as f32 - y_start as f32) * progress) as u32;
-        
+
         // Add some waviness
         let wave = ((x as f32 * 0.1).sin() * 3.0) as i32;
         let final_y = (y as i32 + wave).max(0).min(height as i32 - 1) as u32;
-        
+
         let buffer_y = height - 1 - final_y;
         let idx = (buffer_y * stride + x * 3) as usize;
         if idx + 2 < pixels.len() {
             // Dark purple line
-            pixels[idx] = 0x60;     // B
+            pixels[idx] = 0x60; // B
             pixels[idx + 1] = 0x20; // G
             pixels[idx + 2] = 0x60; // R
         }
@@ -179,19 +195,19 @@ fn draw_interference_line(pixels: &mut [u8], width: u32, height: u32, stride: u3
 }
 
 fn draw_char_bottom_up(
-    pixels: &mut [u8], 
-    width: u32, 
-    height: u32, 
-    stride: u32, 
-    c: char, 
-    x: u32, 
-    y: u32, 
+    pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    stride: u32,
+    c: char,
+    x: u32,
+    y: u32,
     scale: u32,
     difficulty: CaptchaDifficulty,
 ) {
     let font_data = get_font_bitmap(c);
     let mut rng = rand::thread_rng();
-    
+
     for row in 0..7 {
         let row_byte = font_data[row];
         for col in 0..5 {
@@ -200,14 +216,16 @@ fn draw_char_bottom_up(
                     for dx in 0..scale {
                         let px = x + (col as u32 * scale) + dx;
                         let py = y + (row as u32 * scale) + dy;
-                        
-                        if px >= width || py >= height { continue; }
-                        
+
+                        if px >= width || py >= height {
+                            continue;
+                        }
+
                         // Skip some pixels randomly on hard difficulty (erosion effect)
                         if difficulty == CaptchaDifficulty::Hard && rng.gen_ratio(1, 10) {
                             continue;
                         }
-                        
+
                         let buffer_y = height - 1 - py;
                         let idx = (buffer_y * stride + px * 3) as usize;
                         if idx + 2 < pixels.len() {
