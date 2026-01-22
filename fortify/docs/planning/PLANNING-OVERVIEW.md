@@ -66,9 +66,9 @@ fortify/docs/
 
 | Sprint | Document | Est. Time | Status |
 |--------|----------|-----------|--------|
-| CI/CD Quality | [03-CI-QUALITY-SPRINT.md](../Dev_Progress/03-CI-QUALITY-SPRINT.md) | 1-2 days | ⬜ Not Started |
+| CI/CD Quality | [03-CI-QUALITY-SPRINT.md](../Dev_Progress/03-CI-QUALITY-SPRINT.md) | 1-2 days | 🟡 In Progress (workflows fixed) |
 | TUI Completion | [04-TUI-COMPLETION-SPRINT.md](../Dev_Progress/04-TUI-COMPLETION-SPRINT.md) | 3-5 days | ⬜ Not Started |
-| Clippy Fixes | [CLIPPY-SPRINT.md](../Dev_Progress/CLIPPY-SPRINT.md) | 3-4 hours | ⬜ Not Started |
+| Clippy Fixes | [CLIPPY-SPRINT.md](../Dev_Progress/CLIPPY-SPRINT.md) | 3-4 hours | ✅ Completed 2026-01-22 |
 
 ### 🟢 Lower Priority (Future)
 
@@ -121,7 +121,7 @@ fortify/docs/
 
 ### Current Blockers
 - 2 Beta Blockers (security hardening)
-- ~300 clippy lints suppressed in CI
+- 461 `.unwrap()` calls need audit (Panic Sprint)
 - TUI 60% incomplete
 
 ---

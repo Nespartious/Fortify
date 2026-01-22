@@ -3,7 +3,7 @@
 **Sprint ID:** QA-001  
 **Priority:** 🟡 MEDIUM  
 **Estimated Effort:** 1-2 days  
-**Status:** ⬜ Not Started  
+**Status:** 🟡 In Progress (Workflows Fixed 2026-01-22)  
 **Created:** January 22, 2026
 
 ---
@@ -59,7 +59,7 @@ on:
 ---
 
 ### Task 2: Remove Clippy Lint Suppressions
-**Status:** ⬜ Not Started  
+**Status:** ✅ Completed 2026-01-22 (see CLIPPY-SPRINT.md)  
 **Estimated Time:** 2-4 hours (depends on lint count)
 
 **File:** `.github/workflows/ci.yml`
