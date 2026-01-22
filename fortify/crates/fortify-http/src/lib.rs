@@ -231,6 +231,10 @@ pub enum ProxyError {
     BackendUnavailable,
     #[error("Request forbidden")]
     Forbidden,
+    #[error("Backend request timed out after {0}s")]
+    BackendTimeout(u64),
+    #[error("Gate request timed out after {0}s")]
+    GateTimeout(u64),
 }
 
 pub type Result<T> = std::result::Result<T, ProxyError>;
@@ -544,7 +548,16 @@ impl HttpProxy {
                     )
                 });
 
-                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                // Configure HTTP/1.1 with defensive timeouts to prevent slow-loris attacks
+                // header_read_timeout: Max time to receive all request headers (30s for Tor latency)
+                // max_buf_size: Limit header size to prevent memory exhaustion (16KB)
+                let result = http1::Builder::new()
+                    .header_read_timeout(Duration::from_secs(30))
+                    .max_buf_size(16 * 1024)
+                    .serve_connection(io, service)
+                    .await;
+                    
+                if let Err(err) = result {
                     tracing::error!("Error serving connection: {:?}", err);
                 }
             });
@@ -1498,8 +1511,14 @@ async fn upgrade_verification_token(
     user_agent: &str,
     gate_address: &str,
 ) -> Option<String> {
-    // Use reqwest for simpler HTTP client in this case
-    let client = reqwest::Client::new();
+    // Timeout for Gate token upgrade (10s - this should be fast)
+    const TOKEN_UPGRADE_TIMEOUT_SECS: u64 = 10;
+    
+    // Use reqwest with explicit timeout for token upgrade
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(TOKEN_UPGRADE_TIMEOUT_SECS))
+        .build()
+        .ok()?;
 
     // Build request body
     let body_json = serde_json::json!({
@@ -1556,6 +1575,10 @@ async fn proxy_to_gate(
     gate_address: &str,
     gate_path: &str,
 ) -> std::result::Result<Response<BoxBody>, String> {
+    // Timeout for Gate requests (30s - Gate should respond quickly)
+    const GATE_REQUEST_TIMEOUT_SECS: u64 = 30;
+    const GATE_CONNECT_TIMEOUT_SECS: u64 = 5;
+    
     // Build full Gate URL preserving query string if present
     let query = req
         .uri()
@@ -1565,8 +1588,12 @@ async fn proxy_to_gate(
     let gate_url = format!("{}{}{}", gate_address, gate_path, query);
     tracing::debug!("Proxying to Gate: {}", gate_url);
 
-    // Use reqwest for simpler HTTP proxying
-    let client = reqwest::Client::new();
+    // Use reqwest for simpler HTTP proxying with explicit timeouts
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(GATE_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(GATE_REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     // Build the request
     let method = match req.method().as_str() {
@@ -1674,8 +1701,21 @@ async fn route_to_backend(
         .unwrap_or("/");
     let backend_url = format!("{}{}", node.address, path_and_query);
 
-    // Use reqwest for backend proxying
-    let client = reqwest::Client::new();
+    // Backend request timeouts (60s total, 10s connect)
+    // These protect against slow-loris attacks on backend connections
+    const BACKEND_TIMEOUT_SECS: u64 = 60;
+    const BACKEND_CONNECT_TIMEOUT_SECS: u64 = 10;
+    
+    // Use reqwest for backend proxying with explicit timeouts
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(BACKEND_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(BACKEND_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| {
+            node.release();
+            admin_state.release_node_connection(&node_id);
+            format!("Failed to build HTTP client: {}", e)
+        })?;
 
     let method = match req.method().as_str() {
         "GET" => reqwest::Method::GET,

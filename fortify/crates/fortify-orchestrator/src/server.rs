@@ -10,7 +10,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 
 /// Type alias for response body
@@ -96,7 +96,15 @@ impl OrchestratorServer {
                     handle_request(req, gate_address.clone(), Arc::clone(&orchestrator))
                 });
 
-                if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
+                // Configure HTTP/1.1 with timeouts for internal API server
+                // Shorter timeouts acceptable since this is local communication
+                let result = http1::Builder::new()
+                    .header_read_timeout(Duration::from_secs(10))
+                    .max_buf_size(16 * 1024)
+                    .serve_connection(io, service)
+                    .await;
+                    
+                if let Err(e) = result {
                     tracing::debug!("Connection error: {}", e);
                 }
             });

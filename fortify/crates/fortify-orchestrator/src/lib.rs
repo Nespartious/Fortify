@@ -27,6 +27,10 @@ pub enum OrchestratorError {
     NoHealthyMirrors,
     #[error("Failed to spawn replacement")]
     SpawnFailed,
+    #[error("Tor control command timed out after {0}s")]
+    TorTimeout(u64),
+    #[error("Tor control connection failed: {0}")]
+    TorConnectionFailed(String),
 }
 
 /// Extended mirror info for admin panel
