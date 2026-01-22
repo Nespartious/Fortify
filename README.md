@@ -3,7 +3,7 @@
 > **Advanced DDoS Protection for Tor Hidden Services**
 
 [![Status](https://img.shields.io/badge/Status-Alpha-orange)](https://github.com/Nespartious/Fortify)
-[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![Attack Tested](https://img.shields.io/badge/Attack%20Tested-65K%2B%20requests-green)](docs/Dev_Progress/Alpha_Review.md)
 
@@ -153,9 +153,9 @@ NODE_MODE="threat" ./target/release/fortify-node
 ⚠️ **Note:** Manual deployment is complex and error-prone. Use the TUI for reliable deployment.
 
 **Requirements:**
-- **Rust:** 1.75 or higher
+- **Rust:** 1.88 or higher (MSRV)
 - **Tor:** Latest stable version
-- **OS:** Linux (tested on Ubuntu 22.04)
+- **OS:** Linux (tested on Ubuntu 22.04/24.04)
 - **RAM:** 2GB minimum (4GB recommended for production)
 - **Disk:** 1GB for binaries + logs
 

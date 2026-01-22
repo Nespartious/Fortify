@@ -135,7 +135,7 @@ Each task has:
 - [ ] Git working directory clean (commit checkpoint)
 
 ### Tools Needed:
-- [ ] Rust/Cargo (1.75+)
+- [ ] Rust/Cargo (1.88+)
 - [ ] cargo-clippy
 - [ ] cargo-fuzz (for panic audit)
 - [ ] Python 3 (for slow-loris test)
