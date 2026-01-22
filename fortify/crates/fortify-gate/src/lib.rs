@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use fortify_core::{SessionManager, SessionToken, TrustTier};
+use fortify_core::{safe_lock, SessionManager, SessionToken, TrustTier};
 use hmac::{Hmac, Mac};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -377,7 +377,7 @@ impl RateLimiter {
             .unwrap()
             .as_secs();
 
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = safe_lock(&self.requests);
         let timestamps = requests.entry(key.to_string()).or_default();
 
         // Remove old timestamps outside window
@@ -397,7 +397,7 @@ impl RateLimiter {
             .unwrap()
             .as_secs();
 
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = safe_lock(&self.requests);
         requests.retain(|_, timestamps| {
             timestamps.retain(|&t| (now - t) <= self.window_seconds);
             !timestamps.is_empty()
@@ -445,12 +445,12 @@ impl Gate {
 
     /// Get the current captcha configuration
     pub fn get_captcha_config(&self) -> CaptchaConfig {
-        self.captcha_config.lock().unwrap().clone()
+        safe_lock(&self.captcha_config).clone()
     }
 
     /// Update the captcha configuration
     pub fn update_captcha_config(&self, config: CaptchaConfig) {
-        *self.captcha_config.lock().unwrap() = config;
+        *safe_lock(&self.captcha_config) = config;
     }
 
     /// Get verification timeout in seconds
@@ -503,7 +503,7 @@ impl Gate {
             return Err(GateError::RateLimitExceeded);
         }
 
-        let mut states = self.verification_states.lock().unwrap();
+        let mut states = safe_lock(&self.verification_states);
 
         // Check if we're at capacity
         if states.len() >= self.max_concurrent {
@@ -575,12 +575,12 @@ impl Gate {
     }
 
     pub fn get_verification_state(&self, session_id: &str) -> Option<VerificationState> {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         states.get(session_id).cloned()
     }
 
     pub fn get_captcha_challenge(&self, session_id: &str) -> Option<CaptchaChallenge> {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         states
             .get(session_id)
             .and_then(|s| s.captcha_challenge.clone())
@@ -607,7 +607,7 @@ impl Gate {
 
     /// Verify captcha solution - handles all captcha types
     pub fn verify_captcha(&self, session_id: &str, solution: &str) -> Result<()> {
-        let mut states = self.verification_states.lock().unwrap();
+        let mut states = safe_lock(&self.verification_states);
         let state = states
             .get_mut(session_id)
             .ok_or(GateError::ChallengeNotFound)?;
@@ -695,7 +695,7 @@ impl Gate {
 
     /// Get the number of failed attempts for a session
     pub fn get_failed_attempts(&self, session_id: &str) -> u32 {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         states
             .get(session_id)
             .and_then(|s| s.captcha_challenge.as_ref())
@@ -705,7 +705,7 @@ impl Gate {
 
     /// Get the number of captchas remaining for a session
     pub fn get_captchas_remaining(&self, session_id: &str) -> u8 {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         states
             .get(session_id)
             .map(|s| s.captchas_remaining)
@@ -714,7 +714,7 @@ impl Gate {
 
     /// Get the number of captchas already solved for a session
     pub fn get_captchas_solved(&self, session_id: &str) -> u8 {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         states
             .get(session_id)
             .map(|s| s.captchas_solved)
@@ -723,13 +723,13 @@ impl Gate {
 
     /// Check if session is a threat/demoted session
     pub fn is_threat_session(&self, session_id: &str) -> bool {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         states.get(session_id).map(|s| s.is_threat).unwrap_or(false)
     }
 
     /// Generate a new captcha for an existing session (used for second captcha in threat verification)
     pub fn regenerate_captcha(&self, session_id: &str, captcha_type: CaptchaType) -> Result<()> {
-        let mut states = self.verification_states.lock().unwrap();
+        let mut states = safe_lock(&self.verification_states);
         let state = states
             .get_mut(session_id)
             .ok_or(GateError::ChallengeNotFound)?;
@@ -805,7 +805,7 @@ impl Gate {
 
     /// Verify proof-of-work solution
     pub fn verify_pow(&self, session_id: &str, _nonce: u64) -> Result<()> {
-        let mut states = self.verification_states.lock().unwrap();
+        let mut states = safe_lock(&self.verification_states);
         let state = states
             .get_mut(session_id)
             .ok_or(GateError::ChallengeNotFound)?;
@@ -831,7 +831,7 @@ impl Gate {
 
     /// Issue token after successful verification
     pub fn issue_token(&self, session_id: &str, secret_key: &[u8]) -> Result<SessionToken> {
-        let states = self.verification_states.lock().unwrap();
+        let states = safe_lock(&self.verification_states);
         let state = states.get(session_id).ok_or(GateError::ChallengeNotFound)?;
 
         if !state.is_complete() {
@@ -883,7 +883,7 @@ impl Gate {
             .unwrap()
             .as_secs();
 
-        let mut states = self.verification_states.lock().unwrap();
+        let mut states = safe_lock(&self.verification_states);
         states.retain(|_, state| (now - state.created_at) <= self.verification_timeout);
 
         self.rate_limiter.cleanup();
@@ -898,7 +898,7 @@ pub async fn start_token_cleanup_task() {
         let mut interval = interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
-            let mut cache = VERIFICATION_TOKEN_CACHE.lock().unwrap();
+            let mut cache = safe_lock(&VERIFICATION_TOKEN_CACHE);
             let now = Utc::now();
             let before_count = cache.len();
             cache.retain(|_, token| now < token.expires_at);

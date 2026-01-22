@@ -1,3 +1,4 @@
+use fortify_core::safe_lock;
 use crate::captcha_html::{
     render_captcha_page_with_timer, render_captcha_page_with_timer_and_reason,
 };
@@ -1009,7 +1010,7 @@ async fn handle_token_upgrade(req: Request<Incoming>, gate: Arc<Gate>) -> Respon
     }
 
     // Check if token already used (atomic check-and-mark)
-    let mut cache = crate::VERIFICATION_TOKEN_CACHE.lock().unwrap();
+    let mut cache = safe_lock(&crate::VERIFICATION_TOKEN_CACHE);
     match cache.get_mut(&verification_token.user_id) {
         Some(cached_token) => {
             if cached_token.uses_remaining == 0 {
@@ -1178,7 +1179,7 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
 
             // Store token in cache to track usage
             {
-                let mut cache = crate::VERIFICATION_TOKEN_CACHE.lock().unwrap();
+                let mut cache = safe_lock(&crate::VERIFICATION_TOKEN_CACHE);
                 cache.insert(
                     verification_token.user_id.clone(),
                     verification_token.clone(),

@@ -1,5 +1,7 @@
 use bytes::Bytes;
-use fortify_core::{RequestMeta, SessionBehavior, SessionManager, SessionToken, TrustTier};
+use fortify_core::{
+    safe_lock, safe_write, RequestMeta, SessionBehavior, SessionManager, SessionToken, TrustTier,
+};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -59,7 +61,7 @@ impl GlobalRateLimiter {
     /// Uses circuit_id (from session or fingerprint) instead of shared Tor IP
     /// Returns true if request is allowed, false if rate limited
     fn check_and_record(&self, circuit_id: &str, tier: TrustTier) -> bool {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = safe_lock(&self.requests);
         let now = Instant::now();
         let window_start = now - self.window;
 
@@ -88,7 +90,7 @@ impl GlobalRateLimiter {
 
     /// Record active circuit for attack pattern detection
     fn record_active_circuit(&self, circuit_id: &str, now: Instant) {
-        let mut circuits = self.active_circuits.lock().unwrap();
+        let mut circuits = safe_lock(&self.active_circuits);
         let window_start = now - self.window;
 
         // Clean old entries
@@ -105,7 +107,7 @@ impl GlobalRateLimiter {
     /// Used for attack detection (>100 circuits = probable DDoS)
     #[allow(dead_code)]
     fn get_active_circuit_count(&self) -> usize {
-        let circuits = self.active_circuits.lock().unwrap();
+        let circuits = safe_lock(&self.active_circuits);
         let all_circuits: Vec<String> = circuits.values().flatten().cloned().collect();
         let mut unique: Vec<String> = all_circuits.clone();
         unique.sort();
@@ -117,7 +119,7 @@ impl GlobalRateLimiter {
     /// Used after successful CAPTCHA verification to prevent infinite CAPTCHA loops
     /// This allows verified users to browse immediately after proving they're human
     fn clear_circuit_quota(&self, circuit_id: &str) {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = safe_lock(&self.requests);
         if requests.remove(circuit_id).is_some() {
             tracing::info!("Cleared rate limit quota for circuit: {}", circuit_id);
         }
@@ -126,7 +128,7 @@ impl GlobalRateLimiter {
     /// Cleanup old entries to prevent unbounded memory growth
     #[allow(dead_code)]
     fn cleanup(&self) {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = safe_lock(&self.requests);
         let now = Instant::now();
         let window_start = now - self.window;
 
@@ -173,7 +175,7 @@ fn detect_session_cloning(session_id: &str) -> bool {
         .unwrap()
         .as_millis() as u64;
 
-    let mut timestamps = SESSION_TIMESTAMPS.lock().unwrap();
+    let mut timestamps = safe_lock(&SESSION_TIMESTAMPS);
 
     if let Some(&last_request) = timestamps.get(session_id) {
         let time_diff = now_millis.saturating_sub(last_request);
@@ -283,12 +285,12 @@ impl BackendNode {
     }
 
     pub fn can_accept(&self) -> bool {
-        let active = self.active_connections.lock().unwrap();
+        let active = safe_lock(&self.active_connections);
         *active < self.max_connections
     }
 
     pub fn acquire(&self) -> bool {
-        let mut active = self.active_connections.lock().unwrap();
+        let mut active = safe_lock(&self.active_connections);
         if *active < self.max_connections {
             *active += 1;
             true
@@ -298,7 +300,7 @@ impl BackendNode {
     }
 
     pub fn release(&self) {
-        let mut active = self.active_connections.lock().unwrap();
+        let mut active = safe_lock(&self.active_connections);
         if *active > 0 {
             *active -= 1;
         }
@@ -571,12 +573,12 @@ impl HttpProxy {
 
     /// Get current metrics
     pub fn get_metrics(&self) -> Metrics {
-        self.metrics.lock().unwrap().clone()
+        safe_lock(&self.metrics).clone()
     }
 
     /// Get active request count
     pub fn active_requests(&self) -> usize {
-        *self.active_requests.lock().unwrap()
+        *safe_lock(&self.active_requests)
     }
 }
 
@@ -709,7 +711,7 @@ async fn handle_proxy_request(
                 trust_tier_for_ratelimit,
                 limit
             );
-            let mut m = metrics.lock().unwrap();
+            let mut m = safe_lock(&metrics);
             m.record_denied();
 
             // Redirect to gate with CAPTCHA challenge (RELATIVE path to preserve onion address)
@@ -737,15 +739,15 @@ async fn handle_proxy_request(
 
     // Record request
     {
-        let mut m = metrics.lock().unwrap();
+        let mut m = safe_lock(&metrics);
         m.record_request();
     }
 
     // Check backpressure
     {
-        let active = *active_requests.lock().unwrap();
+        let active = *safe_lock(&active_requests);
         if active >= max_concurrent {
-            let mut m = metrics.lock().unwrap();
+            let mut m = safe_lock(&metrics);
             m.record_denied();
             return Ok(error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -756,7 +758,7 @@ async fn handle_proxy_request(
 
     // Acquire request slot
     {
-        let mut active = active_requests.lock().unwrap();
+        let mut active = safe_lock(&active_requests);
         *active += 1;
     }
 
@@ -779,7 +781,7 @@ async fn handle_proxy_request(
 
     // Release request slot
     {
-        let mut active = active_requests.lock().unwrap();
+        let mut active = safe_lock(&active_requests);
         if *active > 0 {
             *active -= 1;
         }
@@ -885,7 +887,7 @@ async fn process_request(
                                 );
                                 // Treat as invalid token - route to gate for re-verification
                                 stale_session_id = Some(token.session_id.clone());
-                                let mut m = metrics.lock().unwrap();
+                                let mut m = safe_lock(&metrics);
                                 m.record_invalid_token();
                             } else {
                                 // Task 8: Check for session cloning
@@ -916,7 +918,7 @@ async fn process_request(
                                     admin_state.clear_tier_override(&token.session_id);
                                 }
 
-                                let mut m = metrics.lock().unwrap();
+                                let mut m = safe_lock(&metrics);
                                 m.record_valid_token();
                             }
                         } else {
@@ -925,7 +927,7 @@ async fn process_request(
                                 token.session_id
                             );
                             stale_session_id = Some(token.session_id);
-                            let mut m = metrics.lock().unwrap();
+                            let mut m = safe_lock(&metrics);
                             m.record_invalid_token();
                         }
                     }
@@ -934,7 +936,7 @@ async fn process_request(
                         // Preserve session ID and route to gate for re-verification
                         tracing::info!("Token verification failed for session {} ({}), routing to gate for re-verification", token.session_id, e);
                         stale_session_id = Some(token.session_id);
-                        let mut m = metrics.lock().unwrap();
+                        let mut m = safe_lock(&metrics);
                         m.record_invalid_token();
                     }
                 }
@@ -997,7 +999,7 @@ async fn process_request(
                         );
                     }
 
-                    let mut m = metrics.lock().unwrap();
+                    let mut m = safe_lock(&metrics);
                     m.record_valid_token();
                 }
                 Err(e) => {
@@ -1086,7 +1088,7 @@ async fn process_request(
             );
 
             // Get or create session behavior tracker
-            let mut behavior_sessions_guard = behavior_sessions.write().unwrap();
+            let mut behavior_sessions_guard = safe_write(&behavior_sessions);
             let session_behavior = behavior_sessions_guard
                 .entry(sid.clone())
                 .or_insert_with(|| SessionBehavior::new(sid.clone(), behavior_config.clone()));
@@ -1166,7 +1168,7 @@ async fn process_request(
         if let Some(ref check_blacklist) = blacklist_check {
             if check_blacklist(sid) {
                 tracing::warn!("Session {} is blacklisted, redirecting to gate", sid);
-                let mut m = metrics.lock().unwrap();
+                let mut m = safe_lock(&metrics);
                 m.record_denied();
 
                 // Redirect to gate for re-verification (RELATIVE to preserve onion)
@@ -1191,7 +1193,7 @@ async fn process_request(
         }
 
         if admin_state.is_banned(sid) {
-            let mut m = metrics.lock().unwrap();
+            let mut m = safe_lock(&metrics);
             m.record_denied();
             return error_response(StatusCode::FORBIDDEN, "Session permanently banned");
         }
@@ -1216,7 +1218,7 @@ async fn process_request(
 
     // Check if session is burned
     if trust_tier == TrustTier::Burned {
-        let mut m = metrics.lock().unwrap();
+        let mut m = safe_lock(&metrics);
         m.record_denied();
         return serve_killed_session_page(); // Use friendly page for burned sessions too
     }
@@ -1243,7 +1245,7 @@ async fn process_request(
             request_path
         );
         {
-            let mut m = metrics.lock().unwrap();
+            let mut m = safe_lock(&metrics);
             m.record_request();
         } // Lock released here before async call
 
@@ -1341,7 +1343,7 @@ async fn process_request(
     .await
     {
         Ok((resp, node_id)) => {
-            let mut m = metrics.lock().unwrap();
+            let mut m = safe_lock(&metrics);
             m.record_allowed();
             // Get response Content-Length for traffic tracking
             let resp_bytes = resp
@@ -1355,7 +1357,7 @@ async fn process_request(
             (resp, node_id, resp_bytes)
         }
         Err(e) => {
-            let mut m = metrics.lock().unwrap();
+            let mut m = safe_lock(&metrics);
             m.record_backend_error();
             (
                 error_response(StatusCode::BAD_GATEWAY, &format!("Backend error: {}", e)),
@@ -1393,7 +1395,7 @@ async fn process_request(
             .unwrap()
             .as_secs();
         let seconds_idle = {
-            let mut tracker = activity_tracker.lock().unwrap();
+            let mut tracker = safe_lock(&activity_tracker);
             tracker.seconds_since_last(sid, now)
         };
         log_session_activity(sid, seconds_idle, &request_path, None);

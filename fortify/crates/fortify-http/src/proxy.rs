@@ -1,3 +1,4 @@
+use fortify_core::safe_lock;
 use crate::{BackendNode, Metrics, ProxyError, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -71,7 +72,7 @@ pub async fn proxy_request(
         .await
         .map_err(|_| {
             node.release();
-            metrics.lock().unwrap().record_backend_error();
+            safe_lock(&metrics).record_backend_error();
             ProxyError::BackendUnavailable
         })?
         .to_bytes();
@@ -99,7 +100,7 @@ pub async fn proxy_request(
 
     let response = request_builder.send().await.map_err(|e| {
         node.release();
-        metrics.lock().unwrap().record_backend_error();
+        safe_lock(&metrics).record_backend_error();
         
         // Distinguish timeout errors for better observability
         if e.is_timeout() {
@@ -184,7 +185,7 @@ impl BackpressureController {
 
     /// Try to acquire a request slot
     pub fn try_acquire(&self) -> Result<RequestGuard> {
-        let mut active = self.active_requests.lock().unwrap();
+        let mut active = safe_lock(&self.active_requests);
 
         if *active >= self.max_concurrent {
             return Err(ProxyError::BackpressureExceeded);
@@ -198,12 +199,12 @@ impl BackpressureController {
 
     /// Get current active request count
     pub fn active_count(&self) -> usize {
-        *self.active_requests.lock().unwrap()
+        *safe_lock(&self.active_requests)
     }
 
     /// Get available capacity
     pub fn available_capacity(&self) -> usize {
-        let active = *self.active_requests.lock().unwrap();
+        let active = *safe_lock(&self.active_requests);
         self.max_concurrent.saturating_sub(active)
     }
 
@@ -220,7 +221,7 @@ pub struct RequestGuard {
 
 impl Drop for RequestGuard {
     fn drop(&mut self) {
-        let mut active = self.active_requests.lock().unwrap();
+        let mut active = safe_lock(&self.active_requests);
         if *active > 0 {
             *active -= 1;
         }

@@ -1,5 +1,5 @@
 use crate::BackendNode;
-use fortify_core::TrustTier;
+use fortify_core::{safe_lock, TrustTier};
 use std::sync::Arc;
 
 /// Backend selection strategy
@@ -99,8 +99,8 @@ impl Router {
 
         // Sort by (connection_count, name) - lowest connections first, then alphabetically by name
         available.sort_by(|a, b| {
-            let a_connections = *a.active_connections.lock().unwrap();
-            let b_connections = *b.active_connections.lock().unwrap();
+            let a_connections = *safe_lock(&a.active_connections);
+            let b_connections = *safe_lock(&b.active_connections);
 
             match a_connections.cmp(&b_connections) {
                 std::cmp::Ordering::Equal => a.name.cmp(&b.name),
@@ -113,7 +113,7 @@ impl Router {
     }
 
     fn round_robin(&self, nodes: &[BackendNode]) -> Option<BackendNode> {
-        let mut index = self.round_robin_index.lock().unwrap();
+        let mut index = safe_lock(&self.round_robin_index);
         let available: Vec<_> = nodes.iter().filter(|n| n.can_accept()).collect();
 
         if available.is_empty() {
@@ -134,7 +134,7 @@ impl Router {
             return None;
         }
 
-        let mut index = self.fill_first_index.lock().unwrap();
+        let mut index = safe_lock(&self.fill_first_index);
 
         // Clamp index to available nodes range
         if *index >= available.len() {
@@ -143,7 +143,7 @@ impl Router {
 
         // Try current node first
         if let Some(node) = available.get(*index) {
-            let connections = *node.active_connections.lock().unwrap();
+            let connections = *safe_lock(&node.active_connections);
             // If current node has room (< 80% capacity), use it
             if connections < (node.max_connections as f32 * 0.8) as usize {
                 return Some((*node).clone());
@@ -161,7 +161,7 @@ impl Router {
         nodes
             .iter()
             .filter(|n| n.can_accept())
-            .min_by_key(|n| *n.active_connections.lock().unwrap())
+            .min_by_key(|n| *safe_lock(&n.active_connections))
             .cloned()
     }
 
@@ -240,15 +240,15 @@ mod tests {
 
         // Simulate different connection loads
         {
-            let mut conn = nodes[0].active_connections.lock().unwrap();
+            let mut conn = safe_lock(&nodes[0].active_connections);
             *conn = 5;
         }
         {
-            let mut conn = nodes[1].active_connections.lock().unwrap();
+            let mut conn = safe_lock(&nodes[1].active_connections);
             *conn = 2; // Least connections
         }
         {
-            let mut conn = nodes[2].active_connections.lock().unwrap();
+            let mut conn = safe_lock(&nodes[2].active_connections);
             *conn = 8;
         }
 

@@ -6,7 +6,7 @@
 //! Theme: Retro Synthwave / Outrun with Fortification hints
 
 use bytes::Bytes;
-use fortify_core::{BehaviorConfig, BehaviorStats, KNOWN_ATTACK_PATHS};
+use fortify_core::{safe_read, safe_write, BehaviorConfig, BehaviorStats, KNOWN_ATTACK_PATHS};
 use fortify_gate::{CaptchaConfig, CaptchaType};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -209,22 +209,22 @@ impl AdminState {
 
     // Session management
     pub fn update_session(&self, info: SessionInfo) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.sessions.insert(info.session_id.clone(), info);
     }
 
     pub fn get_sessions(&self) -> Vec<SessionInfo> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.sessions.values().cloned().collect()
     }
 
     pub fn get_session(&self, id: &str) -> Option<SessionInfo> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.sessions.get(id).cloned()
     }
 
     pub fn record_page_load(&self, session_id: &str, path: &str, method: &str, status: u16) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.page_loads += 1;
             session.last_activity = now();
@@ -252,7 +252,7 @@ impl AdminState {
         source: &str,
         reason: Option<&str>,
     ) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.last_activity = now();
             session.browsing_history.push(HistoryEntry {
@@ -271,7 +271,7 @@ impl AdminState {
     }
 
     pub fn set_session_tier(&self, session_id: &str, tier: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         let old_tier = inner.sessions.get(session_id).map(|s| s.trust_tier.clone());
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.trust_tier = tier.to_string();
@@ -304,7 +304,7 @@ impl AdminState {
 
     /// Set session tier from automatic system detection (not admin action)
     pub fn set_session_tier_auto(&self, session_id: &str, tier: &str, reason: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         let old_tier = inner.sessions.get(session_id).map(|s| s.trust_tier.clone());
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.trust_tier = tier.to_string();
@@ -338,18 +338,18 @@ impl AdminState {
 
     /// Check if session has an admin-forced tier override
     pub fn get_tier_override(&self, session_id: &str) -> Option<String> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.tier_overrides.get(session_id).cloned()
     }
 
     /// Clear tier override for a session
     pub fn clear_tier_override(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.tier_overrides.remove(session_id);
     }
 
     pub fn ban_session(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.is_banned = true;
             session.trust_tier = "Burned".to_string();
@@ -372,7 +372,7 @@ impl AdminState {
     }
 
     pub fn unban_session(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.is_banned = false;
             // Record event in history
@@ -392,7 +392,7 @@ impl AdminState {
     }
 
     pub fn is_banned(&self, session_id: &str) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.banned_sessions.contains(&session_id.to_string())
     }
 
@@ -413,7 +413,7 @@ impl AdminState {
         max_demotions: u32,
         reason: &str,
     ) -> bool {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.demotion_count += 1;
             tracing::info!(
@@ -470,7 +470,7 @@ impl AdminState {
         details: &str,
         severity: u8,
     ) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.browsing_history.push(HistoryEntry {
                 timestamp: now(),
@@ -488,7 +488,7 @@ impl AdminState {
 
     /// Record successful captcha verification in session history
     pub fn record_captcha_verified(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.browsing_history.push(HistoryEntry {
                 timestamp: now(),
@@ -506,7 +506,7 @@ impl AdminState {
 
     /// Check if a session is killed (repeat offender)
     pub fn is_killed(&self, session_id: &str) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner
             .sessions
             .get(session_id)
@@ -516,7 +516,7 @@ impl AdminState {
 
     /// Get demotion count for a session
     pub fn get_demotion_count(&self, session_id: &str) -> u32 {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner
             .sessions
             .get(session_id)
@@ -525,41 +525,41 @@ impl AdminState {
     }
 
     pub fn delete_session(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.sessions.remove(session_id);
     }
 
     // Node management
     pub fn update_node(&self, info: NodeInfo) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.nodes.insert(info.id.clone(), info);
     }
 
     pub fn get_nodes(&self) -> Vec<NodeInfo> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.nodes.values().cloned().collect()
     }
 
     pub fn get_node(&self, id: &str) -> Option<NodeInfo> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.nodes.get(id).cloned()
     }
 
     pub fn set_node_mode(&self, id: &str, mode: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(node) = inner.nodes.get_mut(id) {
             node.mode = mode.to_string();
         }
     }
 
     pub fn remove_node(&self, id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.nodes.remove(id);
     }
 
     /// Record a request to a specific node (updates node stats and total traffic)
     pub fn record_node_request(&self, node_id: &str, bytes: u64) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         let timestamp = now();
         if let Some(node) = inner.nodes.get_mut(node_id) {
             node.total_requests += 1;
@@ -578,7 +578,7 @@ impl AdminState {
 
     /// Record response traffic (adds bytes to total without incrementing request count)
     pub fn record_response_traffic(&self, bytes: u64) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.total_traffic_bytes += bytes;
         // Add to time-series as well (with empty node_id to indicate response traffic)
         let timestamp = now();
@@ -589,7 +589,7 @@ impl AdminState {
 
     /// Release a connection from a node
     pub fn release_node_connection(&self, node_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(node) = inner.nodes.get_mut(node_id) {
             node.active_connections = node.active_connections.saturating_sub(1);
         }
@@ -597,7 +597,7 @@ impl AdminState {
 
     /// Track a user entering the gate queue (viewing /Fortify page)
     pub fn enter_gate_queue(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.gate_queue.insert(session_id.to_string(), now());
         // Clean up stale entries (anyone not active in last 5 minutes)
         let cutoff = now().saturating_sub(300);
@@ -606,13 +606,13 @@ impl AdminState {
 
     /// Remove a user from the gate queue (they completed verification or left)
     pub fn exit_gate_queue(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.gate_queue.remove(session_id);
     }
 
     /// Create admin authentication session
     pub fn create_admin_session(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.admin_sessions.insert(session_id.to_string(), now());
         // Clean old sessions (> 24 hours)
         let cutoff = now().saturating_sub(86400);
@@ -621,7 +621,7 @@ impl AdminState {
 
     /// Check if admin session is valid
     pub fn is_admin_session_valid(&self, session_id: &str) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         if let Some(&timestamp) = inner.admin_sessions.get(session_id) {
             // Session valid for 24 hours
             let cutoff = now().saturating_sub(86400);
@@ -633,13 +633,13 @@ impl AdminState {
 
     /// Remove admin session (logout)
     pub fn remove_admin_session(&self, session_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.admin_sessions.remove(session_id);
     }
 
     /// Get current gate queue count (users viewing Fortify page)
     pub fn get_gate_queue_count(&self) -> usize {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         // Clean up stale entries first
         let cutoff = now().saturating_sub(300);
         inner.gate_queue.retain(|_, ts| *ts >= cutoff);
@@ -648,7 +648,7 @@ impl AdminState {
 
     /// Get time-based statistics for nodes
     pub fn get_time_based_stats(&self) -> TimeBasedStats {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         let current_time = now();
 
         // Define time windows in seconds
@@ -733,7 +733,7 @@ impl AdminState {
 
     /// Update session's current node
     pub fn set_session_node(&self, session_id: &str, node_id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.current_node = node_id.to_string();
         }
@@ -741,7 +741,7 @@ impl AdminState {
 
     /// Update session's current mirror (onion address)
     pub fn set_session_mirror(&self, session_id: &str, mirror: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.current_mirror = mirror.to_string();
         }
@@ -749,7 +749,7 @@ impl AdminState {
 
     /// Record bytes transferred for a session
     pub fn record_session_traffic(&self, session_id: &str, bytes: u64) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.total_bytes += bytes;
         }
@@ -757,7 +757,7 @@ impl AdminState {
 
     /// Get next suggested node name and port for a given pool
     pub fn get_next_node_suggestion(&self, mode: &str) -> (String, String) {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
 
         // Count existing nodes in this pool
         let pool_count = inner.nodes.values().filter(|n| n.mode == mode).count();
@@ -785,7 +785,7 @@ impl AdminState {
 
     /// Get traffic statistics
     pub fn get_traffic_stats(&self) -> TrafficStats {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
 
         let mut per_node: HashMap<String, NodeTrafficStats> = HashMap::new();
         for node in inner.nodes.values() {
@@ -825,18 +825,18 @@ impl AdminState {
 
     // Mirror management
     pub fn update_mirror(&self, info: MirrorInfo) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.mirrors.insert(info.id.clone(), info);
     }
 
     pub fn get_mirrors(&self) -> Vec<MirrorInfo> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.mirrors.values().cloned().collect()
     }
 
     /// Get mirror by onion address
     pub fn get_mirror_by_onion(&self, onion_address: &str) -> Option<MirrorInfo> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner
             .mirrors
             .values()
@@ -847,7 +847,7 @@ impl AdminState {
     /// Record a request through a specific mirror (by onion address)
     /// Creates the mirror entry if it doesn't exist
     pub fn record_mirror_request(&self, onion_address: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         // Try to find existing mirror by onion address
         let mirror_id = inner
             .mirrors
@@ -879,13 +879,13 @@ impl AdminState {
     }
 
     pub fn remove_mirror(&self, id: &str) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.mirrors.remove(id);
     }
 
     // Stats
     pub fn get_stats(&self) -> AdminStats {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         let sessions = &inner.sessions;
 
         AdminStats {
@@ -909,13 +909,13 @@ impl AdminState {
 
     /// Get current behavioral config
     pub fn get_behavior_config(&self) -> BehaviorConfig {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.behavior_config.clone()
     }
 
     /// Update behavioral config
     pub fn update_behavior_config(&self, config: BehaviorConfig) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.behavior_config = config;
         tracing::info!("Behavioral analysis config updated");
     }
@@ -926,20 +926,20 @@ impl AdminState {
 
     /// Get current captcha config
     pub fn get_captcha_config(&self) -> CaptchaConfig {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.captcha_config.clone()
     }
 
     /// Update captcha config
     pub fn update_captcha_config(&self, config: CaptchaConfig) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner.captcha_config = config;
         tracing::info!("Captcha config updated");
     }
 
     /// Toggle a specific behavioral feature
     pub fn toggle_behavior_feature(&self, feature: &str, enabled: bool) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         match feature {
             "ua_analysis" => inner.behavior_config.ua_analysis_enabled = enabled,
             "referer_analysis" => inner.behavior_config.referer_analysis_enabled = enabled,
@@ -958,7 +958,7 @@ impl AdminState {
 
     /// Update behavioral stats for a session
     pub fn update_behavior_stats(&self, session_id: &str, stats: BehaviorStats) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = safe_write(&self.inner);
         inner
             .behavior_stats
             .insert(session_id.to_string(), stats.clone());
@@ -971,13 +971,13 @@ impl AdminState {
 
     /// Get behavioral stats for a session
     pub fn get_behavior_stats(&self, session_id: &str) -> Option<BehaviorStats> {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         inner.behavior_stats.get(session_id).cloned()
     }
 
     /// Get aggregate behavioral stats across all sessions
     pub fn get_aggregate_behavior_stats(&self) -> AggregateBehaviorStats {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         let mut agg = AggregateBehaviorStats::default();
 
         for stats in inner.behavior_stats.values() {
@@ -999,7 +999,7 @@ impl AdminState {
 
     /// Check if behavioral analysis is enabled
     pub fn is_behavior_enabled(&self) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = safe_read(&self.inner);
         // At least one feature must be enabled
         inner.behavior_config.ua_analysis_enabled
             || inner.behavior_config.referer_analysis_enabled
