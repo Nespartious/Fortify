@@ -308,7 +308,13 @@ impl TorService {
         let torrc_path = self.base_data_dir.join("tor").join("torrc");
 
         let torrc_content = format!(
-            "# Fortify mirror: {}\nHiddenServiceDir {}\nHiddenServicePort 80 127.0.0.1:{}\nHiddenServicePoWDefensesEnabled 1\n",
+            "# Fortify mirror: {}\n\
+             HiddenServiceDir {}\n\
+             HiddenServicePort 80 127.0.0.1:{}\n\
+             HiddenServicePoWDefensesEnabled 1\n\
+             HiddenServiceEnableIntroDoSDefense 1\n\
+             HiddenServiceMaxStreams 100\n\
+             HiddenServiceMaxStreamsCloseCircuit 1\n",
             mirror.id,
             hs_dir.to_string_lossy(),
             target_port

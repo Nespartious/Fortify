@@ -199,6 +199,10 @@ impl TorManager {
                     self.pow_config.queue_burst
                 ));
             }
+            // Additional DoS defense options (Tor 0.4.8+)
+            setconf_parts.push("HiddenServiceEnableIntroDoSDefense=1".to_string());
+            setconf_parts.push("HiddenServiceMaxStreams=100".to_string());
+            setconf_parts.push("HiddenServiceMaxStreamsCloseCircuit=1".to_string());
         }
 
         // Add the new hidden service
@@ -222,6 +226,10 @@ impl TorManager {
                 self.pow_config.queue_burst
             ));
         }
+        // Additional DoS defense options (Tor 0.4.8+)
+        setconf_parts.push("HiddenServiceEnableIntroDoSDefense=1".to_string());
+        setconf_parts.push("HiddenServiceMaxStreams=100".to_string());
+        setconf_parts.push("HiddenServiceMaxStreamsCloseCircuit=1".to_string());
 
         let cmd = format!("SETCONF {}", setconf_parts.join(" "));
         tracing::debug!(
