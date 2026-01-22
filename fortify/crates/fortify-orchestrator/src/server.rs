@@ -1,10 +1,20 @@
 use crate::Orchestrator;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Client, Request, Response, Server, StatusCode};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::net::TcpListener;
+
+/// Type alias for response body
+type BoxBody = Full<Bytes>;
 
 /// Auth token header for admin API calls
 const AUTH_TOKEN_HEADER: &str = "X-Fortify-Admin-Token";
@@ -22,7 +32,7 @@ fn generate_auth_token(password: &str) -> String {
 }
 
 /// Check if request has valid auth token
-fn is_authenticated(req: &Request<Body>) -> bool {
+fn is_authenticated(req: &Request<Incoming>) -> bool {
     if let Some(token_header) = req.headers().get(AUTH_TOKEN_HEADER) {
         if let Ok(provided_token) = token_header.to_str() {
             let expected_token = generate_auth_token(ADMIN_PASSWORD);
@@ -33,17 +43,17 @@ fn is_authenticated(req: &Request<Body>) -> bool {
 }
 
 /// Return 401 Unauthorized response
-fn unauthorized() -> Response<Body> {
+fn unauthorized() -> Response<BoxBody> {
     Response::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::json!({
                 "error": "Unauthorized",
                 "message": "Valid authentication token required for administrative operations"
             })
             .to_string(),
-        ))
+        )))
         .unwrap()
 }
 
@@ -72,31 +82,34 @@ impl OrchestratorServer {
         let gate_address = self.gate_address.clone();
         let orchestrator = Arc::clone(&self.orchestrator);
 
-        let make_svc = make_service_fn(move |_conn| {
+        let listener = TcpListener::bind(&self.bind_addr).await?;
+        tracing::info!("Orchestrator HTTP server listening on {}", self.bind_addr);
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let io = TokioIo::new(stream);
             let gate_address = gate_address.clone();
             let orchestrator = Arc::clone(&orchestrator);
 
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
+            tokio::spawn(async move {
+                let service = service_fn(move |req| {
                     handle_request(req, gate_address.clone(), Arc::clone(&orchestrator))
-                }))
-            }
-        });
+                });
 
-        let server = Server::bind(&self.bind_addr).serve(make_svc);
-        tracing::info!("Orchestrator HTTP server listening on {}", self.bind_addr);
-
-        server.await?;
-        Ok(())
+                if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
+                    tracing::debug!("Connection error: {}", e);
+                }
+            });
+        }
     }
 }
 
 /// Handle incoming request
 async fn handle_request(
-    req: Request<Body>,
+    req: Request<Incoming>,
     gate_address: String,
     orchestrator: Arc<Orchestrator>,
-) -> std::result::Result<Response<Body>, Infallible> {
+) -> std::result::Result<Response<BoxBody>, Infallible> {
     let start = Instant::now();
     let method = req.method().clone();
     let path = req.uri().path().to_string();
@@ -172,48 +185,48 @@ async fn handle_request(
 }
 
 /// Health check endpoint
-fn health_check(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+fn health_check(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     let active_mirrors = orchestrator.get_active_mirrors();
 
     if active_mirrors.is_empty() {
         return Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body(Body::from("No active mirrors"))
+            .body(Full::new(Bytes::from("No active mirrors")))
             .unwrap();
     }
 
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::json!({
                 "status": "healthy",
                 "active_mirrors": active_mirrors.len(),
             })
             .to_string(),
-        ))
+        )))
         .unwrap()
 }
 
 /// List active mirrors
-fn list_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+fn list_mirrors(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     let mirrors = orchestrator.get_active_mirrors();
 
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::json!({
                 "mirrors": mirrors,
                 "count": mirrors.len(),
             })
             .to_string(),
-        ))
+        )))
         .unwrap()
 }
 
 /// List ALL mirrors with status (for admin panel)
-fn list_all_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+fn list_all_mirrors(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     let mirrors = orchestrator.get_all_mirrors();
 
     let mirror_data: Vec<serde_json::Value> = mirrors
@@ -230,18 +243,18 @@ fn list_all_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::json!({
                 "mirrors": mirror_data,
                 "count": mirrors.len(),
             })
             .to_string(),
-        ))
+        )))
         .unwrap()
 }
 
 /// List ALL mirrors with extended info (PoW status, standby status, etc.)
-fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     let mirrors = orchestrator.get_all_mirrors_extended();
 
     let mirror_data: Vec<serde_json::Value> = mirrors
@@ -265,7 +278,7 @@ fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::json!({
                 "mirrors": mirror_data,
                 "count": mirrors.len(),
@@ -274,7 +287,7 @@ fn list_extended_mirrors(orchestrator: Arc<Orchestrator>) -> Response<Body> {
                 "pow_enabled_count": pow_count,
             })
             .to_string(),
-        ))
+        )))
         .unwrap()
 }
 
@@ -306,7 +319,7 @@ fn generate_mirror_list_html(orchestrator: &Orchestrator) -> String {
 }
 
 /// Serve a static page for paused/maintenance mirrors
-fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<Body> {
+fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<BoxBody> {
     let mirror_list = generate_mirror_list_html(orchestrator);
 
     // Try to load the maintenance.html template
@@ -375,12 +388,12 @@ fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<Body> {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
 /// Create a new mirror (triggered by admin panel)
-async fn create_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+async fn create_mirror(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     tracing::info!("Admin requested new mirror creation");
 
     match orchestrator.spawn_mirror().await {
@@ -389,13 +402,13 @@ async fn create_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "created",
                         "onion_address": onion_addr,
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
         Err(e) => {
@@ -403,20 +416,20 @@ async fn create_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "error",
                         "message": e.to_string(),
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
     }
 }
 
 /// Create a new standby mirror (paused, ready for activation)
-async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     tracing::info!("Admin requested new standby mirror creation");
 
     match orchestrator.spawn_standby_mirror().await {
@@ -435,7 +448,7 @@ async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "created_standby",
                         "mirror_id": mirror_id,
@@ -443,7 +456,7 @@ async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body
                         "message": "Mirror created as standby (paused). Use /mirror/activate to make it active."
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
         Err(e) => {
@@ -451,13 +464,13 @@ async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "error",
                         "message": e.to_string(),
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
     }
@@ -465,15 +478,15 @@ async fn create_standby_mirror(orchestrator: Arc<Orchestrator>) -> Response<Body
 
 /// Activate a standby mirror (change from paused to active)
 async fn activate_standby_mirror(
-    req: Request<Body>,
+    req: Request<Incoming>,
     orchestrator: Arc<Orchestrator>,
-) -> Response<Body> {
-    let body_bytes = match hyper::body::to_bytes(req.into_body()).await {
-        Ok(b) => b,
+) -> Response<BoxBody> {
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid body"))
+                .body(Full::new(Bytes::from("Invalid body")))
                 .unwrap();
         }
     };
@@ -483,7 +496,7 @@ async fn activate_standby_mirror(
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid JSON"))
+                .body(Full::new(Bytes::from("Invalid JSON")))
                 .unwrap();
         }
     };
@@ -493,7 +506,7 @@ async fn activate_standby_mirror(
         None => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Missing onion_address"))
+                .body(Full::new(Bytes::from("Missing onion_address")))
                 .unwrap();
         }
     };
@@ -509,14 +522,14 @@ async fn activate_standby_mirror(
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "activated",
                         "onion_address": onion_address,
                         "message": "Mirror is now active and accepting traffic"
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
         Err(e) => {
@@ -524,26 +537,26 @@ async fn activate_standby_mirror(
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "error",
                         "message": e.to_string(),
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
     }
 }
 
 /// Pause a mirror (triggered by admin panel)
-async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Response<Body> {
-    let body_bytes = match hyper::body::to_bytes(req.into_body()).await {
-        Ok(b) => b,
+async fn pause_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid body"))
+                .body(Full::new(Bytes::from("Invalid body")))
                 .unwrap();
         }
     };
@@ -553,7 +566,7 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid JSON"))
+                .body(Full::new(Bytes::from("Invalid JSON")))
                 .unwrap();
         }
     };
@@ -563,7 +576,7 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
         None => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Missing onion_address"))
+                .body(Full::new(Bytes::from("Missing onion_address")))
                 .unwrap();
         }
     };
@@ -576,13 +589,13 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "paused",
                         "onion_address": onion_address,
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
         Err(e) => {
@@ -590,26 +603,26 @@ async fn pause_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Re
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "error",
                         "message": e.to_string(),
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
     }
 }
 
 /// Resume a paused mirror (triggered by admin panel)
-async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Response<Body> {
-    let body_bytes = match hyper::body::to_bytes(req.into_body()).await {
-        Ok(b) => b,
+async fn resume_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid body"))
+                .body(Full::new(Bytes::from("Invalid body")))
                 .unwrap();
         }
     };
@@ -619,7 +632,7 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid JSON"))
+                .body(Full::new(Bytes::from("Invalid JSON")))
                 .unwrap();
         }
     };
@@ -629,7 +642,7 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
         None => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Missing onion_address"))
+                .body(Full::new(Bytes::from("Missing onion_address")))
                 .unwrap();
         }
     };
@@ -642,13 +655,13 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "active",
                         "onion_address": onion_address,
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
         Err(e) => {
@@ -656,26 +669,26 @@ async fn resume_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> R
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "error",
                         "message": e.to_string(),
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
     }
 }
 
 /// Destroy a mirror permanently (triggered by admin panel)
-async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> Response<Body> {
-    let body_bytes = match hyper::body::to_bytes(req.into_body()).await {
-        Ok(b) => b,
+async fn destroy_mirror(req: Request<Incoming>, orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid body"))
+                .body(Full::new(Bytes::from("Invalid body")))
                 .unwrap();
         }
     };
@@ -685,7 +698,7 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Invalid JSON"))
+                .body(Full::new(Bytes::from("Invalid JSON")))
                 .unwrap();
         }
     };
@@ -695,7 +708,7 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
         None => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Missing onion_address"))
+                .body(Full::new(Bytes::from("Missing onion_address")))
                 .unwrap();
         }
     };
@@ -708,13 +721,13 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "destroyed",
                         "onion_address": onion_address,
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
         Err(e) => {
@@ -722,20 +735,20 @@ async fn destroy_mirror(req: Request<Body>, orchestrator: Arc<Orchestrator>) -> 
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
-                .body(Body::from(
+                .body(Full::new(Bytes::from(
                     serde_json::json!({
                         "status": "error",
                         "message": e.to_string(),
                     })
                     .to_string(),
-                ))
+                )))
                 .unwrap()
         }
     }
 }
 
 /// Get orchestrator statistics as JSON (for TUI polling)
-fn get_stats(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+fn get_stats(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     let captcha_stats = orchestrator.captcha_pool_stats();
     let all_mirrors = orchestrator.get_all_mirrors_extended();
     let active_count = all_mirrors
@@ -764,12 +777,12 @@ fn get_stats(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(stats.to_string()))
+        .body(Full::new(Bytes::from(stats.to_string())))
         .unwrap()
 }
 
 /// Status page (HTML)
-fn status_page(orchestrator: Arc<Orchestrator>) -> Response<Body> {
+fn status_page(orchestrator: Arc<Orchestrator>) -> Response<BoxBody> {
     let active_mirrors = orchestrator.get_active_mirrors();
 
     let html = format!(
@@ -813,12 +826,12 @@ fn status_page(orchestrator: Arc<Orchestrator>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
 /// Proxy request to gate
-async fn proxy_to_gate(mut req: Request<Body>, gate_address: String) -> Response<Body> {
+async fn proxy_to_gate(req: Request<Incoming>, gate_address: String) -> Response<BoxBody> {
     // Build gate URI
     let gate_uri = format!(
         "{}{}",
@@ -829,27 +842,64 @@ async fn proxy_to_gate(mut req: Request<Body>, gate_address: String) -> Response
             .unwrap_or("/")
     );
 
-    let uri = match gate_uri.parse() {
+    let uri: hyper::Uri = match gate_uri.parse() {
         Ok(u) => u,
         Err(_) => {
             return Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
-                .body(Body::from("Invalid gate URI"))
+                .body(Full::new(Bytes::from("Invalid gate URI")))
                 .unwrap();
         }
     };
 
-    *req.uri_mut() = uri;
+    // Build a new request with the gate URI
+    let (parts, body) = req.into_parts();
+    let body_bytes = match body.collect().await {
+        Ok(b) => b.to_bytes(),
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(Full::new(Bytes::from("Failed to read request body")))
+                .unwrap();
+        }
+    };
 
-    // Forward to gate
-    let client = Client::new();
-    match client.request(req).await {
-        Ok(response) => response,
+    let mut builder = Request::builder()
+        .method(parts.method)
+        .uri(uri);
+
+    // Copy headers
+    for (key, value) in parts.headers.iter() {
+        builder = builder.header(key, value);
+    }
+
+    let new_req = match builder.body(Full::new(body_bytes)) {
+        Ok(r) => r,
+        Err(_) => {
+            return Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(Full::new(Bytes::from("Failed to build request")))
+                .unwrap();
+        }
+    };
+
+    // Forward to gate using legacy client
+    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+    match client.request(new_req).await {
+        Ok(response) => {
+            // Convert the response body
+            let (parts, body) = response.into_parts();
+            let body_bytes = match body.collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(_) => Bytes::from("Failed to read response"),
+            };
+            Response::from_parts(parts, Full::new(body_bytes))
+        }
         Err(e) => {
             tracing::error!("Failed to proxy to gate: {}", e);
             Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
-                .body(Body::from("Gate unavailable"))
+                .body(Full::new(Bytes::from("Gate unavailable")))
                 .unwrap()
         }
     }
@@ -891,7 +941,7 @@ mod tests {
         let response = list_mirrors(orch);
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
 
         assert!(body_str.contains("count"));
