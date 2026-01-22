@@ -1,0 +1,60 @@
+name: Dependency Review
+
+# Runs on PRs to check for vulnerable dependencies being introduced
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+
+# To enable automatic triggers, dependencies are checked on every PR
+# This workflow uses GitHub's dependency review action
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail on high/critical vulnerabilities
+          fail-on-severity: high
+          # Also check for license issues
+          deny-licenses: GPL-3.0, AGPL-3.0
+          # Allow specific licenses commonly used in Rust ecosystem
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Zlib, CC0-1.0, Unlicense, CDLA-Permissive-2.0
+
+  cargo-audit-diff:
+    name: Audit New Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo audit on changes
+        working-directory: ./fortify
+        run: |
+          echo "## 🔍 Dependency Security Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Run full audit
+          if cargo audit --deny warnings 2>&1 | tee audit-output.txt; then
+            echo "✅ No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Vulnerabilities detected:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat audit-output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

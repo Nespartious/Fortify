@@ -1,0 +1,167 @@
+name: PR Size Check
+
+# Prevent overly large PRs that are difficult to review
+# Encourages smaller, focused changes
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  check-size:
+    name: Check PR Size
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Analyze PR size
+        id: size
+        run: |
+          echo "## 📏 PR Size Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          # Get diff stats
+          STATS=$(git diff --stat "$BASE_SHA..$HEAD_SHA")
+          
+          # Count lines
+          ADDITIONS=$(git diff --numstat "$BASE_SHA..$HEAD_SHA" | awk '{sum += $1} END {print sum+0}')
+          DELETIONS=$(git diff --numstat "$BASE_SHA..$HEAD_SHA" | awk '{sum += $2} END {print sum+0}')
+          FILES_CHANGED=$(git diff --numstat "$BASE_SHA..$HEAD_SHA" | wc -l)
+          
+          TOTAL_CHANGES=$((ADDITIONS + DELETIONS))
+          
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Files Changed | $FILES_CHANGED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lines Added | +$ADDITIONS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lines Removed | -$DELETIONS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Changes | $TOTAL_CHANGES |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Determine size category
+          if [ $TOTAL_CHANGES -lt 50 ]; then
+            SIZE="XS"
+            EMOJI="🟢"
+            MSG="Tiny PR - Quick review!"
+          elif [ $TOTAL_CHANGES -lt 200 ]; then
+            SIZE="S"
+            EMOJI="🟢"
+            MSG="Small PR - Easy to review"
+          elif [ $TOTAL_CHANGES -lt 400 ]; then
+            SIZE="M"
+            EMOJI="🟡"
+            MSG="Medium PR - Moderate review effort"
+          elif [ $TOTAL_CHANGES -lt 800 ]; then
+            SIZE="L"
+            EMOJI="🟠"
+            MSG="Large PR - Consider breaking into smaller PRs"
+          else
+            SIZE="XL"
+            EMOJI="🔴"
+            MSG="Very large PR - Strongly consider breaking up"
+          fi
+          
+          echo "### Size: $EMOJI **$SIZE** - $MSG" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Output for label step
+          echo "size=$SIZE" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL_CHANGES" >> $GITHUB_OUTPUT
+          echo "additions=$ADDITIONS" >> $GITHUB_OUTPUT
+          echo "deletions=$DELETIONS" >> $GITHUB_OUTPUT
+          echo "files=$FILES_CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Check for generated files
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### File Breakdown" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Categorize changed files
+          GENERATED=0
+          TESTS=0
+          DOCS=0
+          CODE=0
+          
+          while IFS= read -r file; do
+            if [[ "$file" =~ \.lock$|Cargo\.lock|package-lock\.json ]]; then
+              ((GENERATED++))
+            elif [[ "$file" =~ _test\.rs$|test_|tests/|\.test\. ]]; then
+              ((TESTS++))
+            elif [[ "$file" =~ \.md$|docs/|README ]]; then
+              ((DOCS++))
+            else
+              ((CODE++))
+            fi
+          done < <(git diff --name-only "$BASE_SHA..$HEAD_SHA")
+          
+          echo "| Category | Files |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Source Code | $CODE |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | $TESTS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation | $DOCS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Generated/Lock | $GENERATED |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Warn on large PR
+        if: steps.size.outputs.total > 800
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Large PR Warning" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This PR has ${{ steps.size.outputs.total }} line changes." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Consider:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Breaking this into smaller, focused PRs" >> $GITHUB_STEP_SUMMARY
+          echo "- Each PR should do one thing well" >> $GITHUB_STEP_SUMMARY
+          echo "- Smaller PRs get reviewed faster and more thoroughly" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Large PRs are allowed but may take longer to review." >> $GITHUB_STEP_SUMMARY
+
+      - name: Add size label
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const size = '${{ steps.size.outputs.size }}';
+            const labelName = `size/${size}`;
+            
+            // Remove existing size labels
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            
+            for (const label of labels) {
+              if (label.name.startsWith('size/')) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: label.name
+                });
+              }
+            }
+            
+            // Add new size label
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [labelName]
+              });
+            } catch (e) {
+              // Label might not exist, that's OK
+              console.log(`Could not add label ${labelName}: ${e.message}`);
+            }

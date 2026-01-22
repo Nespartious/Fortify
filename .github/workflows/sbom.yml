@@ -1,0 +1,135 @@
+name: Generate SBOM
+
+# Software Bill of Materials - Required for supply chain security
+# Produces machine-readable inventory of all dependencies
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  generate-sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-sbom-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-sbom
+        run: cargo install cargo-sbom --locked
+
+      - name: Generate CycloneDX SBOM
+        working-directory: ./fortify
+        run: |
+          echo "## 📦 SBOM Generation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Generate CycloneDX format (industry standard)
+          cargo sbom --output-format cyclonedx_json > sbom-cyclonedx.json 2>/dev/null || {
+            # Fallback: generate basic SBOM manually
+            echo "Generating basic dependency tree..."
+            cargo tree --format "{p} {v}" > dependencies.txt
+          }
+          
+          # Count dependencies
+          if [ -f sbom-cyclonedx.json ]; then
+            COMPONENTS=$(jq '.components | length' sbom-cyclonedx.json 2>/dev/null || echo "N/A")
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Format | CycloneDX 1.4 |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Components | $COMPONENTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Generated | $(date -u) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Generate SPDX SBOM (alternative format)
+        working-directory: ./fortify
+        continue-on-error: true
+        run: |
+          # Try to generate SPDX format as well
+          cargo sbom --output-format spdx_json > sbom-spdx.json 2>/dev/null || true
+
+      - name: Generate dependency graph
+        working-directory: ./fortify
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Dependency Overview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Get top-level dependencies
+          echo "**Direct Dependencies:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo tree --depth 1 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: |
+            fortify/sbom-*.json
+            fortify/dependencies.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Attach SBOM to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            fortify/sbom-*.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  vulnerability-check:
+    name: SBOM Vulnerability Check
+    runs-on: ubuntu-latest
+    needs: generate-sbom
+
+    steps:
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom/
+
+      - name: Check SBOM with Grype
+        uses: anchore/scan-action@v3
+        continue-on-error: true
+        with:
+          path: sbom/
+          fail-build: false
+          output-format: sarif
+
+      - name: Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+          echo "SBOM scanned for known vulnerabilities using Grype." >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,177 @@
+name: Fuzz Testing
+
+# Fuzz testing finds crashes and edge cases by providing random/malformed input
+# Critical for security-focused projects handling untrusted network data
+
+on:
+  workflow_dispatch:
+    inputs:
+      fuzz_target:
+        description: 'Specific fuzz target (leave empty for all)'
+        required: false
+        default: ''
+        type: string
+      duration:
+        description: 'Fuzz duration in seconds per target'
+        required: false
+        default: '60'
+        type: string
+  schedule:
+    # Run daily at 3 AM UTC
+    - cron: '0 3 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly (required for cargo-fuzz)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Initialize fuzz targets if needed
+        working-directory: ./fortify
+        run: |
+          # Create fuzz directory if it doesn't exist
+          if [ ! -d "fuzz" ]; then
+            echo "⚠️ No fuzz directory found. Creating initial structure..."
+            cargo fuzz init
+            
+            # Create example fuzz targets for key parsing functions
+            mkdir -p fuzz/fuzz_targets
+            
+            # HTTP request parsing target
+            cat > fuzz/fuzz_targets/fuzz_http_parse.rs << 'EOF'
+#![no_main]
+use libfuzzer_sys::fuzz_target;
+
+fuzz_target!(|data: &[u8]| {
+    // Fuzz HTTP request parsing
+    if let Ok(s) = std::str::from_utf8(data) {
+        // Add your HTTP parsing logic here
+        let _ = s.lines().next();
+    }
+});
+EOF
+            echo "Created example fuzz target. Add real targets for your parsing code."
+          fi
+
+      - name: List fuzz targets
+        working-directory: ./fortify
+        run: |
+          echo "## 🎲 Fuzz Testing Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -d "fuzz" ]; then
+            echo "### Available Fuzz Targets" >> $GITHUB_STEP_SUMMARY
+            cargo fuzz list 2>/dev/null | tee -a $GITHUB_STEP_SUMMARY || echo "No targets configured yet"
+          else
+            echo "⚠️ Fuzz testing not yet configured for this project" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run fuzz testing
+        working-directory: ./fortify
+        continue-on-error: true  # Don't fail workflow on crashes (we want to report them)
+        run: |
+          DURATION="${{ github.event.inputs.duration || '60' }}"
+          TARGET="${{ github.event.inputs.fuzz_target }}"
+          
+          if [ ! -d "fuzz" ]; then
+            echo "Fuzz directory not found, skipping..."
+            exit 0
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Fuzz Results" >> $GITHUB_STEP_SUMMARY
+          
+          # Get list of targets
+          TARGETS=$(cargo fuzz list 2>/dev/null || echo "")
+          
+          if [ -z "$TARGETS" ]; then
+            echo "No fuzz targets found" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          
+          # Run each target (or specific one if provided)
+          for target in $TARGETS; do
+            if [ -n "$TARGET" ] && [ "$target" != "$TARGET" ]; then
+              continue
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Target: \`$target\`" >> $GITHUB_STEP_SUMMARY
+            
+            # Run fuzzer with timeout
+            set +e
+            timeout ${DURATION}s cargo fuzz run "$target" -- \
+              -max_total_time=${DURATION} \
+              -max_len=4096 \
+              2>&1 | tee fuzz-output-${target}.txt
+            RESULT=$?
+            set -e
+            
+            if [ $RESULT -eq 0 ] || [ $RESULT -eq 124 ]; then
+              echo "✅ No crashes found in ${DURATION}s" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **CRASH FOUND!**" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              tail -50 fuzz-output-${target}.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Check for crash artifacts
+        working-directory: ./fortify
+        if: always()
+        run: |
+          if [ -d "fuzz/artifacts" ]; then
+            CRASHES=$(find fuzz/artifacts -type f | wc -l)
+            if [ "$CRASHES" -gt 0 ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 🚨 Crash Artifacts Found: $CRASHES" >> $GITHUB_STEP_SUMMARY
+              echo "Download the artifacts for reproduction." >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Upload crash artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-crashes
+          path: fortify/fuzz/artifacts/
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Upload corpus
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-corpus
+          path: fortify/fuzz/corpus/
+          retention-days: 7
+          if-no-files-found: ignore

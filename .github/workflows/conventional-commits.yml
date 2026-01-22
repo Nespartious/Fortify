@@ -1,0 +1,108 @@
+name: Conventional Commits
+
+# Enforce semantic commit messages for automated changelogs and versioning
+# Format: type(scope): description
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+    branches: [main]
+
+jobs:
+  check-commits:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for commit checks
+
+      - name: Check PR title follows conventional format
+        run: |
+          echo "## 📝 Commit Convention Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          echo "**PR Title:** \`$PR_TITLE\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Conventional commit pattern
+          # type(scope): description OR type: description
+          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .{1,}"
+          
+          if [[ "$PR_TITLE" =~ $PATTERN ]]; then
+            echo "✅ PR title follows conventional commit format" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **PR title does not follow conventional commit format**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Expected Format" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "type(scope): description" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Examples:" >> $GITHUB_STEP_SUMMARY
+            echo "  feat(gate): add rate limiting middleware" >> $GITHUB_STEP_SUMMARY
+            echo "  fix(http): resolve memory leak in connection pool" >> $GITHUB_STEP_SUMMARY
+            echo "  docs: update installation instructions" >> $GITHUB_STEP_SUMMARY
+            echo "  chore(deps): bump tokio to 1.40" >> $GITHUB_STEP_SUMMARY
+            echo "  feat!: breaking change in API" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Valid Types" >> $GITHUB_STEP_SUMMARY
+            echo "| Type | Description |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|-------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| \`feat\` | New feature |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`fix\` | Bug fix |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`docs\` | Documentation only |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`style\` | Formatting, no code change |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`refactor\` | Code change without feat/fix |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`perf\` | Performance improvement |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`test\` | Adding/updating tests |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`build\` | Build system changes |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`ci\` | CI/CD changes |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`chore\` | Other changes |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`revert\` | Reverts a commit |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Check individual commit messages
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Commit Messages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|Merge)(\(.+\))?!?: .{1,}|^Merge "
+          
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          INVALID_COUNT=0
+          VALID_COUNT=0
+          
+          while IFS= read -r commit_line; do
+            COMMIT_SHA=$(echo "$commit_line" | cut -d' ' -f1)
+            COMMIT_MSG=$(echo "$commit_line" | cut -d' ' -f2-)
+            
+            # Skip merge commits
+            if [[ "$COMMIT_MSG" =~ ^Merge ]]; then
+              continue
+            fi
+            
+            if [[ "$COMMIT_MSG" =~ $PATTERN ]]; then
+              echo "✅ \`${COMMIT_SHA:0:7}\`: $COMMIT_MSG" >> $GITHUB_STEP_SUMMARY
+              ((VALID_COUNT++))
+            else
+              echo "❌ \`${COMMIT_SHA:0:7}\`: $COMMIT_MSG" >> $GITHUB_STEP_SUMMARY
+              ((INVALID_COUNT++))
+            fi
+          done < <(git log --oneline "$BASE_SHA..$HEAD_SHA" 2>/dev/null || echo "")
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary:** $VALID_COUNT valid, $INVALID_COUNT invalid" >> $GITHUB_STEP_SUMMARY
+          
+          # Warn but don't fail on individual commits (PR title is what matters for squash merge)
+          if [ $INVALID_COUNT -gt 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Some commits don't follow convention. This is OK if you use squash merge." >> $GITHUB_STEP_SUMMARY
+          fi

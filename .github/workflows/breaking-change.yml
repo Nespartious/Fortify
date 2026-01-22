@@ -1,0 +1,151 @@
+name: Breaking Change Detection
+
+# Detect API breaking changes using cargo-semver-checks
+# Prevents accidental semver violations
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  semver-check:
+    name: Semver Compatibility Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          path: pr
+
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: base
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-semver-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks --locked
+
+      - name: Check for breaking changes
+        id: semver
+        run: |
+          echo "## 🔍 Breaking Change Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          cd pr/fortify
+          
+          BREAKING_FOUND=false
+          
+          echo "### Crate Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check each publishable crate
+          for crate in crates/*/; do
+            CRATE_NAME=$(basename "$crate")
+            CRATE_PATH="crates/$CRATE_NAME"
+            BASE_PATH="../../base/fortify/$CRATE_PATH"
+            
+            # Skip if crate doesn't exist in base
+            if [ ! -d "$BASE_PATH" ]; then
+              echo "⏭️ \`$CRATE_NAME\`: New crate (no baseline)" >> $GITHUB_STEP_SUMMARY
+              continue
+            fi
+            
+            echo "#### \`$CRATE_NAME\`" >> $GITHUB_STEP_SUMMARY
+            
+            # Run semver check
+            set +e
+            OUTPUT=$(cargo semver-checks check-release \
+              --manifest-path "$CRATE_PATH/Cargo.toml" \
+              --baseline-root "$BASE_PATH" 2>&1)
+            RESULT=$?
+            set -e
+            
+            if [ $RESULT -eq 0 ]; then
+              echo "✅ No breaking changes detected" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ **Breaking changes detected:**" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "$OUTPUT" | tail -50 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              BREAKING_FOUND=true
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          echo "breaking=$BREAKING_FOUND" >> $GITHUB_OUTPUT
+
+      - name: Check version bumps
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version Changes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Crate | Base Version | PR Version | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------------|------------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          for crate in pr/fortify/crates/*/; do
+            CRATE_NAME=$(basename "$crate")
+            PR_CARGO="pr/fortify/crates/$CRATE_NAME/Cargo.toml"
+            BASE_CARGO="base/fortify/crates/$CRATE_NAME/Cargo.toml"
+            
+            if [ -f "$PR_CARGO" ] && [ -f "$BASE_CARGO" ]; then
+              PR_VERSION=$(grep '^version = ' "$PR_CARGO" | head -1 | cut -d'"' -f2)
+              BASE_VERSION=$(grep '^version = ' "$BASE_CARGO" | head -1 | cut -d'"' -f2)
+              
+              if [ "$PR_VERSION" = "$BASE_VERSION" ]; then
+                STATUS="unchanged"
+              elif [[ "$PR_VERSION" > "$BASE_VERSION" ]]; then
+                STATUS="⬆️ bumped"
+              else
+                STATUS="⬇️ downgraded"
+              fi
+              
+              echo "| $CRATE_NAME | $BASE_VERSION | $PR_VERSION | $STATUS |" >> $GITHUB_STEP_SUMMARY
+            elif [ -f "$PR_CARGO" ]; then
+              PR_VERSION=$(grep '^version = ' "$PR_CARGO" | head -1 | cut -d'"' -f2)
+              echo "| $CRATE_NAME | N/A | $PR_VERSION | 🆕 new |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Warn on breaking changes
+        if: steps.semver.outputs.breaking == 'true'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Breaking Change Warning" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This PR contains breaking API changes. Please ensure:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Version bump**: Increment the major version (or minor if pre-1.0)" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Documentation**: Update changelog with breaking changes" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Migration guide**: Provide upgrade instructions if needed" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Intentional**: Confirm these breaks are intentional" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "If breaking changes are intentional, add \`breaking-change\` label to the PR." >> $GITHUB_STEP_SUMMARY
+          
+          # Don't fail - just warn. Breaking changes are sometimes needed.
+          echo "::warning::Breaking API changes detected. Please review the summary."

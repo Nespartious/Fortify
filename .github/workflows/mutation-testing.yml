@@ -1,0 +1,110 @@
+name: Mutation Testing
+
+# Mutation testing validates test quality by introducing bugs and checking if tests catch them
+# Uses cargo-mutants: https://github.com/sourcefrog/cargo-mutants
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to test (leave empty for all)'
+        required: false
+        default: ''
+        type: string
+  schedule:
+    # Run weekly on Sunday at 2 AM UTC (mutation testing is slow)
+    - cron: '0 2 * * 0'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutation-test:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # Mutation testing can be slow
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+
+      - name: Run mutation testing
+        working-directory: ./fortify
+        run: |
+          echo "## 🧬 Mutation Testing Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Run mutation testing
+          PACKAGE_FLAG=""
+          if [ -n "${{ github.event.inputs.package }}" ]; then
+            PACKAGE_FLAG="-p ${{ github.event.inputs.package }}"
+          fi
+          
+          # Use --timeout-multiplier to prevent hanging on slow mutations
+          cargo mutants $PACKAGE_FLAG \
+            --timeout-multiplier 3 \
+            --jobs 2 \
+            --output mutants-output \
+            2>&1 | tee mutants-log.txt || true
+          
+          # Generate summary
+          if [ -f mutants-output/outcomes.json ]; then
+            echo "### Results" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat mutants-output/outcomes.json | head -100 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for survived mutants (tests didn't catch bugs)
+          SURVIVED=$(grep -c "SURVIVED" mutants-log.txt || echo "0")
+          KILLED=$(grep -c "KILLED" mutants-log.txt || echo "0")
+          TIMEOUT=$(grep -c "TIMEOUT" mutants-log.txt || echo "0")
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Killed (caught by tests) | $KILLED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Survived (tests missed) | $SURVIVED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏱️ Timeout | $TIMEOUT |" >> $GITHUB_STEP_SUMMARY
+          
+          # Calculate mutation score
+          TOTAL=$((KILLED + SURVIVED))
+          if [ $TOTAL -gt 0 ]; then
+            SCORE=$((KILLED * 100 / TOTAL))
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Mutation Score: ${SCORE}%**" >> $GITHUB_STEP_SUMMARY
+            
+            # Warn if score is low
+            if [ $SCORE -lt 60 ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "⚠️ Low mutation score indicates tests may not be catching all bugs" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Upload mutation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-results
+          path: fortify/mutants-output/
+          retention-days: 30

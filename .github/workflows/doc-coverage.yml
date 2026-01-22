@@ -1,0 +1,149 @@
+name: Documentation Coverage
+
+# Track API documentation coverage
+# Helps ensure public APIs are well-documented
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: "-D warnings"
+
+jobs:
+  doc-coverage:
+    name: Check Documentation Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly (for doc coverage)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check documentation builds without warnings
+        working-directory: ./fortify
+        run: |
+          echo "## 📚 Documentation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Build Status" >> $GITHUB_STEP_SUMMARY
+          
+          if cargo doc --no-deps --document-private-items 2>&1 | tee doc-output.txt; then
+            echo "✅ Documentation builds successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Documentation build failed" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -30 doc-output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Analyze missing documentation
+        working-directory: ./fortify
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Documentation Coverage by Crate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check each crate
+          echo "| Crate | Public Items | Undocumented | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------------|--------------|----------|" >> $GITHUB_STEP_SUMMARY
+          
+          for crate in crates/*/; do
+            CRATE_NAME=$(basename "$crate")
+            
+            # Count public items and missing docs using rustdoc JSON (nightly)
+            # Fallback: count /// comments vs pub items
+            PUB_ITEMS=$(grep -r "^pub " "$crate/src" 2>/dev/null | wc -l || echo 0)
+            DOC_COMMENTS=$(grep -r "^[[:space:]]*///" "$crate/src" 2>/dev/null | wc -l || echo 0)
+            
+            if [ "$PUB_ITEMS" -gt 0 ]; then
+              # Rough estimate: each public item should have at least one doc comment
+              if [ "$DOC_COMMENTS" -ge "$PUB_ITEMS" ]; then
+                COVERAGE="🟢 Good"
+              elif [ "$DOC_COMMENTS" -ge $((PUB_ITEMS / 2)) ]; then
+                COVERAGE="🟡 Partial"
+              else
+                COVERAGE="🔴 Low"
+              fi
+              UNDOC=$((PUB_ITEMS - DOC_COMMENTS))
+              [ $UNDOC -lt 0 ] && UNDOC=0
+            else
+              COVERAGE="N/A"
+              UNDOC=0
+            fi
+            
+            echo "| $CRATE_NAME | $PUB_ITEMS | ~$UNDOC | $COVERAGE |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Check for missing crate-level docs
+        working-directory: ./fortify
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Crate-Level Documentation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          MISSING_CRATE_DOCS=""
+          
+          for crate in crates/*/; do
+            CRATE_NAME=$(basename "$crate")
+            LIB_RS="$crate/src/lib.rs"
+            
+            if [ -f "$LIB_RS" ]; then
+              # Check for //! crate-level documentation
+              if grep -q "^//!" "$LIB_RS"; then
+                echo "✅ \`$CRATE_NAME\` has crate-level documentation" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "⚠️ \`$CRATE_NAME\` missing crate-level documentation (//! comments)" >> $GITHUB_STEP_SUMMARY
+                MISSING_CRATE_DOCS="$MISSING_CRATE_DOCS $CRATE_NAME"
+              fi
+            fi
+          done
+
+      - name: Check for README.md in crates
+        working-directory: ./fortify
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Crate README Files" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for crate in crates/*/; do
+            CRATE_NAME=$(basename "$crate")
+            
+            if [ -f "$crate/README.md" ]; then
+              echo "✅ \`$CRATE_NAME\` has README.md" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ \`$CRATE_NAME\` missing README.md" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Generate documentation
+        working-directory: ./fortify
+        run: |
+          cargo doc --no-deps --document-private-items
+
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdoc-${{ github.sha }}
+          path: fortify/target/doc/
+          retention-days: 7
