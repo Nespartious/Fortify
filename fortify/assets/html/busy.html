@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="{{RETRY_SECONDS}}">
     <title>Fortify — Service Busy</title>
     <style>
         :root {
@@ -14,12 +13,14 @@
             --border-accent: #4a4a55;
             --gold-primary: #c9a227;
             --gold-muted: #a68b5b;
+            --gold-light: #d4b85a;
+            --bronze: #8b7355;
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --amber: #e4bc5e;
-            --slate-blue: #6b7c8c;
             --sage: #9ab893;
+            --slate-blue: #6b7c8c;
+            --amber: #d4a017;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -28,123 +29,125 @@
             color: var(--text-primary);
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             padding: 24px;
         }
-        .container {
-            max-width: 560px;
-            width: 100%;
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: 
+                radial-gradient(ellipse at 50% 0%, rgba(212, 160, 23, 0.04) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 100%, rgba(139, 115, 85, 0.02) 0%, transparent 40%);
+            pointer-events: none;
         }
-        .busy-box {
+        .panel {
             background: var(--bg-surface);
-            border: 1px solid var(--amber);
+            border: 1px solid var(--border-subtle);
             border-radius: 4px;
-            padding: 32px;
+            padding: 48px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+        .icon {
+            font-size: 4rem;
             margin-bottom: 24px;
-        }
-        .busy-header {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-        .busy-icon {
-            font-size: 2.25rem;
             opacity: 0.9;
         }
         h1 {
-            font-size: 1.2rem;
-            font-weight: 500;
-            letter-spacing: 0.1em;
+            font-size: 1.5rem;
+            font-weight: 400;
+            letter-spacing: 0.2em;
             text-transform: uppercase;
             color: var(--amber);
+            margin-bottom: 16px;
         }
         .message {
             color: var(--text-secondary);
-            line-height: 1.6;
-            margin-bottom: 24px;
+            font-size: 0.95rem;
+            line-height: 1.7;
+            margin-bottom: 32px;
         }
-        .countdown {
+        .status {
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 12px;
-            padding: 16px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border-subtle);
-            border-radius: 4px;
-            margin-bottom: 20px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
         }
-        .countdown-icon {
-            font-size: 1.5rem;
-            opacity: 0.7;
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-subtle);
+            border-top-color: var(--gold-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
-        .countdown-text {
-            color: var(--text-secondary);
-            font-size: 0.95rem;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
-        .countdown-time {
-            color: var(--amber);
-            font-weight: 600;
+        /* CSS-only delay button (no JavaScript) */
+        @keyframes enableButton {
+            0%, 95% { 
+                opacity: 0.4; 
+                pointer-events: none; 
+                cursor: not-allowed;
+            }
+            100% { 
+                opacity: 1; 
+                pointer-events: auto; 
+                cursor: pointer;
+            }
         }
-        .retry-link {
+        .retry-btn {
             display: inline-block;
-            padding: 12px 24px;
+            margin-top: 24px;
+            padding: 14px 32px;
             background: transparent;
             border: 1px solid var(--gold-muted);
             color: var(--gold-primary);
-            text-decoration: none;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            transition: all 0.2s ease;
-        }
-        .retry-link:hover {
-            background: var(--gold-primary);
-            color: var(--bg-deep);
-            border-color: var(--gold-primary);
-        }
-        .status-info {
-            margin-top: 24px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border-subtle);
+            font-family: inherit;
             font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            animation: enableButton 20s forwards;
+        }
+        .retry-btn:hover {
+            background: var(--gold-primary);
+            border-color: var(--gold-primary);
+            color: var(--bg-deep);
+        }
+        .footer {
+            margin-top: 32px;
+            font-size: 0.75rem;
             color: var(--text-muted);
         }
-        .status-code {
-            font-family: monospace;
-            color: var(--slate-blue);
-        }
+        /* {{FORTIFY_BRANDING_INJECTION_POINT}} */
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="busy-box">
-            <div class="busy-header">
-                <span class="busy-icon">⏳</span>
-                <h1>Service Busy</h1>
-            </div>
-            
-            <p class="message">
-                The service is experiencing high demand. Your request will be 
-                retried automatically. Please wait a moment.
-            </p>
-            
-            <div class="countdown">
-                <span class="countdown-icon">🔄</span>
-                <span class="countdown-text">
-                    Auto-refresh in <span class="countdown-time">{{RETRY_SECONDS}} seconds</span>
-                </span>
-            </div>
-            
-            <a href="." class="retry-link">Retry Now</a>
-            
-            <div class="status-info">
-                <span class="status-code">HTTP 503</span> — 
-                Temporary capacity limit. Verified sessions are unaffected.
-            </div>
+    <div class="panel">
+        <div class="icon">⏳</div>
+        <h1>Service Busy</h1>
+        <div class="message">
+            The citadel is currently experiencing high demand. 
+            Your request has been queued and will be processed shortly.
         </div>
+        <div class="status">
+            <div class="spinner"></div>
+            <span>Please wait...</span>
+        </div>
+        <a href="/" class="retry-btn">Try Again</a>
+    </div>
+    <div class="footer">
+        <!-- {{FORTIFY_FOOTER_BRANDING}} -->
     </div>
 </body>
 </html>

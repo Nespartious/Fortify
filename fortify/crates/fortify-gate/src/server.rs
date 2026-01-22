@@ -1,4 +1,5 @@
 use fortify_core::safe_lock;
+use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
 use crate::captcha_html::{
     render_captcha_page_with_timer, render_captcha_page_with_timer_and_reason,
 };
@@ -264,125 +265,12 @@ fn serve_cookie_blocked_page() -> Response<BoxBody> {
 
 fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
     // Landing page for NEW users (first-time visitors)
-    // Castle/Fortification themed - Retrosynth style
+    // Uses template engine with citadel/gold theme
     // NO JAVASCRIPT ALLOWED
-    let html = r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// SHIELD ACTIVE</title>
-    <style>
-        :root {
-            --bg-color: #0b0014;
-            --neon-pink: #d500f9;
-            --neon-cyan: #00e5ff;
-            --grid-color: rgba(213, 0, 249, 0.1);
-        }
-        * { box-sizing: border-box; }
-        body {
-            background-color: var(--bg-color);
-            background-image: 
-                linear-gradient(var(--grid-color) 1px, transparent 1px),
-                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-            background-size: 50px 50px;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            text-align: center;
-        }
-        .container { max-width: 520px; width: 100%; }
-        .icon { font-size: 4rem; margin-bottom: 15px; }
-        h1 {
-            font-size: 2rem;
-            margin: 0 0 8px 0;
-            color: var(--neon-pink);
-            text-transform: uppercase;
-            letter-spacing: 4px;
-        }
-        .tagline {
-            font-size: 0.8rem;
-            color: #888;
-            letter-spacing: 2px;
-            margin-bottom: 30px;
-        }
-        .info-box {
-            background: rgba(213, 0, 249, 0.08);
-            border: 1px solid var(--neon-pink);
-            padding: 20px;
-            margin-bottom: 25px;
-            text-align: left;
-        }
-        .info-box p {
-            margin: 0 0 12px 0;
-            color: #aaa;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-        .info-box p:last-child { margin-bottom: 0; }
-        @keyframes fadeInDelay {
-            0% { opacity: 0; pointer-events: none; }
-            60% { opacity: 0; pointer-events: none; }
-            100% { opacity: 1; pointer-events: auto; }
-        }
-        .delay-btn {
-            animation: fadeInDelay 1.5s forwards;
-            opacity: 0;
-        }
-        .proceed-btn {
-            background: transparent;
-            color: var(--neon-cyan);
-            border: 2px solid var(--neon-cyan);
-            padding: 16px 40px;
-            font-family: inherit;
-            font-weight: 700;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-decoration: none;
-            display: inline-block;
-            transition: all 0.2s;
-        }
-        .proceed-btn:hover {
-            background: var(--neon-cyan);
-            color: #000;
-            box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
-        }
-        .status-bar {
-            margin-top: 30px;
-            font-size: 0.65rem;
-            color: #444;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">🏰</div>
-        <h1>FORTIFY SHIELD</h1>
-        <div class="tagline">▸ GATEWAY PROTECTION ACTIVE ◂</div>
-        <div class="info-box">
-            <p>This site is protected by <strong style="color: var(--neon-pink);">Fortify</strong> - a decentralized verification system designed to defend against automated threats.</p>
-            <p>Complete a quick verification to proceed. No accounts or tracking required.</p>
-        </div>
-        <div class="delay-btn">
-            <a href="/Fortify/Portcullis" class="proceed-btn">INITIALIZE HANDSHAKE</a>
-        </div>
-        <div class="status-bar">
-            <span>ONION-V3</span>
-            <span>NO-JS</span>
-            <span>ZERO-TRACK</span>
-        </div>
-    </div>
-</body>
-</html>"###;
+    
+    let engine = TemplateEngine::new();
+    let branding = BrandingVars::default();
+    let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
 
     Response::builder()
         .status(StatusCode::OK)
