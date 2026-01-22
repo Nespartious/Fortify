@@ -163,8 +163,9 @@ mod tests {
     fn test_scale_up_nodes() {
         let policy = ScalingPolicy::new(2, 10, 2, 20);
 
-        // High memory should trigger scale up
-        let decision = policy.should_scale_nodes(10, 50.0, 80.0);
+        // High CPU with reasonable memory should trigger scale up
+        // Note: We don't scale up when memory is high (would make it worse)
+        let decision = policy.should_scale_nodes(10, 80.0, 50.0);
         assert_eq!(decision, Some(ScalingDecision::ScaleUp));
     }
 

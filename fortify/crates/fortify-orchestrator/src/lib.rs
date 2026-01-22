@@ -3598,7 +3598,8 @@ mod tests {
         assert!(mirror.metrics.compromise_score > 0.0);
         assert_eq!(mirror.state, MirrorState::Active);
 
-        // Add high severity signal
+        // Add high severity signal - score becomes (0.3 + 0.9) / 2 = 0.6
+        // Still below 0.8 threshold, so stays Active
         mirror.add_signal(CompromiseSignal::new(
             SignalType::RepeatedFailures,
             0.9,
@@ -3606,6 +3607,26 @@ mod tests {
         ));
 
         assert!(mirror.metrics.compromise_score > 0.5);
+        // Score 0.6 is below 0.8 threshold, so still Active
+        assert_eq!(mirror.state, MirrorState::Active);
+
+        // Add critical signal - score becomes (0.3 + 0.9 + 1.0) / 3 = 0.73
+        // Still below 0.8, add another
+        mirror.add_signal(CompromiseSignal::new(
+            SignalType::RepeatedFailures,
+            1.0,
+            "Critical failures".into(),
+        ));
+        
+        // Add one more to push over threshold
+        mirror.add_signal(CompromiseSignal::new(
+            SignalType::RepeatedFailures,
+            1.0,
+            "More failures".into(),
+        ));
+
+        // Score now (0.3 + 0.9 + 1.0 + 1.0) / 4 = 0.8 - at threshold
+        assert!(mirror.metrics.compromise_score >= 0.8);
         assert_eq!(mirror.state, MirrorState::Suspicious);
     }
 

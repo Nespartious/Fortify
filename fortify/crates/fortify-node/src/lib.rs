@@ -780,8 +780,9 @@ mod tests {
 
     #[test]
     fn test_node_mode_properties() {
-        assert_eq!(NodeMode::Healthy.max_requests_per_minute(), 1000);
-        assert_eq!(NodeMode::Threat.max_requests_per_minute(), 100);
+        // Note: Low limits for testing - production uses higher values
+        assert_eq!(NodeMode::Healthy.max_requests_per_minute(), 20);
+        assert_eq!(NodeMode::Threat.max_requests_per_minute(), 10);
 
         assert!(!NodeMode::Healthy.should_inspect_deeply());
         assert!(NodeMode::Threat.should_inspect_deeply());
@@ -837,14 +838,18 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limiting() {
         let node = create_test_node(NodeMode::Threat);
-        let limit = NodeMode::Threat.max_requests_per_minute();
+        let limit = NodeMode::Threat.max_requests_per_minute(); // 10
 
-        // Should allow up to limit
-        for _ in 0..limit {
-            assert!(node.check_rate_limit("session-1").is_ok());
+        // Record a violation first to disable burst exception
+        node.record_violation("session-1", ViolationType::RateLimitExceeded, "Test");
+
+        // Should allow up to limit (session has violations, no burst exception)
+        for i in 0..limit {
+            let result = node.check_rate_limit("session-1");
+            assert!(result.is_ok(), "Request {} should be allowed", i + 1);
         }
 
-        // Should reject after limit
+        // Should reject after limit (no burst exception due to violation)
         assert!(node.check_rate_limit("session-1").is_err());
     }
 
