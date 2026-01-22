@@ -14,6 +14,12 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
+
+/// Global connection limit across all backend nodes
+/// This prevents resource exhaustion under DDoS conditions
+/// Value: 1000 total connections (can be tuned based on server capacity)
+static GLOBAL_CONNECTION_SEMAPHORE: Semaphore = Semaphore::const_new(1000);
 
 /// Type alias for the response body type used throughout
 type BoxBody = Full<Bytes>;
@@ -237,11 +243,14 @@ pub enum ProxyError {
     BackendTimeout(u64),
     #[error("Gate request timed out after {0}s")]
     GateTimeout(u64),
+    #[error("Service temporarily unavailable - all nodes at capacity")]
+    ServiceUnavailable,
 }
 
 pub type Result<T> = std::result::Result<T, ProxyError>;
 
-/// Backend node configuration
+/// Backend node configuration with semaphore-based connection gating
+/// Uses actual semaphores instead of soft counters to prevent race conditions
 #[derive(Debug, Clone)]
 pub struct BackendNode {
     /// Unique node identifier (e.g., "healthy-0", "threat-1")
@@ -249,6 +258,9 @@ pub struct BackendNode {
     pub address: String,
     pub healthy_mode: bool,
     pub weight: u32,
+    /// Per-node connection semaphore for true concurrency control
+    connection_semaphore: Arc<Semaphore>,
+    /// Active connection counter for metrics/display (updated alongside semaphore)
     pub active_connections: Arc<Mutex<usize>>,
     pub max_connections: usize,
 }
@@ -262,6 +274,7 @@ impl BackendNode {
             address,
             healthy_mode,
             weight: 1,
+            connection_semaphore: Arc::new(Semaphore::new(max_connections)),
             active_connections: Arc::new(Mutex::new(0)),
             max_connections,
         }
@@ -279,27 +292,56 @@ impl BackendNode {
             address,
             healthy_mode,
             weight: 1,
+            connection_semaphore: Arc::new(Semaphore::new(max_connections)),
             active_connections: Arc::new(Mutex::new(0)),
             max_connections,
         }
     }
 
     pub fn can_accept(&self) -> bool {
-        let active = safe_lock(&self.active_connections);
-        *active < self.max_connections
+        // Check if semaphore has available permits
+        self.connection_semaphore.available_permits() > 0
     }
 
+    /// Try to acquire a connection slot using semaphores
+    /// Returns true if slot acquired, false if at capacity
+    /// Uses both global and per-node semaphores for defense-in-depth
     pub fn acquire(&self) -> bool {
-        let mut active = safe_lock(&self.active_connections);
-        if *active < self.max_connections {
-            *active += 1;
-            true
-        } else {
-            false
+        // First try global limit (defense against total exhaustion)
+        let global_permit = GLOBAL_CONNECTION_SEMAPHORE.try_acquire();
+        if global_permit.is_err() {
+            tracing::warn!("Global connection limit reached (1000 total)");
+            return false;
+        }
+        
+        // Then try per-node limit
+        match self.connection_semaphore.try_acquire() {
+            Ok(_permit) => {
+                // Forget permits so they stay acquired until release() is called
+                // We manually track via active_connections counter
+                std::mem::forget(global_permit.unwrap());
+                std::mem::forget(_permit);
+                
+                // Update counter for metrics display
+                let mut active = safe_lock(&self.active_connections);
+                *active += 1;
+                true
+            }
+            Err(_) => {
+                // Per-node limit reached, global permit is dropped automatically
+                tracing::debug!("Node {} at capacity ({})", self.name, self.max_connections);
+                false
+            }
         }
     }
 
+    /// Release a connection slot
     pub fn release(&self) {
+        // Add permits back to both semaphores
+        self.connection_semaphore.add_permits(1);
+        GLOBAL_CONNECTION_SEMAPHORE.add_permits(1);
+        
+        // Update counter for metrics
         let mut active = safe_lock(&self.active_connections);
         if *active > 0 {
             *active -= 1;
@@ -316,6 +358,8 @@ pub struct Metrics {
     pub tokens_valid: u64,
     pub tokens_invalid: u64,
     pub backend_errors: u64,
+    /// 503 responses sent due to capacity limits
+    pub capacity_shed: u64,
 }
 
 impl Metrics {
@@ -341,6 +385,11 @@ impl Metrics {
 
     pub fn record_backend_error(&mut self) {
         self.backend_errors += 1;
+    }
+    
+    /// Record a 503 capacity shed response
+    pub fn record_capacity_shed(&mut self) {
+        self.capacity_shed += 1;
     }
 }
 
@@ -1240,6 +1289,19 @@ async fn process_request(
     // THREAT PATH: Unknown users OR users demoted to threat pool
     // These users must solve a captcha to prove they're human before accessing the real site
     if trust_tier.requires_gate() {
+        // Check global capacity FIRST - shed threat-tier traffic before verified sessions
+        // This protects verified/trusted users during DDoS attacks
+        let global_available = GLOBAL_CONNECTION_SEMAPHORE.available_permits();
+        let capacity_threshold = 100; // Reserve 10% of 1000 permits for verified sessions
+        
+        if global_available < capacity_threshold {
+            tracing::warn!(
+                "503: Global capacity low ({} permits available), shedding threat-tier request",
+                global_available
+            );
+            return serve_busy_page();
+        }
+        
         tracing::info!(
             "THREAT PATH: Proxying {} user to Gate for verification: {}",
             trust_tier.as_str(),
@@ -1360,11 +1422,18 @@ async fn process_request(
         Err(e) => {
             let mut m = safe_lock(&metrics);
             m.record_backend_error();
-            (
-                error_response(StatusCode::BAD_GATEWAY, &format!("Backend error: {}", e)),
-                String::new(),
-                0u64,
-            )
+            
+            // Check if this is a capacity error - return 503 instead of 502
+            if e.contains("No available backend nodes") || e.contains("capacity") {
+                tracing::warn!("503: All backend nodes at capacity");
+                (serve_busy_page(), String::new(), 0u64)
+            } else {
+                (
+                    error_response(StatusCode::BAD_GATEWAY, &format!("Backend error: {}", e)),
+                    String::new(),
+                    0u64,
+                )
+            }
         }
     };
 
@@ -1931,6 +2000,150 @@ fn serve_killed_session_page() -> Response<BoxBody> {
             "Set-Cookie",
             "fortify_session=; Path=/; Max-Age=0; HttpOnly",
         )
+        .body(Full::new(Bytes::from(html)))
+        .unwrap()
+}
+
+/// Serve a 503 Service Unavailable page when at capacity
+/// Includes auto-refresh and Retry-After header for graceful degradation
+fn serve_busy_page() -> Response<BoxBody> {
+    use rand::Rng;
+    
+    // Add jitter to retry time (25-35 seconds) to prevent thundering herd
+    let mut rng = rand::thread_rng();
+    let retry_seconds = rng.gen_range(25..=35);
+    
+    let html = format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="{}">
+    <title>Fortify — Service Busy</title>
+    <style>
+        :root {{
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --amber: #e4bc5e;
+            --slate-blue: #6b7c8c;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }}
+        .container {{ max-width: 560px; width: 100%; }}
+        .busy-box {{
+            background: var(--bg-surface);
+            border: 1px solid var(--amber);
+            border-radius: 4px;
+            padding: 32px;
+        }}
+        .busy-header {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }}
+        .busy-icon {{ font-size: 2.25rem; opacity: 0.9; }}
+        h1 {{
+            font-size: 1.2rem;
+            font-weight: 500;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--amber);
+        }}
+        .message {{
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }}
+        .countdown {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }}
+        .countdown-icon {{ font-size: 1.5rem; opacity: 0.7; }}
+        .countdown-text {{ color: var(--text-secondary); font-size: 0.95rem; }}
+        .countdown-time {{ color: var(--amber); font-weight: 600; }}
+        .retry-link {{
+            display: inline-block;
+            padding: 12px 24px;
+            background: transparent;
+            border: 1px solid var(--gold-muted);
+            color: var(--gold-primary);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }}
+        .retry-link:hover {{
+            background: var(--gold-primary);
+            color: var(--bg-deep);
+            border-color: var(--gold-primary);
+        }}
+        .status-info {{
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-subtle);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }}
+        .status-code {{ font-family: monospace; color: var(--slate-blue); }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="busy-box">
+            <div class="busy-header">
+                <span class="busy-icon">⏳</span>
+                <h1>Service Busy</h1>
+            </div>
+            <p class="message">
+                The service is experiencing high demand. Your request will be 
+                retried automatically. Please wait a moment.
+            </p>
+            <div class="countdown">
+                <span class="countdown-icon">🔄</span>
+                <span class="countdown-text">
+                    Auto-refresh in <span class="countdown-time">{} seconds</span>
+                </span>
+            </div>
+            <a href="." class="retry-link">Retry Now</a>
+            <div class="status-info">
+                <span class="status-code">HTTP 503</span> — 
+                Temporary capacity limit. Verified sessions are unaffected.
+            </div>
+        </div>
+    </div>
+</body>
+</html>"#, retry_seconds, retry_seconds);
+
+    Response::builder()
+        .status(StatusCode::SERVICE_UNAVAILABLE)
+        .header("Content-Type", "text/html")
+        .header("Retry-After", retry_seconds.to_string())
+        .header("Cache-Control", "no-store")
         .body(Full::new(Bytes::from(html)))
         .unwrap()
 }

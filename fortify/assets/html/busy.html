@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="{{RETRY_SECONDS}}">
+    <title>Fortify — Service Busy</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --amber: #e4bc5e;
+            --slate-blue: #6b7c8c;
+            --sage: #9ab893;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        .container {
+            max-width: 560px;
+            width: 100%;
+        }
+        .busy-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--amber);
+            border-radius: 4px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .busy-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .busy-icon {
+            font-size: 2.25rem;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: 1.2rem;
+            font-weight: 500;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--amber);
+        }
+        .message {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .countdown {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .countdown-icon {
+            font-size: 1.5rem;
+            opacity: 0.7;
+        }
+        .countdown-text {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+        .countdown-time {
+            color: var(--amber);
+            font-weight: 600;
+        }
+        .retry-link {
+            display: inline-block;
+            padding: 12px 24px;
+            background: transparent;
+            border: 1px solid var(--gold-muted);
+            color: var(--gold-primary);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+        .retry-link:hover {
+            background: var(--gold-primary);
+            color: var(--bg-deep);
+            border-color: var(--gold-primary);
+        }
+        .status-info {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-subtle);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .status-code {
+            font-family: monospace;
+            color: var(--slate-blue);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="busy-box">
+            <div class="busy-header">
+                <span class="busy-icon">⏳</span>
+                <h1>Service Busy</h1>
+            </div>
+            
+            <p class="message">
+                The service is experiencing high demand. Your request will be 
+                retried automatically. Please wait a moment.
+            </p>
+            
+            <div class="countdown">
+                <span class="countdown-icon">🔄</span>
+                <span class="countdown-text">
+                    Auto-refresh in <span class="countdown-time">{{RETRY_SECONDS}} seconds</span>
+                </span>
+            </div>
+            
+            <a href="." class="retry-link">Retry Now</a>
+            
+            <div class="status-info">
+                <span class="status-code">HTTP 503</span> — 
+                Temporary capacity limit. Verified sessions are unaffected.
+            </div>
+        </div>
+    </div>
+</body>
+</html>
