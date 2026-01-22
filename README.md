@@ -2,6 +2,12 @@
 
 > **Advanced DDoS Protection for Tor Hidden Services**
 
+<!-- Workflow Status Badges -->
+[![CI](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/Nespartious/Fortify/actions/workflows/security.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/security.yml)
+[![Code Quality](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml)
+
+<!-- Static Badges -->
 [![Status](https://img.shields.io/badge/Status-Alpha-orange)](https://github.com/Nespartious/Fortify)
 [![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
