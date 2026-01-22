@@ -102,7 +102,7 @@ async fn handle_request(
     let path = req.uri().path().to_string();
 
     // Administrative endpoints require authentication
-    let admin_endpoints = vec![
+    let admin_endpoints = [
         "/mirror/create",
         "/mirror/create-standby",
         "/mirror/activate",
@@ -111,19 +111,17 @@ async fn handle_request(
         "/mirror/destroy",
     ];
 
-    if admin_endpoints.iter().any(|endpoint| path == *endpoint) {
-        if !is_authenticated(&req) {
-            tracing::warn!("🚫 Unauthorized attempt to access {} from {}", path, method);
-            let duration = start.elapsed();
-            tracing::debug!(
-                "{} {} - {} - {:?}",
-                method,
-                path,
-                StatusCode::UNAUTHORIZED,
-                duration
-            );
-            return Ok(unauthorized());
-        }
+    if admin_endpoints.iter().any(|endpoint| path == *endpoint) && !is_authenticated(&req) {
+        tracing::warn!("🚫 Unauthorized attempt to access {} from {}", path, method);
+        let duration = start.elapsed();
+        tracing::debug!(
+            "{} {} - {} - {:?}",
+            method,
+            path,
+            StatusCode::UNAUTHORIZED,
+            duration
+        );
+        return Ok(unauthorized());
     }
 
     let response = match (req.method().as_str(), req.uri().path()) {

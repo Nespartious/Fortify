@@ -13,13 +13,11 @@ path = "src/main.rs"
 fortify-core = { path = "../fortify-core" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 hyper = { version = "0.14", features = ["server", "client", "http1", "tcp"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-chrono = "0.4"
 rand = "0.8"
 hex = "0.4"
 sysinfo = "0.30"

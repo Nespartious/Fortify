@@ -160,8 +160,8 @@ impl TorManager {
                     let dir_clean = dir.trim().trim_matches('"').to_string();
 
                     // Get the port configuration for this service
-                    let port_cmd = format!("GETCONF HiddenServicePort");
-                    let port_response = self.run_command(&mut stream, &port_cmd)?;
+                    let port_cmd = "GETCONF HiddenServicePort";
+                    let port_response = self.run_command(&mut stream, port_cmd)?;
 
                     let mut ports = Vec::new();
                     for port_line in port_response.lines() {

@@ -1055,16 +1055,14 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<Body> {
 
     // First try to get image data from the new captcha_data field
     if let Some(state) = gate.get_verification_state(id) {
-        if let Some(ref captcha_data) = state.captcha_data {
-            if let CaptchaData::BmpText { image_data, .. } = captcha_data {
-                if !image_data.is_empty() {
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .header("Content-Type", "image/bmp")
-                        .header("Cache-Control", "no-store, no-cache, must-revalidate")
-                        .body(Body::from(image_data.clone()))
-                        .unwrap();
-                }
+        if let Some(CaptchaData::BmpText { ref image_data, .. }) = state.captcha_data {
+            if !image_data.is_empty() {
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "image/bmp")
+                    .header("Cache-Control", "no-store, no-cache, must-revalidate")
+                    .body(Body::from(image_data.clone()))
+                    .unwrap();
             }
         }
     }
@@ -1437,7 +1435,10 @@ async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<
             let second_captcha_type = captcha_config.threat_captcha_type;
 
             // Regenerate captcha with the threat type for second challenge
-            if let Err(_) = gate.regenerate_captcha(session_id, second_captcha_type) {
+            if gate
+                .regenerate_captcha(session_id, second_captcha_type)
+                .is_err()
+            {
                 return styled_error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "System Error",

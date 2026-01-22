@@ -795,12 +795,12 @@ fn strip_ansi_codes(s: &str) -> String {
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
-        if c == '\x1b' || c == '\u{001b}' {
+        if c == '\x1b' {
             // Skip escape sequence: ESC [ ... m
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
                               // Skip until 'm' or end of string
-                while let Some(c) = chars.next() {
+                for c in chars.by_ref() {
                     if c == 'm' {
                         break;
                     }

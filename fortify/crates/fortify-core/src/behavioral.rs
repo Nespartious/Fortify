@@ -77,15 +77,14 @@ impl ViolationType {
 
     pub fn severity(&self) -> u8 {
         match self {
-            ViolationType::AttackPathAccess => 3,
-            ViolationType::SuspiciousUserAgent => 2,
-            ViolationType::PathEnumeration => 2,
-            ViolationType::ResourceEnumeration => 2,
-            ViolationType::FormSubmissionFlood => 2,
-            ViolationType::AutomatedBehavior => 3,
-            ViolationType::SuspiciousReferer => 1,
-            ViolationType::OversizedPayload => 1,
-            ViolationType::UndersizedPayload => 1,
+            ViolationType::AttackPathAccess | ViolationType::AutomatedBehavior => 3,
+            ViolationType::SuspiciousUserAgent
+            | ViolationType::PathEnumeration
+            | ViolationType::ResourceEnumeration
+            | ViolationType::FormSubmissionFlood => 2,
+            ViolationType::SuspiciousReferer
+            | ViolationType::OversizedPayload
+            | ViolationType::UndersizedPayload => 1,
         }
     }
 }
@@ -159,13 +158,14 @@ impl BehaviorStats {
     pub fn severity_score(&self) -> u64 {
         self.recent_violations
             .iter()
-            .map(|v| v.severity as u64)
+            .map(|v| u64::from(v.severity))
             .sum()
     }
 }
 
 /// Configuration for behavioral analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct BehaviorConfig {
     /// Enable User-Agent analysis
     pub ua_analysis_enabled: bool,
@@ -299,19 +299,19 @@ impl BehaviorConfig {
     /// Check if a session should be demoted based on their stats
     pub fn should_demote_to_threat(&self, stats: &BehaviorStats) -> bool {
         // Check total violations threshold
-        if stats.total_violations() >= self.threat_demotion_threshold as u64 {
+        if stats.total_violations() >= u64::from(self.threat_demotion_threshold) {
             return true;
         }
 
         // Check severity score threshold
-        if stats.severity_score() >= self.threat_severity_threshold as u64 {
+        if stats.severity_score() >= u64::from(self.threat_severity_threshold) {
             return true;
         }
 
         // Check individual violation type thresholds
         for (vtype, count) in &stats.violations_by_type {
             if let Some(&threshold) = self.violation_type_thresholds.get(vtype) {
-                if *count >= threshold as u64 {
+                if *count >= u64::from(threshold) {
                     return true;
                 }
             }
@@ -551,11 +551,7 @@ impl EarlyBehaviorAnalysis {
             .unwrap()
             .as_secs();
         let elapsed = now - self.created_at;
-        if elapsed >= self.window_seconds {
-            0
-        } else {
-            self.window_seconds - elapsed
-        }
+        self.window_seconds.saturating_sub(elapsed)
     }
 }
 
@@ -598,14 +594,14 @@ impl SessionBehavior {
 
         // User-Agent Analysis
         if self.config.ua_analysis_enabled {
-            if let Some(v) = self.analyze_user_agent(&req.user_agent) {
+            if let Some(v) = self.analyze_user_agent(req.user_agent.as_ref()) {
                 violations.push(v);
             }
         }
 
         // Referer Analysis
         if self.config.referer_analysis_enabled {
-            if let Some(v) = self.analyze_referer(&req.referer, &req.path) {
+            if let Some(v) = Self::analyze_referer(req.referer.as_ref(), &req.path) {
                 violations.push(v);
             }
         }
@@ -646,7 +642,7 @@ impl SessionBehavior {
     }
 
     /// Analyze User-Agent for non-Tor patterns
-    fn analyze_user_agent(&mut self, ua: &Option<String>) -> Option<BehaviorViolation> {
+    fn analyze_user_agent(&mut self, ua: Option<&String>) -> Option<BehaviorViolation> {
         let ua_str = match ua {
             Some(s) => s.to_lowercase(),
             None => {
@@ -699,7 +695,7 @@ impl SessionBehavior {
                 self.stats.suspicious_ua_detected = true;
                 return Some(BehaviorViolation::new(
                     ViolationType::SuspiciousUserAgent,
-                    format!("Bot pattern detected: {}", pattern),
+                    format!("Bot pattern detected: {pattern}"),
                 ));
             }
         }
@@ -718,17 +714,10 @@ impl SessionBehavior {
     }
 
     /// Analyze Referer header
-    fn analyze_referer(
-        &self,
-        referer: &Option<String>,
-        _current_path: &str,
-    ) -> Option<BehaviorViolation> {
-        let referer_str = match referer {
-            Some(s) => s,
-            None => {
-                // Missing referer is NORMAL for Tor safest mode
-                return None;
-            }
+    fn analyze_referer(referer: Option<&String>, _current_path: &str) -> Option<BehaviorViolation> {
+        let Some(referer_str) = referer else {
+            // Missing referer is NORMAL for Tor safest mode
+            return None;
         };
 
         // Suspicious external referers that shouldn't link to an onion
@@ -749,7 +738,7 @@ impl SessionBehavior {
             if referer_lower.contains(pattern) {
                 return Some(BehaviorViolation::new(
                     ViolationType::SuspiciousReferer,
-                    format!("External referer from: {}", pattern),
+                    format!("External referer from: {pattern}"),
                 ));
             }
         }
@@ -777,13 +766,13 @@ impl SessionBehavior {
         if self.config.is_custom_whitelisted(path) || self.config.is_custom_whitelisted(&path_lower)
         {
             // Still check for sequential enumeration even on whitelisted paths
-            if self.path_history.len() >= self.config.sequential_path_threshold as usize {
-                if self.detect_sequential_paths() {
-                    violations.push(BehaviorViolation::new(
-                        ViolationType::PathEnumeration,
-                        "Sequential path scanning detected".to_string(),
-                    ));
-                }
+            if self.path_history.len() >= self.config.sequential_path_threshold as usize
+                && self.detect_sequential_paths()
+            {
+                violations.push(BehaviorViolation::new(
+                    ViolationType::PathEnumeration,
+                    "Sequential path scanning detected".to_string(),
+                ));
             }
             return violations;
         }
@@ -798,20 +787,20 @@ impl SessionBehavior {
             if path_lower.contains(pattern) {
                 violations.push(BehaviorViolation::new(
                     ViolationType::AttackPathAccess,
-                    format!("{}: {}", desc, path),
+                    format!("{desc}: {path}"),
                 ));
                 break; // One violation per request
             }
         }
 
         // Check for sequential path enumeration
-        if self.path_history.len() >= self.config.sequential_path_threshold as usize {
-            if self.detect_sequential_paths() {
-                violations.push(BehaviorViolation::new(
-                    ViolationType::PathEnumeration,
-                    "Sequential path scanning detected".to_string(),
-                ));
-            }
+        if self.path_history.len() >= self.config.sequential_path_threshold as usize
+            && self.detect_sequential_paths()
+        {
+            violations.push(BehaviorViolation::new(
+                ViolationType::PathEnumeration,
+                "Sequential path scanning detected".to_string(),
+            ));
         }
 
         violations
@@ -850,6 +839,7 @@ impl SessionBehavior {
     }
 
     /// Detect rapid resource enumeration
+    #[allow(clippy::cast_possible_truncation)]
     fn detect_enumeration(&mut self, current_time: u64) -> Option<BehaviorViolation> {
         // Clean old timestamps (keep last minute)
         while let Some(&ts) = self.path_timestamps.front() {
@@ -865,8 +855,8 @@ impl SessionBehavior {
             return Some(BehaviorViolation::new(
                 ViolationType::ResourceEnumeration,
                 format!(
-                    "{} unique paths in last minute (limit: {})",
-                    paths_per_minute, self.config.max_unique_paths_per_minute
+                    "{paths_per_minute} unique paths in last minute (limit: {})",
+                    self.config.max_unique_paths_per_minute
                 ),
             ));
         }
@@ -875,6 +865,7 @@ impl SessionBehavior {
     }
 
     /// Check for form submission flooding
+    #[allow(clippy::cast_possible_truncation)]
     fn check_form_flood(&mut self, current_time: u64) -> Option<BehaviorViolation> {
         // Clean old timestamps
         while let Some(&ts) = self.form_timestamps.front() {
@@ -890,8 +881,8 @@ impl SessionBehavior {
             return Some(BehaviorViolation::new(
                 ViolationType::FormSubmissionFlood,
                 format!(
-                    "{} form submissions in last minute (limit: {})",
-                    submissions_per_minute, self.config.max_form_submissions_per_minute
+                    "{submissions_per_minute} form submissions in last minute (limit: {})",
+                    self.config.max_form_submissions_per_minute
                 ),
             ));
         }
@@ -945,7 +936,7 @@ impl SessionBehavior {
                 // Instant sequence - bot-like
                 self.early_analysis.record_bad_signal(
                     EarlySignalType::InstantSequence,
-                    Some(format!("{}ms between requests", gap_ms)),
+                    Some(format!("{gap_ms}ms between requests")),
                 );
             } else if gap_ms > 500 && gap_ms < 30000 {
                 // Reasonable pacing (0.5s to 30s) - human-like
@@ -1014,7 +1005,7 @@ impl SessionBehavior {
                 .collect();
 
             // Check if paths look like enumeration (e.g., /user/1, /user/2, /user/3)
-            if self.looks_like_enumeration(&recent_paths) {
+            if Self::looks_like_enumeration(&recent_paths) {
                 self.early_analysis.record_bad_signal(
                     EarlySignalType::EnumerationPattern,
                     Some(recent_paths.join(" -> ")),
@@ -1028,7 +1019,7 @@ impl SessionBehavior {
     }
 
     /// Check if a series of paths looks like enumeration
-    fn looks_like_enumeration(&self, paths: &[&str]) -> bool {
+    fn looks_like_enumeration(paths: &[&str]) -> bool {
         if paths.len() < 3 {
             return false;
         }
@@ -1050,12 +1041,12 @@ impl SessionBehavior {
 
     /// Get early analysis recommendation (closes window if still open)
     pub fn get_early_recommendation(&mut self) -> EarlyRecommendation {
-        if !self.early_analysis.window_closed {
-            self.early_analysis.close_window()
-        } else {
+        if self.early_analysis.window_closed {
             self.early_analysis
                 .recommendation
                 .unwrap_or(EarlyRecommendation::StandardFlow)
+        } else {
+            self.early_analysis.close_window()
         }
     }
 

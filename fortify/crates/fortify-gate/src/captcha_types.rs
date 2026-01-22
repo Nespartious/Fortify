@@ -17,9 +17,10 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// Available captcha types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CaptchaType {
     /// Traditional text-based BMP image captcha
+    #[default]
     BmpText,
     /// Select emoji matching description (e.g., "happy face")
     Emoji,
@@ -33,12 +34,6 @@ pub enum CaptchaType {
     ImageRotation,
     /// Identify silhouette category
     Silhouette,
-}
-
-impl Default for CaptchaType {
-    fn default() -> Self {
-        Self::BmpText
-    }
 }
 
 impl CaptchaType {
@@ -576,8 +571,8 @@ impl SequenceChallenge {
             }
             _ => {
                 // Shapes alternating: ●, ○, ●, ? -> ○
-                let shapes_a = vec!["●", "■", "▲"];
-                let shapes_b = vec!["○", "□", "△"];
+                let shapes_a = ["●", "■", "▲"];
+                let shapes_b = ["○", "□", "△"];
                 let shape_idx = rng.gen_range(0..shapes_a.len());
                 let seq: Vec<String> = vec![
                     shapes_a[shape_idx].to_string(),

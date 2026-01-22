@@ -9,7 +9,7 @@ pub enum CaptchaDifficulty {
 }
 
 impl CaptchaDifficulty {
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_difficulty_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "easy" => Self::Easy,
             "hard" => Self::Hard,
@@ -194,6 +194,7 @@ fn draw_interference_line(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_char_bottom_up(
     pixels: &mut [u8],
     width: u32,
@@ -208,8 +209,7 @@ fn draw_char_bottom_up(
     let font_data = get_font_bitmap(c);
     let mut rng = rand::thread_rng();
 
-    for row in 0..7 {
-        let row_byte = font_data[row];
+    for (row, row_byte) in font_data.iter().enumerate() {
         for col in 0..5 {
             if (row_byte >> (4 - col)) & 1 == 1 {
                 for dy in 0..scale {

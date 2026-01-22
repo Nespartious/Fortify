@@ -100,9 +100,10 @@ pub struct SessionInfo {
 }
 
 /// Types of history events
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum HistoryEventType {
     /// Standard page request/navigation
+    #[default]
     PageRequest,
     /// Admin manually changed session tier
     AdminTierChange,
@@ -165,12 +166,6 @@ pub struct HistoryEntry {
     pub reason: Option<String>,
 }
 
-impl Default for HistoryEventType {
-    fn default() -> Self {
-        Self::PageRequest
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeInfo {
     pub id: String,
@@ -191,6 +186,12 @@ pub struct MirrorInfo {
     pub status: String,
     pub created_at: u64,
     pub total_requests: u64,
+}
+
+impl Default for AdminState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AdminState {
@@ -764,7 +765,7 @@ impl AdminState {
             .filter_map(|n| {
                 n.bind_addr
                     .split(':')
-                    .last()
+                    .next_back()
                     .and_then(|p| p.parse::<u16>().ok())
             })
             .max()
@@ -1932,7 +1933,7 @@ fn render_sessions(state: &AdminState, uri: &hyper::Uri) -> Response<Body> {
 
     // Pagination (50 per page)
     let per_page = 50;
-    let total_pages = (sessions.len() + per_page - 1) / per_page;
+    let total_pages = sessions.len().div_ceil(per_page);
     let page = parse_page_from_query(uri).min(total_pages.max(1)); // Clamp to valid range
     let start = (page - 1) * per_page;
     let end = start + per_page;
@@ -2621,12 +2622,12 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
         is_standby: bool,
     }
 
-    let orchestrator_mirrors: Vec<OrchestratorMirror> = match std::thread::spawn(|| {
+    let orchestrator_mirrors: Vec<OrchestratorMirror> = std::thread::spawn(|| {
         let client = reqwest::blocking::Client::new();
         // Try both orchestrator ports - use /mirrors/extended for full info
         for port in &[8080, 8180] {
             if let Ok(resp) = client
-                .get(&format!("http://127.0.0.1:{}/mirrors/extended", port))
+                .get(format!("http://127.0.0.1:{}/mirrors/extended", port))
                 .timeout(std::time::Duration::from_secs(2))
                 .send()
             {
@@ -2662,10 +2663,7 @@ fn render_mirrors(state: &AdminState) -> Response<Body> {
         Vec::new()
     })
     .join()
-    {
-        Ok(m) => m,
-        Err(_) => Vec::new(),
-    };
+    .unwrap_or_default();
 
     // Get local mirror stats (created_at, total_requests)
     let local_mirrors = state.get_mirrors();
@@ -2981,10 +2979,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
             for (pattern, desc, _) in paths_in_cat {
                 let is_enabled = !config.disabled_attack_paths.contains(*pattern);
                 let checked = if is_enabled { "checked" } else { "" };
-                let field_name = pattern
-                    .replace('/', "_")
-                    .replace('.', "_")
-                    .replace('\\', "_");
+                let field_name = pattern.replace(['/', '.', '\\'], "_");
                 attack_path_rows.push_str(&format!(r#"
                     <div style="display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border-subtle);">
                         <input type="checkbox" name="attack_path_{}" value="1" {} style="width: 18px; height: 18px; accent-color: var(--gold-primary);">
@@ -3026,7 +3021,7 @@ fn render_settings(state: &AdminState) -> Response<Body> {
             .get(*vtype)
             .copied()
             .unwrap_or(5);
-        let field_name = vtype.to_lowercase().replace(' ', "_").replace('-', "_");
+        let field_name = vtype.to_lowercase().replace([' ', '-'], "_");
         threshold_rows.push_str(&format!(r#"
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
                 <span style="color: var(--text-secondary);">{}</span>
@@ -3906,7 +3901,7 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                 if let Ok(Ok(_)) = std::thread::spawn(move || {
                     let client = reqwest::blocking::Client::new();
                     client
-                        .post(&format!("http://127.0.0.1:{}/mirror/pause", port))
+                        .post(format!("http://127.0.0.1:{}/mirror/pause", port))
                         .header(AUTH_TOKEN_HEADER, token)
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(10))
@@ -3927,7 +3922,7 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                 if let Ok(Ok(_)) = std::thread::spawn(move || {
                     let client = reqwest::blocking::Client::new();
                     client
-                        .post(&format!("http://127.0.0.1:{}/mirror/resume", port))
+                        .post(format!("http://127.0.0.1:{}/mirror/resume", port))
                         .header(AUTH_TOKEN_HEADER, token)
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(10))
@@ -3948,7 +3943,7 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                 if let Ok(Ok(_)) = std::thread::spawn(move || {
                     let client = reqwest::blocking::Client::new();
                     client
-                        .post(&format!("http://127.0.0.1:{}/mirror/destroy", port))
+                        .post(format!("http://127.0.0.1:{}/mirror/destroy", port))
                         .header(AUTH_TOKEN_HEADER, token)
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(10))
@@ -3974,7 +3969,7 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                 match std::thread::spawn(move || {
                     let client = reqwest::blocking::Client::new();
                     client
-                        .post(&format!("http://127.0.0.1:{}/mirror/create", port))
+                        .post(format!("http://127.0.0.1:{}/mirror/create", port))
                         .header(AUTH_TOKEN_HEADER, token)
                         .timeout(std::time::Duration::from_secs(30))
                         .send()
@@ -4025,7 +4020,7 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                 match std::thread::spawn(move || {
                     let client = reqwest::blocking::Client::new();
                     client
-                        .post(&format!("http://127.0.0.1:{}/mirror/activate", port))
+                        .post(format!("http://127.0.0.1:{}/mirror/activate", port))
                         .json(&serde_json::json!({"onion_address": addr}))
                         .timeout(std::time::Duration::from_secs(15))
                         .send()
@@ -4064,7 +4059,7 @@ async fn handle_mirror_action(req: Request<Body>, state: Arc<AdminState>) -> Res
                 match std::thread::spawn(move || {
                     let client = reqwest::blocking::Client::new();
                     client
-                        .post(&format!("http://127.0.0.1:{}/mirror/create-standby", port))
+                        .post(format!("http://127.0.0.1:{}/mirror/create-standby", port))
                         .timeout(std::time::Duration::from_secs(30))
                         .send()
                 })
@@ -4184,13 +4179,7 @@ async fn handle_behavior_settings(req: Request<Body>, state: Arc<AdminState>) ->
     // Attack path toggles - rebuild the disabled set based on which checkboxes are checked
     let mut disabled_paths = HashSet::new();
     for (pattern, _, _) in KNOWN_ATTACK_PATHS {
-        let field_name = format!(
-            "attack_path_{}",
-            pattern
-                .replace('/', "_")
-                .replace('.', "_")
-                .replace('\\', "_")
-        );
+        let field_name = format!("attack_path_{}", pattern.replace(['/', '.', '\\'], "_"));
         // If checkbox is NOT in params, the path is disabled
         if !params.contains_key(&field_name) {
             disabled_paths.insert(pattern.to_string());

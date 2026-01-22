@@ -145,16 +145,15 @@ impl VanguardsManager {
         // Check home directory ~/.local/bin (pip --user install location)
         if let Ok(home) = std::env::var("HOME") {
             let local_path = format!("{}/.local/bin/vanguards", home);
-            if Path::new(&local_path).exists() {
-                if Command::new(&local_path)
+            if Path::new(&local_path).exists()
+                && Command::new(&local_path)
                     .arg("--help")
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .status()
                     .is_ok()
-                {
-                    return Some((local_path, vec![]));
-                }
+            {
+                return Some((local_path, vec![]));
             }
         }
 
@@ -169,30 +168,28 @@ impl VanguardsManager {
             std::path::PathBuf::from("/tmp/fortify")
         };
         let venv_path = base_dir.join("venv").join("bin").join("vanguards");
-        if venv_path.exists() {
-            if Command::new(&venv_path)
+        if venv_path.exists()
+            && Command::new(&venv_path)
                 .arg("--help")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .is_ok()
-            {
-                return Some((venv_path.to_string_lossy().to_string(), vec![]));
-            }
+        {
+            return Some((venv_path.to_string_lossy().to_string(), vec![]));
         }
 
         // Also check legacy /tmp location
         let legacy_venv = "/tmp/fortify/venv/bin/vanguards";
-        if Path::new(legacy_venv).exists() {
-            if Command::new(legacy_venv)
+        if Path::new(legacy_venv).exists()
+            && Command::new(legacy_venv)
                 .arg("--help")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .is_ok()
-            {
-                return Some((legacy_venv.to_string(), vec![]));
-            }
+        {
+            return Some((legacy_venv.to_string(), vec![]));
         }
 
         // Try as Python module: python3 -m vanguards

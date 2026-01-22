@@ -71,7 +71,7 @@ impl Controller {
         let (tor_host, tor_port) = if let Some(ref addr) = config.tor_control_addr {
             let parts: Vec<&str> = addr.split(':').collect();
             let host = parts
-                .get(0)
+                .first()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "127.0.0.1".to_string());
             let port = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(9151);
@@ -163,7 +163,7 @@ impl Controller {
             let env = self
                 .healthy_node_env
                 .next_env()
-                .map_err(|e| ControllerError::ConfigError(e))?;
+                .map_err(ControllerError::ConfigError)?;
             manager.spawn(ServiceType::Node, format!("healthy-{}", i), env)?;
         }
 
@@ -172,7 +172,7 @@ impl Controller {
             let env = self
                 .threat_node_env
                 .next_env()
-                .map_err(|e| ControllerError::ConfigError(e))?;
+                .map_err(ControllerError::ConfigError)?;
             manager.spawn(ServiceType::Node, format!("threat-{}", i), env)?;
         }
 
@@ -188,7 +188,7 @@ impl Controller {
             let env = self
                 .orchestrator_env
                 .next_env()
-                .map_err(|e| ControllerError::ConfigError(e))?;
+                .map_err(ControllerError::ConfigError)?;
             manager.spawn(
                 ServiceType::Orchestrator,
                 format!("orchestrator-{}", i),

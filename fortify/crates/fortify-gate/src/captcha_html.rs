@@ -690,7 +690,7 @@ pub fn render_silhouette_captcha(
         challenge,
         is_threat,
         "▸ SILHOUETTE VERIFICATION ◂",
-        &format!("What does this silhouette show?"),
+        "What does this silhouette show?",
     )
 }
 

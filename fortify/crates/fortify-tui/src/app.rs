@@ -517,15 +517,17 @@ impl App {
                 Ok(cfg) => cfg,
                 Err(_) => {
                     // Load failed, use default but keep the path
-                    let mut cfg = FortifyConfig::default();
-                    cfg.config_path = Some(config_path);
-                    cfg
+                    FortifyConfig {
+                        config_path: Some(config_path),
+                        ..Default::default()
+                    }
                 }
             }
         } else {
-            let mut cfg = FortifyConfig::default();
-            cfg.config_path = Some(config_path);
-            cfg
+            FortifyConfig {
+                config_path: Some(config_path),
+                ..Default::default()
+            }
         };
 
         // Load existing deployments
@@ -815,24 +817,8 @@ impl App {
             return;
         }
 
-        // Parse "Backend is now REACHABLE (took 234ms) - scaling down check frequency"
-        if msg.contains("Backend is now REACHABLE") {
-            if let Some(duration_ms) = Self::extract_duration_ms(msg) {
-                self.backend_last_check = Some(std::time::Instant::now());
-                self.backend_check_history.push(BackendHealthCheck {
-                    timestamp: std::time::Instant::now(),
-                    success: true,
-                    duration: Duration::from_millis(duration_ms),
-                    error: None,
-                });
-                self.trim_health_history();
-                // Calculate state from last 3 checks
-                self.backend_health =
-                    BackendHealthState::from_recent_checks(&self.backend_check_history);
-            }
-        }
-        // Parse "Backend check: REACHABLE (123ms)"
-        else if msg.contains("Backend check: REACHABLE") {
+        // Parse "Backend is now REACHABLE (took 234ms) - scaling down check frequency" or "Backend check: REACHABLE (123ms)"
+        if msg.contains("Backend is now REACHABLE") || msg.contains("Backend check: REACHABLE") {
             if let Some(duration_ms) = Self::extract_duration_ms(msg) {
                 self.backend_last_check = Some(std::time::Instant::now());
                 self.backend_check_history.push(BackendHealthCheck {
@@ -923,51 +909,15 @@ impl App {
             return;
         }
 
-        // Parse "Mirror http://...onion is now REACHABLE (234ms, status: 302)"
-        if msg.contains("Mirror ") && msg.contains(" is now REACHABLE") {
-            if let Some((mirror_addr, duration_ms)) = Self::extract_mirror_and_duration(msg) {
-                let checks = self
-                    .mirror_health_checks
-                    .entry(mirror_addr)
-                    .or_insert_with(Vec::new);
-                checks.push(BackendHealthCheck {
-                    timestamp: std::time::Instant::now(),
-                    success: true,
-                    duration: Duration::from_millis(duration_ms),
-                    error: None,
-                });
-                if checks.len() > 10 {
-                    checks.drain(0..checks.len() - 10);
-                }
-            }
-        }
-        // Parse "Mirror http://...onion check: REACHABLE (156ms, status: 302)" or "check: REACHABLE (configured)"
-        else if msg.contains("Mirror ") && msg.contains(" check: REACHABLE") {
-            if let Some((mirror_addr, duration_ms)) = Self::extract_mirror_and_duration(msg) {
-                let checks = self
-                    .mirror_health_checks
-                    .entry(mirror_addr)
-                    .or_insert_with(Vec::new);
-                checks.push(BackendHealthCheck {
-                    timestamp: std::time::Instant::now(),
-                    success: true,
-                    duration: Duration::from_millis(duration_ms),
-                    error: None,
-                });
-                if checks.len() > 10 {
-                    checks.drain(0..checks.len() - 10);
-                }
-            }
-        }
-        // Parse "Mirror http://...onion status: AVAILABLE" (alternate format)
-        else if msg.contains("Mirror ")
-            && (msg.contains(" status: AVAILABLE") || msg.contains(" is now AVAILABLE"))
+        // Parse "Mirror http://...onion is now REACHABLE (234ms, status: 302)" or "Mirror http://...onion check: REACHABLE (156ms, status: 302)" or "status: AVAILABLE"
+        if msg.contains("Mirror ")
+            && (msg.contains(" is now REACHABLE")
+                || msg.contains(" check: REACHABLE")
+                || msg.contains(" status: AVAILABLE")
+                || msg.contains(" is now AVAILABLE"))
         {
             if let Some((mirror_addr, duration_ms)) = Self::extract_mirror_and_duration(msg) {
-                let checks = self
-                    .mirror_health_checks
-                    .entry(mirror_addr)
-                    .or_insert_with(Vec::new);
+                let checks = self.mirror_health_checks.entry(mirror_addr).or_default();
                 checks.push(BackendHealthCheck {
                     timestamp: std::time::Instant::now(),
                     success: true,
@@ -982,10 +932,7 @@ impl App {
         // Parse "Mirror http://...onion became UNREACHABLE: connection timeout"
         else if msg.contains("Mirror ") && msg.contains(" became UNREACHABLE") {
             if let Some((mirror_addr, _)) = Self::extract_mirror_and_duration(msg) {
-                let checks = self
-                    .mirror_health_checks
-                    .entry(mirror_addr)
-                    .or_insert_with(Vec::new);
+                let checks = self.mirror_health_checks.entry(mirror_addr).or_default();
                 checks.push(BackendHealthCheck {
                     timestamp: std::time::Instant::now(),
                     success: false,
@@ -1094,13 +1041,12 @@ impl App {
                 self.system_status.mirrors = (live, standby + 1, total + 1);
             }
             // Track when creating: "Creating hidden service" or "Spawning new mirror"
-            if msg.contains("Creating hidden service")
+            if (msg.contains("Creating hidden service")
                 || msg.contains("Spawning new mirror")
-                || msg.contains("Spawning standby mirror")
+                || msg.contains("Spawning standby mirror"))
+                && self.system_status.mirror_status != ComponentStatus::Running
             {
-                if self.system_status.mirror_status != ComponentStatus::Running {
-                    self.system_status.mirror_status = ComponentStatus::Starting;
-                }
+                self.system_status.mirror_status = ComponentStatus::Starting;
             }
         }
 
@@ -2542,7 +2488,7 @@ impl App {
             );
 
             // Try to copy to clipboard using various methods
-            if let Err(_) = Self::copy_to_clipboard(&text) {
+            if Self::copy_to_clipboard(&text).is_err() {
                 // Fallback: save to a temp file that user can access
                 let path_buf =
                     std::path::PathBuf::from(&self.config.network.data_dir).join("copied_log.txt");

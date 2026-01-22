@@ -5,6 +5,12 @@ pub struct ResourceMonitor {
     system: System,
 }
 
+impl Default for ResourceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResourceMonitor {
     pub fn new() -> Self {
         let mut system = System::new_all();

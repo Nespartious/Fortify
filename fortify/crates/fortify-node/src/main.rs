@@ -25,8 +25,10 @@ async fn main() -> anyhow::Result<()> {
     info!("Fortify Node starting in {:?} mode", mode);
 
     // Load configuration
-    let mut config = NodeConfig::default();
-    config.mode = mode;
+    let mut config = NodeConfig {
+        mode,
+        ..Default::default()
+    };
 
     if let Ok(addr) = env::var("BIND_ADDR") {
         config.bind_addr = addr.parse()?;

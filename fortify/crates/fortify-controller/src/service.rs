@@ -142,6 +142,12 @@ pub struct ServiceManager {
     next_id: usize,
 }
 
+impl Default for ServiceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServiceManager {
     pub fn new() -> Self {
         Self {

@@ -49,7 +49,7 @@ impl BehaviorDetector {
         let patterns = self
             .request_patterns
             .entry(session_id.to_string())
-            .or_insert_with(Vec::new);
+            .or_default();
 
         patterns.push(pattern);
 

@@ -277,7 +277,7 @@ impl ProofOfWorkChallenge {
     pub fn verify(&self, nonce: u64) -> bool {
         let mut hasher = Sha256::new();
         hasher.update(&self.challenge);
-        hasher.update(&nonce.to_le_bytes());
+        hasher.update(nonce.to_le_bytes());
         let hash = hasher.finalize();
 
         // Check if hash has required number of leading zero bits
@@ -378,7 +378,7 @@ impl RateLimiter {
             .as_secs();
 
         let mut requests = self.requests.lock().unwrap();
-        let timestamps = requests.entry(key.to_string()).or_insert_with(Vec::new);
+        let timestamps = requests.entry(key.to_string()).or_default();
 
         // Remove old timestamps outside window
         timestamps.retain(|&t| (now - t) <= self.window_seconds);
@@ -495,7 +495,7 @@ impl Gate {
     ) -> Result<VerificationState> {
         // Rate limit verification creation (10 per minute per IP)
         // This prevents attackers from flooding the Gate with verification requests
-        if let Err(_) = self.rate_limiter.check_rate_limit(&session_id) {
+        if self.rate_limiter.check_rate_limit(&session_id).is_err() {
             tracing::warn!(
                 "Rate limit exceeded for verification creation: {}",
                 session_id

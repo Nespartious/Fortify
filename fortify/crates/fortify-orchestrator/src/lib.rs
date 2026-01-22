@@ -1307,7 +1307,7 @@ impl CaptchaPoolManager {
                             .as_secs();
 
                         // Filter out expired CAPTCHAs (older than rotation interval)
-                        let max_age = self.config.rotation_interval_days as u64 * 24 * 3600;
+                        let max_age = self.config.rotation_interval_days * 24 * 3600;
                         let valid: Vec<PregenCaptcha> = captchas
                             .into_iter()
                             .filter(|c| now - c.generated_at < max_age)
@@ -1403,7 +1403,7 @@ impl CaptchaPoolManager {
             let total = self
                 .total_generated
                 .load(std::sync::atomic::Ordering::Relaxed);
-            if total % 50 == 0 {
+            if total.is_multiple_of(50) {
                 drop(pool); // Release lock before saving
                 self.save_pool();
             }
@@ -2356,17 +2356,19 @@ impl Orchestrator {
 
     /// Burn a compromised mirror
     pub async fn burn_mirror(&self, mirror_id: &str) -> Result<()> {
-        let mut mirrors = self.mirrors.lock().unwrap();
-        let mirror = mirrors
-            .get_mut(mirror_id)
-            .ok_or_else(|| OrchestratorError::MirrorNotFound(mirror_id.to_string()))?;
+        // Scope lock to release before await
+        {
+            let mut mirrors = self.mirrors.lock().unwrap();
+            let mirror = mirrors
+                .get_mut(mirror_id)
+                .ok_or_else(|| OrchestratorError::MirrorNotFound(mirror_id.to_string()))?;
 
-        if mirror.state == MirrorState::Burned {
-            return Err(OrchestratorError::MirrorBurned);
+            if mirror.state == MirrorState::Burned {
+                return Err(OrchestratorError::MirrorBurned);
+            }
+
+            mirror.burn();
         }
-
-        mirror.burn();
-        drop(mirrors);
 
         // Spawn replacement
         self.spawn_mirror().await?;
@@ -2509,7 +2511,7 @@ impl Orchestrator {
             "hostname",
             "hs_ed25519_secret_key",
             "hs_ed25519_public_key",
-            "private_key",  // Legacy v2 onion (if present)
+            "private_key", // Legacy v2 onion (if present)
         ];
 
         for file in key_files {
@@ -3626,7 +3628,7 @@ impl Orchestrator {
             // Track rotation timing
             let mut last_rotation = std::time::Instant::now();
             let rotation_interval =
-                std::time::Duration::from_secs(config.rotation_interval_days as u64 * 24 * 60 * 60);
+                std::time::Duration::from_secs(config.rotation_interval_days * 24 * 60 * 60);
 
             // Track last logged count to avoid spam
             let mut last_logged_generated: u64 = 0;

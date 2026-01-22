@@ -261,7 +261,6 @@ impl PersistentSessionManager {
 
                             // Restore session
                             let trust_tier = match snapshot.trust_tier.as_str() {
-                                "Unknown" => TrustTier::Unknown,
                                 "Verified" => TrustTier::Verified,
                                 "Trusted" => TrustTier::Trusted,
                                 "Suspicious" => TrustTier::Suspicious,
@@ -319,8 +318,7 @@ impl PersistentSessionManager {
         let snapshots: Vec<SessionSnapshot> =
             sessions.values().map(SessionSnapshot::from).collect();
 
-        let content = serde_json::to_string_pretty(&snapshots)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let content = serde_json::to_string_pretty(&snapshots).map_err(std::io::Error::other)?;
 
         let snapshot_path = self.config.storage_path.join("sessions.json");
         let temp_path = self.config.storage_path.join("sessions.json.tmp");
@@ -360,9 +358,8 @@ impl PersistentSessionManager {
 
     /// Record session history snapshot
     pub fn record_history(&self, session_id: &str, mirror_id: Option<String>) {
-        let session = match self.inner.get_session(session_id) {
-            Some(s) => s,
-            None => return,
+        let Some(session) = self.inner.get_session(session_id) else {
+            return;
         };
 
         let mut snapshot = SessionSnapshot::from(&session);
@@ -371,7 +368,7 @@ impl PersistentSessionManager {
         let mut history = self.history.lock().unwrap();
         history
             .entry(session_id.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(snapshot);
 
         // Keep only last 100 snapshots per session
@@ -414,15 +411,15 @@ impl PersistentSessionManager {
     }
 
     pub fn update_session(&self, session: Session) {
-        self.inner.update_session(session)
+        self.inner.update_session(session);
     }
 
     pub fn remove_session(&self, session_id: &str) {
-        self.inner.remove_session(session_id)
+        self.inner.remove_session(session_id);
     }
 
     pub fn cleanup(&self, idle_timeout: u64) {
-        self.inner.cleanup(idle_timeout)
+        self.inner.cleanup(idle_timeout);
     }
 
     pub fn session_count(&self) -> usize {

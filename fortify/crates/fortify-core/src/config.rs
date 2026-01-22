@@ -85,6 +85,7 @@ pub struct CommunityConfig {
 
 /// Behavioral analysis configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct BehavioralConfig {
     /// Master enable/disable switch
     pub enabled: bool,

@@ -37,7 +37,7 @@ pub async fn validate_request(
     };
 
     // Verify signature
-    if let Err(_) = token.verify(secret_key) {
+    if token.verify(secret_key).is_err() {
         return ValidationResult::Invalid(error_response(
             StatusCode::UNAUTHORIZED,
             "Invalid token signature",

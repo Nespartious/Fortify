@@ -440,9 +440,7 @@ impl Node {
 
         let violation_count = {
             let mut violations = self.violations.lock().unwrap();
-            let session_viols = violations
-                .entry(session_id.to_string())
-                .or_insert_with(Vec::new);
+            let session_viols = violations.entry(session_id.to_string()).or_default();
             session_viols.push(violation);
             session_viols.len()
         };

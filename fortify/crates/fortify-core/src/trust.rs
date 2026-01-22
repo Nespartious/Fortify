@@ -179,7 +179,7 @@ impl SessionToken {
     /// Encode token to string (base64 JSON)
     pub fn encode(&self) -> Result<String> {
         let mut token_copy = self.clone();
-        token_copy.signature = self.signature.clone();
+        token_copy.signature.clone_from(&self.signature);
         let json = serde_json::to_vec(&token_copy)?;
         Ok(base64_encode(&json))
     }
@@ -193,6 +193,7 @@ impl SessionToken {
     }
 
     /// Get time until expiration in seconds
+    #[allow(clippy::cast_possible_wrap)]
     pub fn time_until_expiry(&self) -> i64 {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -244,9 +245,8 @@ impl Session {
     /// Promote session to higher trust tier
     pub fn promote(&mut self) -> Result<()> {
         let new_tier = match self.token.trust_tier {
-            TrustTier::Unknown => TrustTier::Verified,
+            TrustTier::Unknown | TrustTier::Suspicious => TrustTier::Verified,
             TrustTier::Verified => TrustTier::Trusted,
-            TrustTier::Suspicious => TrustTier::Verified,
             _ => {
                 return Err(TrustError::InvalidTransition(format!(
                     "Cannot promote from {:?}",
@@ -262,8 +262,7 @@ impl Session {
     /// Demote session to lower trust tier
     pub fn demote(&mut self) -> Result<()> {
         let new_tier = match self.token.trust_tier {
-            TrustTier::Trusted => TrustTier::Suspicious,
-            TrustTier::Verified => TrustTier::Suspicious,
+            TrustTier::Trusted | TrustTier::Verified => TrustTier::Suspicious,
             TrustTier::Suspicious => TrustTier::Burned,
             _ => {
                 return Err(TrustError::InvalidTransition(format!(

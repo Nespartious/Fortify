@@ -55,9 +55,7 @@ impl GlobalRateLimiter {
         let window_start = now - self.window;
 
         // Get or create request history for this circuit
-        let reqs = requests
-            .entry(circuit_id.to_string())
-            .or_insert_with(Vec::new);
+        let reqs = requests.entry(circuit_id.to_string()).or_default();
 
         // Remove expired timestamps (older than window)
         reqs.retain(|&t| t > window_start);
@@ -90,7 +88,7 @@ impl GlobalRateLimiter {
         // Add this circuit to current window
         circuits
             .entry(now)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(circuit_id.to_string());
     }
 
@@ -351,6 +349,7 @@ pub struct HttpProxy {
     /// Global rate limiter for per-IP request limiting
     rate_limiter: Arc<GlobalRateLimiter>,
     /// Optional callback to check if session is blacklisted
+    #[allow(clippy::type_complexity)]
     blacklist_check: Option<Arc<dyn Fn(&str) -> bool + Send + Sync>>,
 }
 
@@ -378,6 +377,7 @@ impl HttpProxy {
     }
 
     /// Create with onion addresses for nodes
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_onions(
         bind_addr: SocketAddr,
         max_concurrent: usize,
@@ -587,6 +587,7 @@ fn extract_client_ip(req: &Request<Body>) -> String {
 }
 
 /// Handle incoming proxy request
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 async fn handle_proxy_request(
     req: Request<Body>,
     secret_key: Vec<u8>,
@@ -770,6 +771,7 @@ async fn handle_proxy_request(
 }
 
 /// Process and route request
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 async fn process_request(
     req: Request<Body>,
     secret_key: Vec<u8>,
@@ -1155,7 +1157,7 @@ async fn process_request(
                     .header("Location", "/Fortify")
                     .header(
                         "Set-Cookie",
-                        format!("fortify_demoted=1; Path=/; Max-Age=300; HttpOnly"),
+                        "fortify_demoted=1; Path=/; Max-Age=300; HttpOnly",
                     )
                     .body(Body::from("Session blacklisted - please verify again"))
                     .unwrap();
@@ -1822,11 +1824,11 @@ fn is_mirror_paused(onion_address: &str) -> bool {
     // Query orchestrator to check mirror status
     // This is a sync call so we spawn a blocking thread
     let addr = onion_address.to_string();
-    match std::thread::spawn(move || {
+    std::thread::spawn(move || {
         let client = reqwest::blocking::Client::new();
         for port in &[8080, 8180] {
             if let Ok(resp) = client
-                .get(&format!("http://127.0.0.1:{}/mirrors/all", port))
+                .get(format!("http://127.0.0.1:{}/mirrors/all", port))
                 .timeout(std::time::Duration::from_millis(500))
                 .send()
             {
@@ -1845,20 +1847,17 @@ fn is_mirror_paused(onion_address: &str) -> bool {
         false
     })
     .join()
-    {
-        Ok(paused) => paused,
-        Err(_) => false,
-    }
+    .unwrap_or_default()
 }
 
 /// Serve a static page for paused mirrors
 fn serve_paused_mirror_page(_onion_address: &str) -> Response<Body> {
     // Get active mirrors to provide alternative
-    let active_mirrors: Vec<String> = match std::thread::spawn(|| {
+    let active_mirrors: Vec<String> = std::thread::spawn(|| {
         let client = reqwest::blocking::Client::new();
         for port in &[8080, 8180] {
             if let Ok(resp) = client
-                .get(&format!("http://127.0.0.1:{}/mirrors", port))
+                .get(format!("http://127.0.0.1:{}/mirrors", port))
                 .timeout(std::time::Duration::from_millis(500))
                 .send()
             {
@@ -1875,10 +1874,7 @@ fn serve_paused_mirror_page(_onion_address: &str) -> Response<Body> {
         Vec::new()
     })
     .join()
-    {
-        Ok(m) => m,
-        Err(_) => Vec::new(),
-    };
+    .unwrap_or_default();
 
     let alt_mirror_link = active_mirrors
         .first()

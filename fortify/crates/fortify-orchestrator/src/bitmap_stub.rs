@@ -107,7 +107,7 @@ pub fn generate_captcha_image(text: &str) -> Vec<u8> {
     // Build BMP file
     let file_header_size = 14u32;
     let info_header_size = 40u32;
-    let pixel_data_size = (stride * height) as u32;
+    let pixel_data_size = stride * height;
     let file_size = file_header_size + info_header_size + pixel_data_size;
 
     let mut bmp = Vec::with_capacity(file_size as usize);

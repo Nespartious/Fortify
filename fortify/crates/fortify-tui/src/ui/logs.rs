@@ -116,7 +116,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("{}", system_label),
+            system_label.to_string(),
             Style::default()
                 .fg(system_color)
                 .add_modifier(Modifier::BOLD),

@@ -399,7 +399,7 @@ impl DeploymentManager {
             .ok();
 
         let clone = Command::new("git")
-            .args(&["clone", "https://github.com/cathugger/mkp224o.git"])
+            .args(["clone", "https://github.com/cathugger/mkp224o.git"])
             .arg(&temp_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -487,7 +487,7 @@ impl DeploymentManager {
             .ok();
 
         let make = Command::new("make")
-            .args(&["-j4"])
+            .args(["-j4"])
             .current_dir(&temp_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -517,7 +517,7 @@ impl DeploymentManager {
             .ok();
 
         let install = Command::new("sudo")
-            .args(&["cp", "mkp224o", "/usr/local/bin/"])
+            .args(["cp", "mkp224o", "/usr/local/bin/"])
             .current_dir(&temp_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -580,7 +580,7 @@ impl DeploymentManager {
                 .ok();
 
             let pip_install = Command::new("sudo")
-                .args(&["apt-get", "install", "-y", "python3-pip"])
+                .args(["apt-get", "install", "-y", "python3-pip"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
@@ -852,23 +852,23 @@ impl DeploymentManager {
 
         // Kill any existing Fortify processes
         let _ = tokio::process::Command::new("pkill")
-            .args(&["-9", "-f", "fortify-controller"])
+            .args(["-9", "-f", "fortify-controller"])
             .status()
             .await;
         let _ = tokio::process::Command::new("pkill")
-            .args(&["-9", "-f", "fortify-orchestrator"])
+            .args(["-9", "-f", "fortify-orchestrator"])
             .status()
             .await;
         let _ = tokio::process::Command::new("pkill")
-            .args(&["-9", "-f", "fortify-node"])
+            .args(["-9", "-f", "fortify-node"])
             .status()
             .await;
         let _ = tokio::process::Command::new("pkill")
-            .args(&["-9", "-f", "fortify-gate"])
+            .args(["-9", "-f", "fortify-gate"])
             .status()
             .await;
         let _ = tokio::process::Command::new("pkill")
-            .args(&["-9", "-f", "fortify-http"])
+            .args(["-9", "-f", "fortify-http"])
             .status()
             .await;
 

@@ -1,4 +1,4 @@
-///! Mirror health checking and Tor connectivity verification
+//! Mirror health checking and Tor connectivity verification
 use anyhow::Result;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
@@ -123,7 +123,7 @@ impl MirrorHealthChecker {
     /// Use curl with Tor SOCKS proxy to check connectivity
     async fn check_via_curl(&self, url: &str) -> Result<bool> {
         let output = Command::new("curl")
-            .args(&[
+            .args([
                 "-s", // Silent
                 "-f", // Fail on HTTP errors
                 "--socks5-hostname",
