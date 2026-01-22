@@ -1,5 +1,10 @@
 # Fortify
 
+[![CI](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml)
+[![Security](https://github.com/Nespartious/Fortify/actions/workflows/security.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/security.yml)
+[![Code Quality](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A security-first Tor hidden-service protection system.
 
 ## Overview
