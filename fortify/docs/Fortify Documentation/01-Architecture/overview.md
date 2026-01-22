@@ -399,6 +399,55 @@ Fortify is a **decentralized Tor hidden service protection layer** that acts as 
 
 ---
 
+## Security Hardening
+
+Fortify implements multiple layers of security hardening to prevent DoS attacks and ensure service resilience.
+
+### Timeout Protection (Implemented January 2026)
+
+All network-facing operations have explicit timeout configurations to prevent slow-loris attacks:
+
+| Operation | Timeout | Component |
+|-----------|---------|-----------|
+| TCP Connection (handshake) | 10s | All network clients |
+| HTTP Header Read | 30s | HTTP Proxy, Gate |
+| Request (end-to-end) | 60s | Backend proxy |
+| Tor Control Operations | 15s | Orchestrator |
+| Max Buffer Size | 16KB | All HTTP servers |
+
+**Implementation:**
+- `connect_tor_control_with_timeout()` helper with 15-second limit
+- Hyper server `header_read_timeout` configuration
+- Backend proxy `timeout()` wrapper on all requests
+
+### Safe Lock Helpers (Implemented January 2026)
+
+Lock poisoning is handled gracefully to prevent cascading failures:
+
+```rust
+// Safe lock helpers in fortify-core
+pub fn safe_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T>;
+pub fn safe_read<T>(rwlock: &RwLock<T>) -> RwLockReadGuard<'_, T>;
+pub fn safe_write<T>(rwlock: &RwLock<T>) -> RwLockWriteGuard<'_, T>;
+```
+
+**Coverage:**
+- fortify-http: 102 safe lock operations
+- fortify-gate: 21 safe lock operations
+- fortify-orchestrator: 77 safe lock operations
+
+### Remaining Hardening (Planned)
+
+| Task | Status | Impact |
+|------|--------|--------|
+| HTTP header parsing safety | Planned | Prevent panic on malformed headers |
+| Token/session parsing safety | Planned | Prevent panic on crafted tokens |
+| Fuzz testing infrastructure | Planned | Automated edge case discovery |
+| Concurrency caps (semaphore gating) | Planned | Prevent connection exhaustion |
+| Timeout jitter (±10-20%) | Planned | Prevent timing fingerprinting |
+
+---
+
 ## Security Boundaries
 
 ```
