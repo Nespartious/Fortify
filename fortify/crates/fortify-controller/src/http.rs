@@ -1,32 +1,56 @@
 use crate::service::{ServiceManager, ServiceSnapshot, ServiceStatus, ServiceType};
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use serde::Serialize;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+
+type BoxBody = Full<Bytes>;
 
 pub fn spawn_http_server(
     bind_addr: SocketAddr,
     services: Arc<Mutex<ServiceManager>>,
 ) -> anyhow::Result<()> {
-    let make_svc = make_service_fn(move |_conn| {
-        let services = Arc::clone(&services);
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
-                let services = Arc::clone(&services);
-                async move { handle_request(req, services).await }
-            }))
-        }
-    });
-
-    let server = Server::bind(&bind_addr).serve(make_svc);
     tracing::info!("Controller admin API listening on {}", bind_addr);
 
     tokio::spawn(async move {
-        if let Err(err) = server.await {
-            tracing::error!("Controller HTTP server error: {}", err);
+        let listener = match TcpListener::bind(bind_addr).await {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::error!("Failed to bind controller HTTP server: {}", e);
+                return;
+            }
+        };
+
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    tracing::error!("Failed to accept connection: {}", e);
+                    continue;
+                }
+            };
+
+            let io = TokioIo::new(stream);
+            let services = Arc::clone(&services);
+
+            tokio::spawn(async move {
+                let service = service_fn(move |req| {
+                    let services = Arc::clone(&services);
+                    async move { handle_request(req, services).await }
+                });
+
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                    tracing::debug!("Connection error: {}", err);
+                }
+            });
         }
     });
 
@@ -34,9 +58,9 @@ pub fn spawn_http_server(
 }
 
 async fn handle_request(
-    req: Request<Body>,
+    req: Request<hyper::body::Incoming>,
     services: Arc<Mutex<ServiceManager>>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<BoxBody>, Infallible> {
     let path = req.uri().path().to_string();
     let method = req.method().clone();
     let snapshots = services.lock().await.snapshots();
@@ -73,16 +97,16 @@ async fn handle_request(
     Ok(response)
 }
 
-fn json_response<T: Serialize>(value: &T) -> Response<Body> {
+fn json_response<T: Serialize>(value: &T) -> Response<BoxBody> {
     let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".into());
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(body))
+        .body(Full::new(Bytes::from(body)))
         .unwrap()
 }
 
-fn html_overview(services: &[ServiceSnapshot]) -> Response<Body> {
+fn html_overview(services: &[ServiceSnapshot]) -> Response<BoxBody> {
     let rows = services
         .iter()
         .map(|svc| {
@@ -135,14 +159,14 @@ fn html_overview(services: &[ServiceSnapshot]) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(body))
+        .body(Full::new(Bytes::from(body)))
         .unwrap()
 }
 
-fn not_found() -> Response<Body> {
+fn not_found() -> Response<BoxBody> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .header("Content-Type", "text/plain")
-        .body(Body::from("not found"))
+        .body(Full::new(Bytes::from("not found")))
         .unwrap()
 }
