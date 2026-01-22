@@ -56,7 +56,7 @@ jobs:
           cargo sbom --output-format cyclonedx_json > sbom-cyclonedx.json 2>/dev/null || {
             # Fallback: generate basic SBOM manually
             echo "Generating basic dependency tree..."
-            cargo tree --format "{p} {v}" > dependencies.txt
+            cargo tree --prefix none > dependencies.txt 2>/dev/null || cargo tree > dependencies.txt
           }
           
           # Count dependencies
