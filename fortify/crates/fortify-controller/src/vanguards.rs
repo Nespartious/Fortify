@@ -440,9 +440,11 @@ mod tests {
 
     #[test]
     fn test_config_generation() {
-        let mut config = VanguardsConfig::default();
-        config.config_path = "/tmp/test_vanguards.conf".to_string();
-        config.state_path = "/tmp/test_vanguards.state".to_string();
+        let config = VanguardsConfig {
+            config_path: "/tmp/test_vanguards.conf".to_string(),
+            state_path: "/tmp/test_vanguards.state".to_string(),
+            ..Default::default()
+        };
 
         let manager = VanguardsManager::new(config);
 

@@ -890,6 +890,31 @@ impl Gate {
     }
 }
 
+/// Background task to clean up expired verification tokens
+pub async fn start_token_cleanup_task() {
+    use tokio::time::{interval, Duration};
+
+    tokio::spawn(async {
+        let mut interval = interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            let mut cache = VERIFICATION_TOKEN_CACHE.lock().unwrap();
+            let now = Utc::now();
+            let before_count = cache.len();
+            cache.retain(|_, token| now < token.expires_at);
+            let after_count = cache.len();
+
+            if before_count != after_count {
+                tracing::info!(
+                    "Token cleanup: removed {} expired tokens, {} active verification tokens remaining",
+                    before_count - after_count,
+                    after_count
+                );
+            }
+        }
+    });
+}
+
 pub mod verification {
     pub use super::*;
 }
@@ -1018,29 +1043,4 @@ mod tests {
             Err(GateError::QueueFull)
         ));
     }
-}
-
-/// Background task to clean up expired verification tokens
-pub async fn start_token_cleanup_task() {
-    use tokio::time::{interval, Duration};
-
-    tokio::spawn(async {
-        let mut interval = interval(Duration::from_secs(30));
-        loop {
-            interval.tick().await;
-            let mut cache = VERIFICATION_TOKEN_CACHE.lock().unwrap();
-            let now = Utc::now();
-            let before_count = cache.len();
-            cache.retain(|_, token| now < token.expires_at);
-            let after_count = cache.len();
-
-            if before_count != after_count {
-                tracing::info!(
-                    "Token cleanup: removed {} expired tokens, {} active verification tokens remaining",
-                    before_count - after_count,
-                    after_count
-                );
-            }
-        }
-    });
 }

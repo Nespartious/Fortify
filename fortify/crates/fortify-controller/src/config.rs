@@ -320,43 +320,53 @@ mod tests {
 
     #[test]
     fn test_config_validation_orchestrator_limits() {
-        let mut config = ControllerConfig::default();
-        config.min_orchestrators = 15;
-        config.max_orchestrators = 10;
+        let config = ControllerConfig {
+            min_orchestrators: 15,
+            max_orchestrators: 10,
+            ..Default::default()
+        };
 
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_config_validation_healthy_node_limits() {
-        let mut config = ControllerConfig::default();
-        config.min_healthy_nodes = 25;
-        config.max_healthy_nodes = 20;
+        let config = ControllerConfig {
+            min_healthy_nodes: 25,
+            max_healthy_nodes: 20,
+            ..Default::default()
+        };
 
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_config_validation_threat_node_limits() {
-        let mut config = ControllerConfig::default();
-        config.min_threat_nodes = 15;
-        config.max_threat_nodes = 10;
+        let config = ControllerConfig {
+            min_threat_nodes: 15,
+            max_threat_nodes: 10,
+            ..Default::default()
+        };
 
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_config_validation_zero_orchestrators() {
-        let mut config = ControllerConfig::default();
-        config.min_orchestrators = 0;
+        let config = ControllerConfig {
+            min_orchestrators: 0,
+            ..Default::default()
+        };
 
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_config_validation_zero_healthy_nodes() {
-        let mut config = ControllerConfig::default();
-        config.min_healthy_nodes = 0;
+        let config = ControllerConfig {
+            min_healthy_nodes: 0,
+            ..Default::default()
+        };
 
         assert!(config.validate().is_err());
     }

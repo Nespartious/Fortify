@@ -30,7 +30,8 @@ jobs:
           
           # Conventional commit pattern
           # type(scope): description OR type: description
-          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .{1,}"
+          # Added 'deps' for Dependabot PRs
+          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|deps)(\(.+\))?!?: .{1,}"
           
           if [[ "$PR_TITLE" =~ $PATTERN ]]; then
             echo "✅ PR title follows conventional commit format" >> $GITHUB_STEP_SUMMARY
@@ -63,6 +64,7 @@ jobs:
             echo "| \`ci\` | CI/CD changes |" >> $GITHUB_STEP_SUMMARY
             echo "| \`chore\` | Other changes |" >> $GITHUB_STEP_SUMMARY
             echo "| \`revert\` | Reverts a commit |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`deps\` | Dependency updates |" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
@@ -72,7 +74,7 @@ jobs:
           echo "### Commit Messages" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|Merge)(\(.+\))?!?: .{1,}|^Merge "
+          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|deps|Merge)(\(.+\))?!?: .{1,}|^Merge "
           
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"

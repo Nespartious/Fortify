@@ -94,14 +94,15 @@ jobs:
           CODE=0
           
           while IFS= read -r file; do
+            [ -z "$file" ] && continue
             if [[ "$file" =~ \.lock$|Cargo\.lock|package-lock\.json ]]; then
-              ((GENERATED++))
+              GENERATED=$((GENERATED + 1))
             elif [[ "$file" =~ _test\.rs$|test_|tests/|\.test\. ]]; then
-              ((TESTS++))
+              TESTS=$((TESTS + 1))
             elif [[ "$file" =~ \.md$|docs/|README ]]; then
-              ((DOCS++))
+              DOCS=$((DOCS + 1))
             else
-              ((CODE++))
+              CODE=$((CODE + 1))
             fi
           done < <(git diff --name-only "$BASE_SHA..$HEAD_SHA")
           

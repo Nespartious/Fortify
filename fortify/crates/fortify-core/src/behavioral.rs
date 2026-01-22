@@ -1257,8 +1257,10 @@ mod tests {
 
     #[test]
     fn test_form_flood_detection() {
-        let mut config = BehaviorConfig::default();
-        config.max_form_submissions_per_minute = 3;
+        let config = BehaviorConfig {
+            max_form_submissions_per_minute: 3,
+            ..Default::default()
+        };
         let mut session = SessionBehavior::new("test".to_string(), config);
 
         // Submit forms rapidly
@@ -1306,8 +1308,10 @@ mod tests {
 
     #[test]
     fn test_resource_enumeration() {
-        let mut config = BehaviorConfig::default();
-        config.max_unique_paths_per_minute = 5;
+        let config = BehaviorConfig {
+            max_unique_paths_per_minute: 5,
+            ..Default::default()
+        };
         let mut session = SessionBehavior::new("test".to_string(), config);
 
         // Access many unique paths

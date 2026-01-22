@@ -54,34 +54,40 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
 
-      - name: Initialize fuzz targets if needed
+      - name: Check if fuzz targets exist
+        id: check-fuzz
         working-directory: ./fortify
         run: |
-          # Create fuzz directory if it doesn't exist
-          if [ ! -d "fuzz" ]; then
-            echo "⚠️ No fuzz directory found. Creating initial structure..."
-            cargo fuzz init
-            
-            # Create example fuzz targets for key parsing functions
-            mkdir -p fuzz/fuzz_targets
-            
-            # HTTP request parsing target
-            cat > fuzz/fuzz_targets/fuzz_http_parse.rs << 'EOF'
-#![no_main]
-use libfuzzer_sys::fuzz_target;
-
-fuzz_target!(|data: &[u8]| {
-    // Fuzz HTTP request parsing
-    if let Ok(s) = std::str::from_utf8(data) {
-        // Add your HTTP parsing logic here
-        let _ = s.lines().next();
-    }
-});
-EOF
-            echo "Created example fuzz target. Add real targets for your parsing code."
+          if [ -d "fuzz" ] && [ -f "fuzz/Cargo.toml" ]; then
+            TARGETS=$(cargo fuzz list 2>/dev/null || echo "")
+            if [ -n "$TARGETS" ]; then
+              echo "has_targets=true" >> $GITHUB_OUTPUT
+              echo "✅ Fuzz targets found"
+            else
+              echo "has_targets=false" >> $GITHUB_OUTPUT
+              echo "⚠️ Fuzz directory exists but no targets configured"
+            fi
+          else
+            echo "has_targets=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No fuzz directory found. Skipping fuzz testing."
+            echo "To enable fuzz testing, run: cargo fuzz init && create fuzz targets"
           fi
 
+      - name: Initialize fuzz targets if needed
+        if: steps.check-fuzz.outputs.has_targets != 'true'
+        working-directory: ./fortify
+        run: |
+          echo "## 🎲 Fuzz Testing Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Fuzz testing not configured**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To enable fuzz testing:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run \`cargo fuzz init\` in the fortify directory" >> $GITHUB_STEP_SUMMARY
+          echo "2. Create fuzz targets in \`fuzz/fuzz_targets/\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Commit and push the fuzz directory" >> $GITHUB_STEP_SUMMARY
+
       - name: List fuzz targets
+        if: steps.check-fuzz.outputs.has_targets == 'true'
         working-directory: ./fortify
         run: |
           echo "## 🎲 Fuzz Testing Report" >> $GITHUB_STEP_SUMMARY
@@ -95,6 +101,7 @@ EOF
           fi
 
       - name: Run fuzz testing
+        if: steps.check-fuzz.outputs.has_targets == 'true'
         working-directory: ./fortify
         continue-on-error: true  # Don't fail workflow on crashes (we want to report them)
         run: |
@@ -146,8 +153,8 @@ EOF
           done
 
       - name: Check for crash artifacts
+        if: steps.check-fuzz.outputs.has_targets == 'true'
         working-directory: ./fortify
-        if: always()
         run: |
           if [ -d "fuzz/artifacts" ]; then
             CRASHES=$(find fuzz/artifacts -type f | wc -l)
@@ -160,7 +167,7 @@ EOF
 
       - name: Upload crash artifacts
         uses: actions/upload-artifact@v4
-        if: always()
+        if: steps.check-fuzz.outputs.has_targets == 'true'
         with:
           name: fuzz-crashes
           path: fortify/fuzz/artifacts/
@@ -169,7 +176,7 @@ EOF
 
       - name: Upload corpus
         uses: actions/upload-artifact@v4
-        if: always()
+        if: steps.check-fuzz.outputs.has_targets == 'true'
         with:
           name: fuzz-corpus
           path: fortify/fuzz/corpus/
