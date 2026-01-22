@@ -69,14 +69,51 @@ test result: ok. 9 passed; 0 failed
 
 ---
 
-## Phase 2: Wire Static Templates ⏳
+## Phase 2: Wire Static Templates ✅
 
-**Status**: NOT STARTED
+**Status**: COMPLETE
 
 ### Objective
 Replace inline HTML in `fortify-gate/src/server.rs` with template engine calls.
 
-### Files to Modify
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `fortify-gate/src/server.rs` | Added template imports, replaced `serve_landing_page()` |
+| `assets/html/busy.html` | Created new template with CSS-only 20-second delay |
+
+### Key Changes
+
+1. **Import template types** in server.rs:
+   ```rust
+   use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
+   ```
+
+2. **Replace `serve_landing_page()`** - 120+ lines inline HTML → 6 lines:
+   ```rust
+   fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
+       let engine = TemplateEngine::new();
+       let branding = BrandingVars::default();
+       let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
+       // ... response builder
+   }
+   ```
+
+3. **Add busy.html template** with CSS-only delay button (NO JavaScript):
+   - Uses `animation: enableButton 20s forwards;` 
+   - `pointer-events: none` until animation completes
+   - Citadel/gold theme consistent with other templates
+
+### Remaining Work (Future Commits)
+- `serve_demoted_page()` - Complex, embeds dynamic CAPTCHA
+- `serve_cookie_blocked_page()` - Error template
+- `styled_error_response()` - Error template
+- Success/verified page - Needs new template
+
+---
+
+## Phase 3: Pre-Rendered CAPTCHA Pages ⏳
 
 | File | Function | Template |
 |------|----------|----------|
