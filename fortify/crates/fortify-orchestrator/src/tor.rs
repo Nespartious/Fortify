@@ -395,7 +395,7 @@ impl TorService {
                     stream = Some(s);
                     break;
                 }
-                Err(e) if attempt < 2 => {
+                Err(_e) if attempt < 2 => {
                     std::thread::sleep(std::time::Duration::from_millis(
                         100 * (attempt as u64 + 1),
                     ));

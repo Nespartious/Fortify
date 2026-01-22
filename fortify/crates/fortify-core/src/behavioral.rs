@@ -1191,7 +1191,7 @@ impl BehaviorAnalyzer {
     }
 
     /// Update global config and propagate to sessions
-    pub fn update_config(&mut self, config: BehaviorConfig) {
+    pub fn update_config(&mut self, config: &BehaviorConfig) {
         self.config = config.clone();
         for session in self.sessions.values_mut() {
             session.update_config(config.clone());
