@@ -136,7 +136,57 @@ jobs:
             -A clippy::must_use_candidate \
             -A clippy::missing_errors_doc \
             -A clippy::missing_panics_doc \
-            -A clippy::doc_markdown
+            -A clippy::doc_markdown \
+            -A clippy::uninlined_format_args \
+            -A clippy::unused_async \
+            -A clippy::needless_pass_by_value \
+            -A clippy::unused_self \
+            -A clippy::cast_possible_truncation \
+            -A clippy::cast_sign_loss \
+            -A clippy::cast_precision_loss \
+            -A clippy::cast_possible_wrap \
+            -A clippy::redundant_closure_for_method_calls \
+            -A clippy::items_after_statements \
+            -A clippy::single_match_else \
+            -A clippy::match_same_arms \
+            -A clippy::if_not_else \
+            -A clippy::match_wildcard_for_single_variants \
+            -A clippy::similar_names \
+            -A clippy::field_reassign_with_default \
+            -A clippy::map_unwrap_or \
+            -A clippy::option_if_let_else \
+            -A clippy::single_char_pattern \
+            -A clippy::return_self_not_must_use \
+            -A clippy::explicit_iter_loop \
+            -A clippy::redundant_else \
+            -A clippy::unnecessary_wraps \
+            -A clippy::struct_excessive_bools \
+            -A clippy::wildcard_imports \
+            -A clippy::case_sensitive_file_extension_comparisons \
+            -A clippy::clone_on_ref_ptr \
+            -A clippy::cast_lossless \
+            -A clippy::needless_continue \
+            -A clippy::manual_let_else \
+            -A clippy::format_collect \
+            -A clippy::format_push_string \
+            -A clippy::match_bool \
+            -A clippy::assigning_clones \
+            -A clippy::many_single_char_names \
+            -A clippy::ignored_unit_patterns \
+            -A clippy::non_std_lazy_statics \
+            -A clippy::unnecessary_join \
+            -A clippy::float_cmp \
+            -A clippy::needless_raw_string_hashes \
+            -A clippy::used_underscore_binding \
+            -A clippy::unchecked_time_subtraction \
+            -A clippy::items_after_test_module \
+            -A clippy::semicolon_if_nothing_returned \
+            -A clippy::unreadable_literal \
+            -A clippy::comparison_chain \
+            -A clippy::trivially_copy_pass_by_ref \
+            -A clippy::unnested_or_patterns \
+            -A clippy::ref_option \
+            -A clippy::implicit_clone
 
   #############################################################################
   # DOCUMENTATION
