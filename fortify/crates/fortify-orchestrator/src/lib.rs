@@ -1429,17 +1429,17 @@ impl CaptchaPoolManager {
 
     fn generate_single(&self) -> PregenCaptcha {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Generate random text (6 chars)
         let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".chars().collect();
         let answer: String = (0..6)
-            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .map(|_| chars[rng.random_range(0..chars.len())])
             .collect();
 
         // Generate ID
         let id: String = (0..16)
-            .map(|_| format!("{:02x}", rng.gen::<u8>()))
+            .map(|_| format!("{:02x}", rng.random::<u8>()))
             .collect();
 
         // Generate image (this is the CPU-intensive part)
@@ -3240,8 +3240,8 @@ impl Orchestrator {
                     // Generate a unique mirror ID
                     let mirror_id = {
                         use rand::Rng;
-                        let mut rng = rand::thread_rng();
-                        let random: u32 = rng.gen();
+                        let mut rng = rand::rng();
+                        let random: u32 = rng.random();
                         format!("mirror-{:08x}", random)
                     };
 
@@ -3762,8 +3762,8 @@ impl Orchestrator {
 
     fn generate_mirror_id(&self) -> String {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let random: u32 = rng.gen();
+        let mut rng = rand::rng();
+        let random: u32 = rng.random();
         format!("mirror-{:08x}", random)
     }
 }

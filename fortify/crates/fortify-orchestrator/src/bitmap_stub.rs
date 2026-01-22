@@ -18,7 +18,7 @@ pub fn generate_captcha_image(text: &str) -> Vec<u8> {
     let stride = row_size_bytes + padding;
 
     let mut pixel_data = vec![0u8; (stride * height) as usize];
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Fill background with dark purple theme
     let (base_r, base_g, base_b) = (0x15, 0x05, 0x20);
@@ -33,8 +33,8 @@ pub fn generate_captcha_image(text: &str) -> Vec<u8> {
 
     // Add noise (Medium difficulty = 800 noise pixels)
     for _ in 0..800 {
-        let x = rng.gen_range(0..width);
-        let y = rng.gen_range(0..height);
+        let x = rng.random_range(0..width);
+        let y = rng.random_range(0..height);
         let idx = (y * stride + x * 3) as usize;
         if idx + 2 < pixel_data.len() {
             let colors = [
@@ -43,7 +43,7 @@ pub fn generate_captcha_image(text: &str) -> Vec<u8> {
                 (0x00, 0x40, 0x00), // Darker green
                 (0x40, 0x20, 0x40), // Dark magenta
             ];
-            let (r, g, b) = colors[rng.gen_range(0..colors.len())];
+            let (r, g, b) = colors[rng.random_range(0..colors.len())];
             pixel_data[idx] = b;
             pixel_data[idx + 1] = g;
             pixel_data[idx + 2] = r;
@@ -74,7 +74,7 @@ pub fn generate_captcha_image(text: &str) -> Vec<u8> {
     };
 
     for (i, c) in text.chars().enumerate() {
-        let y_offset: i32 = rng.gen_range(-2..=2);
+        let y_offset: i32 = rng.random_range(-2..=2);
 
         let char_x = start_x + (i as u32 * (char_pixel_width + spacing));
         let pattern = get_char_pattern(c);

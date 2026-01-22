@@ -125,8 +125,8 @@ impl CaptchaConfig {
     /// Get the captcha type to use based on context
     pub fn get_captcha_type(&self, is_threat: bool) -> CaptchaType {
         if self.random_cycling && !self.cycling_types.is_empty() {
-            let mut rng = rand::thread_rng();
-            let idx = rng.gen_range(0..self.cycling_types.len());
+            let mut rng = rand::rng();
+            let idx = rng.random_range(0..self.cycling_types.len());
             return self.cycling_types[idx];
         }
 
@@ -284,19 +284,19 @@ pub struct EmojiOption {
 impl EmojiChallenge {
     pub fn generate(option_count: usize) -> Self {
         let categories = get_emoji_categories();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Pick a target category
-        let target_idx = rng.gen_range(0..categories.len());
+        let target_idx = rng.random_range(0..categories.len());
         let target = &categories[target_idx];
 
         // Pick a random emoji from target category
-        let correct_emoji_idx = rng.gen_range(0..target.emojis.len());
+        let correct_emoji_idx = rng.random_range(0..target.emojis.len());
         let correct_emoji = target.emojis[correct_emoji_idx].to_string();
 
         // Build options: one correct, rest from other categories
         let mut options: Vec<EmojiOption> = Vec::with_capacity(option_count);
-        let correct_position = rng.gen_range(0..option_count);
+        let correct_position = rng.random_range(0..option_count);
 
         let mut used_categories = vec![target_idx];
 
@@ -308,9 +308,9 @@ impl EmojiChallenge {
                 });
             } else {
                 // Pick from a different category
-                let mut cat_idx = rng.gen_range(0..categories.len());
+                let mut cat_idx = rng.random_range(0..categories.len());
                 while used_categories.contains(&cat_idx) {
-                    cat_idx = rng.gen_range(0..categories.len());
+                    cat_idx = rng.random_range(0..categories.len());
                     // Prevent infinite loop if we've used all categories
                     if used_categories.len() >= categories.len() - 1 {
                         cat_idx = (target_idx + i + 1) % categories.len();
@@ -320,7 +320,7 @@ impl EmojiChallenge {
                 used_categories.push(cat_idx);
 
                 let other_cat = &categories[cat_idx];
-                let emoji_idx = rng.gen_range(0..other_cat.emojis.len());
+                let emoji_idx = rng.random_range(0..other_cat.emojis.len());
                 options.push(EmojiOption {
                     emoji: other_cat.emojis[emoji_idx].to_string(),
                     index: i,
@@ -433,8 +433,8 @@ impl DirectionChallenge {
             ArrowDirection::all_basic()
         };
 
-        let mut rng = rand::thread_rng();
-        let target_idx = rng.gen_range(0..directions.len());
+        let mut rng = rand::rng();
+        let target_idx = rng.random_range(0..directions.len());
         let target = directions[target_idx];
 
         // Use all directions as options
@@ -507,15 +507,15 @@ pub struct SequenceOption {
 
 impl SequenceChallenge {
     pub fn generate(option_count: usize) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Generate different sequence types
-        let sequence_type = rng.gen_range(0..5);
+        let sequence_type = rng.random_range(0..5);
 
         let (sequence, correct_answer, wrong_answers) = match sequence_type {
             0 => {
                 // Alphabet: A, B, C, ? -> D
-                let start = rng.gen_range(0..23) as u8; // A-W
+                let start = rng.random_range(0..23) as u8; // A-W
                 let seq: Vec<String> = (0..3)
                     .map(|i| ((b'A' + start + i) as char).to_string())
                     .collect();
@@ -530,7 +530,7 @@ impl SequenceChallenge {
             }
             1 => {
                 // Numbers: 1, 2, 3, ? -> 4
-                let start = rng.gen_range(1..20);
+                let start = rng.random_range(1..20);
                 let seq: Vec<String> = (0..3).map(|i| (start + i).to_string()).collect();
                 let correct = (start + 3).to_string();
                 let wrongs: Vec<String> = (0..option_count - 1)
@@ -547,7 +547,7 @@ impl SequenceChallenge {
             }
             2 => {
                 // Even: 2, 4, 6, ? -> 8
-                let start = rng.gen_range(1..10) * 2;
+                let start = rng.random_range(1..10) * 2;
                 let seq: Vec<String> = (0..3).map(|i| (start + i * 2).to_string()).collect();
                 let correct = (start + 6).to_string();
                 let wrongs: Vec<String> = vec![
@@ -559,7 +559,7 @@ impl SequenceChallenge {
             }
             3 => {
                 // Odd: 1, 3, 5, ? -> 7
-                let start = rng.gen_range(0..10) * 2 + 1;
+                let start = rng.random_range(0..10) * 2 + 1;
                 let seq: Vec<String> = (0..3).map(|i| (start + i * 2).to_string()).collect();
                 let correct = (start + 6).to_string();
                 let wrongs: Vec<String> = vec![
@@ -573,7 +573,7 @@ impl SequenceChallenge {
                 // Shapes alternating: ●, ○, ●, ? -> ○
                 let shapes_a = ["●", "■", "▲"];
                 let shapes_b = ["○", "□", "△"];
-                let shape_idx = rng.gen_range(0..shapes_a.len());
+                let shape_idx = rng.random_range(0..shapes_a.len());
                 let seq: Vec<String> = vec![
                     shapes_a[shape_idx].to_string(),
                     shapes_b[shape_idx].to_string(),
@@ -592,7 +592,7 @@ impl SequenceChallenge {
         };
 
         // Build options with correct answer in random position
-        let correct_position = rng.gen_range(0..option_count);
+        let correct_position = rng.random_range(0..option_count);
         let mut options: Vec<SequenceOption> = Vec::with_capacity(option_count);
         let mut wrong_iter = wrong_answers.into_iter();
 
@@ -654,15 +654,15 @@ pub struct WordUnscrambleChallenge {
 
 impl WordUnscrambleChallenge {
     pub fn generate(difficulty: u8) -> Self {
-        let mut rng = rand::thread_rng();
-        let word_idx = rng.gen_range(0..UNSCRAMBLE_WORDS.len());
+        let mut rng = rand::rng();
+        let word_idx = rng.random_range(0..UNSCRAMBLE_WORDS.len());
         let word = UNSCRAMBLE_WORDS[word_idx].to_string();
 
         // Scramble the word
         let mut chars: Vec<char> = word.chars().collect();
         for _ in 0..word.len() * 2 {
-            let i = rng.gen_range(0..chars.len());
-            let j = rng.gen_range(0..chars.len());
+            let i = rng.random_range(0..chars.len());
+            let j = rng.random_range(0..chars.len());
             chars.swap(i, j);
         }
 
@@ -767,10 +767,10 @@ pub struct RotationOption {
 
 impl ImageRotationChallenge {
     pub fn generate() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Pick a shape
-        let shape_idx = rng.gen_range(0..ROTATION_SHAPES.len());
+        let shape_idx = rng.random_range(0..ROTATION_SHAPES.len());
         let (shape_name, shape_char) = ROTATION_SHAPES[shape_idx];
 
         // The correct answer is always the upright one (Deg0)
@@ -866,16 +866,16 @@ pub struct SilhouetteOption {
 impl SilhouetteChallenge {
     pub fn generate(option_count: usize) -> Self {
         let categories = get_silhouette_categories();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Pick correct category and symbol
-        let correct_cat_idx = rng.gen_range(0..categories.len());
+        let correct_cat_idx = rng.random_range(0..categories.len());
         let correct_cat = &categories[correct_cat_idx];
-        let symbol_idx = rng.gen_range(0..correct_cat.symbols.len());
+        let symbol_idx = rng.random_range(0..correct_cat.symbols.len());
         let symbol = correct_cat.symbols[symbol_idx].to_string();
 
         // Position correct answer randomly
-        let correct_position = rng.gen_range(0..option_count.min(categories.len()));
+        let correct_position = rng.random_range(0..option_count.min(categories.len()));
 
         // Build options
         let mut options: Vec<SilhouetteOption> = Vec::with_capacity(option_count);

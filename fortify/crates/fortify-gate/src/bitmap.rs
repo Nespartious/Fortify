@@ -32,7 +32,7 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
     let stride = row_size_bytes + padding;
 
     let mut pixel_data = vec![0u8; (stride * height) as usize];
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Fill background with slight variation based on difficulty
     let (base_r, base_g, base_b) = (0x15, 0x05, 0x20);
@@ -54,8 +54,8 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
 
     // Add random noise pixels
     for _ in 0..noise_density {
-        let x = rng.gen_range(0..width);
-        let y = rng.gen_range(0..height);
+        let x = rng.random_range(0..width);
+        let y = rng.random_range(0..height);
         let idx = (y * stride + x * 3) as usize;
         if idx + 2 < pixel_data.len() {
             // Random colors in theme palette
@@ -65,7 +65,7 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
                 (0x00, 0x40, 0x00), // Darker green
                 (0x40, 0x20, 0x40), // Dark magenta
             ];
-            let (r, g, b) = colors[rng.gen_range(0..colors.len())];
+            let (r, g, b) = colors[rng.random_range(0..colors.len())];
             pixel_data[idx] = b;
             pixel_data[idx + 1] = g;
             pixel_data[idx + 2] = r;
@@ -105,8 +105,8 @@ pub fn generate_bmp_with_difficulty(text: &str, difficulty: CaptchaDifficulty) -
         // Add per-character vertical offset for hard difficulty (wavy effect)
         let y_offset: i32 = match difficulty {
             CaptchaDifficulty::Easy => 0,
-            CaptchaDifficulty::Medium => rng.gen_range(-2..=2),
-            CaptchaDifficulty::Hard => rng.gen_range(-6..=6),
+            CaptchaDifficulty::Medium => rng.random_range(-2..=2),
+            CaptchaDifficulty::Hard => rng.random_range(-6..=6),
         };
 
         let char_x = start_x + (i as u32 * (char_pixel_width + spacing));
@@ -171,8 +171,8 @@ fn draw_interference_line(
     rng: &mut impl Rng,
 ) {
     // Draw a semi-random line across the image
-    let y_start = rng.gen_range(20..height - 20);
-    let y_end = rng.gen_range(20..height - 20);
+    let y_start = rng.random_range(20..height - 20);
+    let y_end = rng.random_range(20..height - 20);
 
     for x in 0..width {
         // Linear interpolation for y position
@@ -207,7 +207,7 @@ fn draw_char_bottom_up(
     difficulty: CaptchaDifficulty,
 ) {
     let font_data = get_font_bitmap(c);
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for (row, row_byte) in font_data.iter().enumerate() {
         for col in 0..5 {
@@ -222,7 +222,7 @@ fn draw_char_bottom_up(
                         }
 
                         // Skip some pixels randomly on hard difficulty (erosion effect)
-                        if difficulty == CaptchaDifficulty::Hard && rng.gen_ratio(1, 10) {
+                        if difficulty == CaptchaDifficulty::Hard && rng.random_ratio(1, 10) {
                             continue;
                         }
 
@@ -232,8 +232,8 @@ fn draw_char_bottom_up(
                             // Vary green intensity slightly on harder difficulties
                             let green_val = match difficulty {
                                 CaptchaDifficulty::Easy => 255u8,
-                                CaptchaDifficulty::Medium => rng.gen_range(200..=255),
-                                CaptchaDifficulty::Hard => rng.gen_range(150..=255),
+                                CaptchaDifficulty::Medium => rng.random_range(200..=255),
+                                CaptchaDifficulty::Hard => rng.random_range(150..=255),
                             };
                             pixels[idx] = 0;
                             pixels[idx + 1] = green_val;

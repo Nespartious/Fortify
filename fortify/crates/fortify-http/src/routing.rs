@@ -174,8 +174,8 @@ impl Router {
         }
 
         let total_weight: u32 = available.iter().map(|n| n.weight).sum();
-        let mut rng = rand::thread_rng();
-        let mut random = rng.gen_range(0..total_weight);
+        let mut rng = rand::rng();
+        let mut random = rng.random_range(0..total_weight);
 
         for node in available {
             if random < node.weight {

@@ -719,9 +719,9 @@ impl TorService {
 
     fn random_onion(&self) -> String {
         let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyz234567".chars().collect();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let suffix: String = (0..56)
-            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .map(|_| chars[rng.random_range(0..chars.len())])
             .collect();
         format!("{}.onion", suffix)
     }

@@ -2010,8 +2010,8 @@ fn serve_busy_page() -> Response<BoxBody> {
     use rand::Rng;
     
     // Add jitter to retry time (25-35 seconds) to prevent thundering herd
-    let mut rng = rand::thread_rng();
-    let retry_seconds = rng.gen_range(25..=35);
+    let mut rng = rand::rng();
+    let retry_seconds = rng.random_range(25..=35);
     
     let html = format!(r#"<!DOCTYPE html>
 <html lang="en">

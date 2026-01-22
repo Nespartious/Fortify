@@ -218,15 +218,15 @@ impl CaptchaChallenge {
 
     fn generate_text(length: usize) -> String {
         let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".chars().collect();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         (0..length)
-            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .map(|_| chars[rng.random_range(0..chars.len())])
             .collect()
     }
 
     fn generate_id() -> String {
-        let mut rng = rand::thread_rng();
-        let random_bytes: Vec<u8> = (0..16).map(|_| rng.gen()).collect();
+        let mut rng = rand::rng();
+        let random_bytes: Vec<u8> = (0..16).map(|_| rng.random()).collect();
         hex::encode(random_bytes)
     }
 
@@ -256,8 +256,8 @@ pub struct ProofOfWorkChallenge {
 impl ProofOfWorkChallenge {
     /// Generate a new PoW challenge
     pub fn new(difficulty: u32) -> Self {
-        let mut rng = rand::thread_rng();
-        let challenge: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
+        let mut rng = rand::rng();
+        let challenge: Vec<u8> = (0..32).map(|_| rng.random()).collect();
         let challenge_id = hex::encode(&challenge[..16]);
 
         let created_at = SystemTime::now()

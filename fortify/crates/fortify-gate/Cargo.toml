@@ -17,7 +17,7 @@ http-body-util = "0.1"
 bytes = "1.5"
 sha2 = "0.10"
 hex = "0.4"
-rand = "0.8"
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { version = "1.19.0", features = ["v4", "fast-rng"] }
