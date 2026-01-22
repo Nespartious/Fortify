@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortify — Service Busy</title>
+    <style>
+        :root {
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --gold-light: #d4b85a;
+            --bronze: #8b7355;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --sage: #9ab893;
+            --slate-blue: #6b7c8c;
+            --amber: #d4a017;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: 
+                radial-gradient(ellipse at 50% 0%, rgba(212, 160, 23, 0.04) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 100%, rgba(139, 115, 85, 0.02) 0%, transparent 40%);
+            pointer-events: none;
+        }
+        .panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 48px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+        .icon {
+            font-size: 4rem;
+            margin-bottom: 24px;
+            opacity: 0.9;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 400;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--amber);
+            margin-bottom: 16px;
+        }
+        .message {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.7;
+            margin-bottom: 32px;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-subtle);
+            border-top-color: var(--gold-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* CSS-only delay button (no JavaScript) */
+        @keyframes enableButton {
+            0%, 95% { 
+                opacity: 0.4; 
+                pointer-events: none; 
+                cursor: not-allowed;
+            }
+            100% { 
+                opacity: 1; 
+                pointer-events: auto; 
+                cursor: pointer;
+            }
+        }
+        .retry-btn {
+            display: inline-block;
+            margin-top: 24px;
+            padding: 14px 32px;
+            background: transparent;
+            border: 1px solid var(--gold-muted);
+            color: var(--gold-primary);
+            font-family: inherit;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            animation: enableButton 20s forwards;
+        }
+        .retry-btn:hover {
+            background: var(--gold-primary);
+            border-color: var(--gold-primary);
+            color: var(--bg-deep);
+        }
+        .footer {
+            margin-top: 32px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        /* {{FORTIFY_BRANDING_INJECTION_POINT}} */
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <div class="icon">⏳</div>
+        <h1>Service Busy</h1>
+        <div class="message">
+            The citadel is currently experiencing high demand. 
+            Your request has been queued and will be processed shortly.
+        </div>
+        <div class="status">
+            <div class="spinner"></div>
+            <span>Please wait...</span>
+        </div>
+        <a href="/" class="retry-btn">Try Again</a>
+    </div>
+    <div class="footer">
+        <!-- {{FORTIFY_FOOTER_BRANDING}} -->
+    </div>
+</body>
+</html>
