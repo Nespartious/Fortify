@@ -1,4 +1,4 @@
-use fortify_core::safe_lock;
+use fortify_core::{jittered_timeout, safe_lock};
 use crate::{BackendNode, Metrics, ProxyError, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -80,9 +80,10 @@ pub async fn proxy_request(
     // Use reqwest for proxying with explicit timeouts
     // Connect timeout prevents slow-loris on connection phase
     // Request timeout prevents hanging on slow/malicious backends
+    // Jitter applied to prevent timing-based fingerprinting
     let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(BACKEND_CONNECT_TIMEOUT_SECS))
-        .timeout(Duration::from_secs(BACKEND_REQUEST_TIMEOUT_SECS))
+        .connect_timeout(jittered_timeout(BACKEND_CONNECT_TIMEOUT_SECS))
+        .timeout(jittered_timeout(BACKEND_REQUEST_TIMEOUT_SECS))
         .build()
         .map_err(|e| {
             tracing::error!("Failed to build HTTP client: {}", e);

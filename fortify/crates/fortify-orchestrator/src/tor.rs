@@ -1,4 +1,5 @@
 use crate::{Mirror, OrchestratorError, Result};
+use fortify_core::jittered_timeout;
 use rand::Rng;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -18,6 +19,7 @@ const TOR_CONTROL_TIMEOUT_SECS: u64 = 15;
 
 /// Connect to Tor control port with timeout settings configured
 /// Returns a TcpStream with read/write timeouts set to prevent blocking forever
+/// Jitter applied to prevent timing-based fingerprinting
 fn connect_tor_control_with_timeout(addr: &SocketAddr) -> Result<TcpStream> {
     let stream = TcpStream::connect(addr)
         .map_err(|e| OrchestratorError::TorConnectionFailed(e.to_string()))?;
@@ -26,7 +28,7 @@ fn connect_tor_control_with_timeout(addr: &SocketAddr) -> Result<TcpStream> {
         .set_nodelay(true)
         .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
     
-    let timeout = Some(Duration::from_secs(TOR_CONTROL_TIMEOUT_SECS));
+    let timeout = Some(jittered_timeout(TOR_CONTROL_TIMEOUT_SECS));
     stream
         .set_read_timeout(timeout)
         .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to set read timeout: {}", e)))?;
@@ -302,13 +304,17 @@ impl TorService {
             None
         };
 
-        // Write torrc snippet for this hidden service with PoW
+        // Write torrc snippet for this hidden service with PoW and DoS defenses
         // Since Tor regenerates its torrc and removes %include directives,
         // we append mirror configs directly to the main torrc file
+        // DoS defense options:
+        //   - HiddenServiceEnableIntroDoSDefense: Protects introduction points from DoS
+        //   - HiddenServiceMaxStreams: Limits concurrent streams per rendezvous circuit
+        //   - HiddenServiceMaxStreamsCloseCircuit: Closes circuit if stream limit exceeded
         let torrc_path = self.base_data_dir.join("tor").join("torrc");
 
         let torrc_content = format!(
-            "# Fortify mirror: {}\nHiddenServiceDir {}\nHiddenServicePort 80 127.0.0.1:{}\nHiddenServicePoWDefensesEnabled 1\n",
+            "# Fortify mirror: {}\nHiddenServiceDir {}\nHiddenServicePort 80 127.0.0.1:{}\nHiddenServicePoWDefensesEnabled 1\nHiddenServiceEnableIntroDoSDefense 1\nHiddenServiceMaxStreams 100\nHiddenServiceMaxStreamsCloseCircuit 1\n",
             mirror.id,
             hs_dir.to_string_lossy(),
             target_port

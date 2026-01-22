@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use fortify_core::{
-    safe_lock, safe_write, RequestMeta, SessionBehavior, SessionManager, SessionToken, TrustTier,
+    jittered_timeout, safe_lock, safe_write, RequestMeta, SessionBehavior, SessionManager, SessionToken, TrustTier,
 };
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -553,8 +553,9 @@ impl HttpProxy {
                 // Configure HTTP/1.1 with defensive timeouts to prevent slow-loris attacks
                 // header_read_timeout: Max time to receive all request headers (30s for Tor latency)
                 // max_buf_size: Limit header size to prevent memory exhaustion (16KB)
+                // Jitter applied to prevent timing-based fingerprinting
                 let result = http1::Builder::new()
-                    .header_read_timeout(Duration::from_secs(30))
+                    .header_read_timeout(jittered_timeout(30))
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
                     .await;
@@ -1514,11 +1515,12 @@ async fn upgrade_verification_token(
     gate_address: &str,
 ) -> Option<String> {
     // Timeout for Gate token upgrade (10s - this should be fast)
+    // Jitter applied to prevent timing-based fingerprinting
     const TOKEN_UPGRADE_TIMEOUT_SECS: u64 = 10;
     
     // Use reqwest with explicit timeout for token upgrade
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(TOKEN_UPGRADE_TIMEOUT_SECS))
+        .timeout(jittered_timeout(TOKEN_UPGRADE_TIMEOUT_SECS))
         .build()
         .ok()?;
 
@@ -1578,6 +1580,7 @@ async fn proxy_to_gate(
     gate_path: &str,
 ) -> std::result::Result<Response<BoxBody>, String> {
     // Timeout for Gate requests (30s - Gate should respond quickly)
+    // Jitter applied to prevent timing-based fingerprinting
     const GATE_REQUEST_TIMEOUT_SECS: u64 = 30;
     const GATE_CONNECT_TIMEOUT_SECS: u64 = 5;
     
@@ -1592,8 +1595,8 @@ async fn proxy_to_gate(
 
     // Use reqwest for simpler HTTP proxying with explicit timeouts
     let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(GATE_CONNECT_TIMEOUT_SECS))
-        .timeout(Duration::from_secs(GATE_REQUEST_TIMEOUT_SECS))
+        .connect_timeout(jittered_timeout(GATE_CONNECT_TIMEOUT_SECS))
+        .timeout(jittered_timeout(GATE_REQUEST_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -1705,13 +1708,14 @@ async fn route_to_backend(
 
     // Backend request timeouts (60s total, 10s connect)
     // These protect against slow-loris attacks on backend connections
+    // Jitter applied to prevent timing-based fingerprinting
     const BACKEND_TIMEOUT_SECS: u64 = 60;
     const BACKEND_CONNECT_TIMEOUT_SECS: u64 = 10;
     
     // Use reqwest for backend proxying with explicit timeouts
     let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(BACKEND_CONNECT_TIMEOUT_SECS))
-        .timeout(Duration::from_secs(BACKEND_TIMEOUT_SECS))
+        .connect_timeout(jittered_timeout(BACKEND_CONNECT_TIMEOUT_SECS))
+        .timeout(jittered_timeout(BACKEND_TIMEOUT_SECS))
         .build()
         .map_err(|e| {
             node.release();
