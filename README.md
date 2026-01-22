@@ -5,6 +5,7 @@
 <!-- Primary Workflow Badges -->
 [![CI](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/Nespartious/Fortify/actions/workflows/security.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/security.yml)
+[![Tor Alignment](https://github.com/Nespartious/Fortify/actions/workflows/tor-alignment.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/tor-alignment.yml)
 [![Code Quality](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml)
 [![Coverage](https://github.com/Nespartious/Fortify/actions/workflows/coverage.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/coverage.yml)
 [![SBOM](https://github.com/Nespartious/Fortify/actions/workflows/sbom.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/sbom.yml)
@@ -47,6 +48,23 @@ Runs **daily** and on every push to main. [View workflow →](.github/workflows/
 | **Tests** | 131+ unit and integration tests pass |
 | **Clippy** | Zero warnings from Rust linter |
 | **Format** | Code follows `rustfmt` standards |
+
+</details>
+
+<details>
+<summary><b>What does "Tor Alignment Passed" mean?</b></summary>
+
+Ensures Fortify is fully compatible with Tor Browser's privacy requirements:
+
+| Check | What It Validates |
+|-------|-------------------|
+| **No JavaScript** | HTML contains no `<script>` tags (Tor Browser disables JS by default) |
+| **No External URLs** | No CDN, Google Fonts, or external resource loading (prevents deanonymization) |
+| **No Tracking** | No tracking pixels, analytics, or inline event handlers |
+| **Privacy Patterns** | Flags IP extraction and User-Agent logging for review |
+| **Tor Headers** | Reports on Onion-Location and security header implementation |
+
+Runs on every push/PR. [View workflow →](.github/workflows/tor-alignment.yml)
 
 </details>
 
