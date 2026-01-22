@@ -13,14 +13,14 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    # This job requires Dependency Graph to be enabled in repo settings
-    # Continue on error if the feature is not available
-    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Dependency Review
+        # This requires Dependency Graph to be enabled in repo settings
+        # Continue on error if the feature is not available
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           # Fail on high/critical vulnerabilities
