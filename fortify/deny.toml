@@ -13,9 +13,9 @@ unmaintained = "none"
 # The lint level for crates that have been yanked: deny, warn, allow
 yanked = "warn"
 # Ignore specific advisories (add IDs here if you need to temporarily bypass)
-# RUSTSEC-2025-0134: rustls-pemfile unmaintained - comes from reqwest 0.11 via rustls
-# Will be resolved when we upgrade to reqwest 0.12+ (requires hyper 1.x migration)
-ignore = ["RUSTSEC-2025-0134"]
+ignore = []
+# Warn about unused ignores instead of failing
+unused-ignored-advisory = "warn"
 
 [licenses]
 # List of allowed licenses (unlicensed crates are denied by default)
@@ -28,6 +28,7 @@ allow = [
     "Zlib",
     "0BSD",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
     "MPL-2.0",
     "CC0-1.0",
 ]

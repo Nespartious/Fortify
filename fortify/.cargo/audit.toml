@@ -2,10 +2,5 @@
 # https://rustsec.org/
 
 [advisories]
-ignore = [
-    # rustls-pemfile unmaintained - comes from reqwest 0.11 via rustls
-    # Will be resolved when we upgrade to reqwest 0.12+ (requires hyper 1.x migration)
-    "RUSTSEC-2025-0134",
-]
-# Set informational warnings to false to suppress unmaintained warnings
-informational_warnings = []
+# Ignore specific advisories
+ignore = []
