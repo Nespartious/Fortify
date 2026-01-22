@@ -99,6 +99,31 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
+      - name: Attach SBOM to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            fortify/sbom-cyclonedx.json
+            fortify/sbom-spdx.json
+        continue-on-error: true
+
+      - name: Validate SBOM format
+        working-directory: ./fortify
+        run: |
+          if [ -f sbom-cyclonedx.json ]; then
+            echo "Validating CycloneDX SBOM structure..."
+            # Check for required CycloneDX fields
+            if jq -e '.bomFormat' sbom-cyclonedx.json > /dev/null 2>&1; then
+              echo "✅ Valid CycloneDX SBOM generated"
+              FORMAT=$(jq -r '.bomFormat' sbom-cyclonedx.json)
+              VERSION=$(jq -r '.specVersion' sbom-cyclonedx.json)
+              echo "   Format: $FORMAT v$VERSION"
+            else
+              echo "⚠️ SBOM may be incomplete or invalid"
+            fi
+          fi
+
       - name: Attach SBOM to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2

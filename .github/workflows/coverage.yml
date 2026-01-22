@@ -83,6 +83,32 @@ jobs:
           fi
         continue-on-error: true
 
+      - name: Check coverage threshold
+        working-directory: ./fortify
+        run: |
+          THRESHOLD=50
+          
+          if [ -f "coverage/cobertura.xml" ]; then
+            # Extract line coverage from Cobertura XML
+            COVERAGE=$(grep -oP 'line-rate="\K[0-9.]+' coverage/cobertura.xml | head -1 || echo "0")
+            # Convert from decimal (0.XX) to percentage
+            COVERAGE_PCT=$(echo "$COVERAGE * 100" | bc | cut -d'.' -f1)
+            
+            echo "📊 Current coverage: ${COVERAGE_PCT}%"
+            echo "📊 Threshold: ${THRESHOLD}%"
+            
+            if [ "$COVERAGE_PCT" -lt "$THRESHOLD" ]; then
+              echo "❌ Coverage ${COVERAGE_PCT}% is below threshold ${THRESHOLD}%"
+              echo "::warning::Coverage is below ${THRESHOLD}% threshold"
+              # Warn but don't fail for now - uncomment to enforce
+              # exit 1
+            else
+              echo "✅ Coverage ${COVERAGE_PCT}% meets threshold ${THRESHOLD}%"
+            fi
+          else
+            echo "⚠️ Coverage file not found - skipping threshold check"
+          fi
+
   #############################################################################
   # TEST SUMMARY
   #############################################################################

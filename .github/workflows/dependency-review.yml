@@ -19,15 +19,18 @@ jobs:
 
       - name: Dependency Review
         # This requires Dependency Graph to be enabled in repo settings
-        # Continue on error if the feature is not available
-        continue-on-error: true
+        # Will fail PR if high/critical vulnerabilities are introduced
         uses: actions/dependency-review-action@v4
         with:
           # Fail on high/critical vulnerabilities
           fail-on-severity: high
+          # Warn on moderate vulnerabilities but don't block
+          warn-only: false
           # Allow specific licenses commonly used in Rust ecosystem
           # Note: Cannot use both allow-licenses and deny-licenses
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Zlib, CC0-1.0, Unlicense, CDLA-Permissive-2.0
+          # Show dependency changes in PR comment
+          comment-summary-in-pr: on-failure
 
   cargo-audit-diff:
     name: Audit New Dependencies
