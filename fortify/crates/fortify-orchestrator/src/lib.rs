@@ -1223,11 +1223,11 @@ impl Default for CaptchaPregenConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            target_pool_size: 500,      // Target 500 pre-generated CAPTCHAs
-            min_pool_size: 100,         // Refill when below 100
-            max_pool_size: 1000,        // Never exceed 1000
+            target_pool_size: 25_000,   // Target 25K pre-generated CAPTCHAs (with full HTML)
+            min_pool_size: 5_000,       // Refill when below 5K
+            max_pool_size: 50_000,      // Never exceed 50K
             pause_cpu_threshold: 70.0,  // Pause pre-gen if CPU > 70%
-            batch_size: 10,             // Generate 10 at a time
+            batch_size: 100,            // Generate 100 at a time for efficiency
             batch_delay_ms: 100,        // 100ms between batches
             rotation_percent: 25,       // Replace 25% of pool
             rotation_interval_days: 10, // Every 10 days
