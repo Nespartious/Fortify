@@ -3,9 +3,15 @@
 **Sprint ID:** BETA-003  
 **Priority:** 🟡 MEDIUM (Pre-Production)  
 **Estimated Effort:** 2-3 days  
-**Status:** 📋 PLANNING (Under Discussion)  
+**Status:** ✅ COMPLETE  
 **Created:** January 23, 2026  
 **Last Updated:** January 22, 2026
+
+### Completed
+- ✅ Task 1: Global Concurrency Semaphore (PR #35)
+- ✅ Task 2: Graceful 503 on Overload (PR #35)
+- ✅ Task 3: Timeout Jitter (PR #34 - Merged)
+- ✅ Task 4: Tor DoS Config (PR #34 - Merged)
 
 ---
 
@@ -75,19 +81,25 @@ See [SECURITY-REVIEW-COMPARISON.md](SECURITY-REVIEW-COMPARISON.md) for full gap 
 
 ## Success Criteria
 
-- [ ] Global concurrency semaphore limits total connections
-- [ ] System returns 503 when at capacity (not timeout)
-- [ ] All timeouts have ±10-20% jitter
-- [ ] Tor hidden services configured with IntroDoSDefense and MaxStreams
+- [x] Global concurrency semaphore limits total connections ✅ (PR #35)
+- [x] System returns 503 when at capacity (not timeout) ✅ (PR #35)
+- [x] All timeouts have ±10-20% jitter ✅ (PR #34)
+- [x] Tor hidden services configured with IntroDoSDefense and MaxStreams ✅ (PR #34)
 
 ---
 
 ## Implementation Tasks
 
 ### Task 1: Global Concurrency Semaphore
-**Status:** ⬜ Not Started  
+**Status:** ✅ COMPLETE (PR #35)  
 **Estimated Time:** 4 hours  
 **Priority:** 🔴 HIGH
+
+**Implementation Summary:**
+- Added `GLOBAL_CONNECTION_SEMAPHORE` (1000 permits) for system-wide protection
+- Updated `BackendNode` to use `tokio::sync::Semaphore` per-node
+- Dual-layer gating: global semaphore + per-node semaphore
+- Metrics tracking via `active_connections` counter for display
 
 **Problem:** Current implementation uses soft counters, not actual semaphore gating. Under extreme load, more connections than `max_connections` could be active simultaneously due to race conditions.
 
@@ -140,9 +152,17 @@ impl BackendNode {
 ---
 
 ### Task 2: Graceful 503 on Overload
-**Status:** ⬜ Not Started  
+**Status:** ✅ COMPLETE (PR #35)  
 **Estimated Time:** 2 hours  
 **Priority:** 🔴 HIGH
+
+**Implementation Summary:**
+- Added `serve_busy_page()` function returning 503 with auto-refresh HTML
+- Created `assets/html/busy.html` template matching Fortify styling
+- Jittered Retry-After header (25-35s) prevents thundering herd
+- Threat-tier traffic shed first when global capacity < 100 permits (10%)
+- Added `capacity_shed` metric to Metrics struct
+- Backend routing returns 503 when no nodes available
 
 **Problem:** When all nodes are at capacity, requests may queue indefinitely instead of failing fast with 503.
 
@@ -193,9 +213,15 @@ Content-Type: text/html
 ---
 
 ### Task 3: Timeout Jitter
-**Status:** ⬜ Not Started  
+**Status:** ✅ COMPLETE (PR #34 - Merged January 22, 2026)  
 **Estimated Time:** 2 hours  
 **Priority:** 🟡 MEDIUM
+
+**Implementation Summary:**
+- Added `jittered_timeout()` and `jittered_duration()` to `fortify-core/src/lib.rs`
+- Applied ±15% jitter to all network timeouts
+- 3 unit tests validating bounds and variation
+- Files modified: `Cargo.toml`, `fortify-core`, `fortify-http`, `fortify-orchestrator`
 
 **Problem:** Fixed timeout values can be fingerprinted by attackers to identify Fortify-protected services.
 
@@ -245,9 +271,15 @@ let timeout = jittered_timeout(60);  // Returns 51-69 seconds
 ---
 
 ### Task 4: Tor Hidden Service Configuration
-**Status:** ⬜ Not Started  
+**Status:** ✅ COMPLETE (PR #34 - Merged January 22, 2026)  
 **Estimated Time:** 1 hour  
 **Priority:** 🟡 MEDIUM
+
+**Implementation Summary:**
+- Added `HiddenServiceEnableIntroDoSDefense=1` to torrc generation
+- Added `HiddenServiceMaxStreams=100` to limit concurrent streams
+- Added `HiddenServiceMaxStreamsCloseCircuit=1` for aggressive cleanup
+- Applied to both orchestrator (file-based) and controller (SETCONF)
 
 **Problem:** File-based hidden services don't include all available DoS defense options.
 
