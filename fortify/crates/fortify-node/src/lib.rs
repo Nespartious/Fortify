@@ -1,8 +1,11 @@
 pub mod detection;
 pub mod server;
 
+use bytes::Bytes;
 use fortify_core::{Session, SessionManager, SessionToken};
-use hyper::{Body, Request, Response, StatusCode};
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -234,8 +237,8 @@ impl Node {
     pub async fn process_request(
         &self,
         session_id: String,
-        req: Request<Body>,
-    ) -> std::result::Result<Response<Body>, hyper::Error> {
+        req: Request<Incoming>,
+    ) -> std::result::Result<Response<Full<Bytes>>, hyper::Error> {
         let start = std::time::Instant::now();
 
         // Get session - Try stateless token verification first
@@ -332,7 +335,7 @@ impl Node {
     fn check_violations(
         &self,
         session_id: &str,
-        req: &Request<Body>,
+        req: &Request<Incoming>,
         _session: &Session,
     ) -> Result<()> {
         // Rate limiting
@@ -522,8 +525,8 @@ impl Node {
     /// Forward request to backend
     async fn forward_to_backend(
         &self,
-        req: Request<Body>,
-    ) -> std::result::Result<Response<Body>, String> {
+        req: Request<Incoming>,
+    ) -> std::result::Result<Response<Full<Bytes>>, String> {
         let path = req
             .uri()
             .path_and_query()
@@ -571,9 +574,12 @@ impl Node {
         let headers = req.headers().clone();
 
         // Read the body from the incoming request
-        let body_bytes = hyper::body::to_bytes(req.into_body())
+        let body_bytes = req
+            .into_body()
+            .collect()
             .await
-            .map_err(|e| format!("Failed to read request body: {}", e))?;
+            .map_err(|e| format!("Failed to read request body: {}", e))?
+            .to_bytes();
 
         let mut req_builder = client.request(method, &backend_url);
         for (name, value) in headers.iter() {
@@ -617,7 +623,9 @@ impl Node {
                     .bytes()
                     .await
                     .map_err(|e| format!("Failed to read body: {}", e))?;
-                Ok(response.body(Body::from(body_bytes)).unwrap())
+                Ok(response
+                    .body(Full::new(Bytes::from(body_bytes.to_vec())))
+                    .unwrap())
             }
             Err(e) => {
                 tracing::warn!("Backend request failed: {}", e);
@@ -657,7 +665,7 @@ impl Node {
     }
 
     /// Serve fallback page when backend is unavailable
-    fn serve_backend_fallback(&self) -> Response<Body> {
+    fn serve_backend_fallback(&self) -> Response<Full<Bytes>> {
         let html = r#"<!DOCTYPE html>
 <html>
 <head>
@@ -692,21 +700,21 @@ impl Node {
         Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/html; charset=utf-8")
-            .body(Body::from(html))
+            .body(Full::new(Bytes::from(html)))
             .unwrap()
     }
 
     /// Generate error response
-    fn error_response(&self, status: StatusCode, message: &str) -> Response<Body> {
+    fn error_response(&self, status: StatusCode, message: &str) -> Response<Full<Bytes>> {
         Response::builder()
             .status(status)
             .header("Content-Type", "text/plain")
-            .body(Body::from(message.to_string()))
+            .body(Full::new(Bytes::from(message.to_string())))
             .unwrap()
     }
 
     /// Redirect to Gate with cookie clear (forces re-verification)
-    fn redirect_to_gate(&self) -> Response<Body> {
+    fn redirect_to_gate(&self) -> Response<Full<Bytes>> {
         let html = r#"<!DOCTYPE html>
 <html>
 <head>
@@ -744,7 +752,7 @@ impl Node {
                 "Set-Cookie",
                 "fortify_demoted=1; Path=/; Max-Age=300; HttpOnly",
             )
-            .body(Body::from(html))
+            .body(Full::new(Bytes::from(html)))
             .unwrap()
     }
 

@@ -4,11 +4,19 @@ use crate::captcha_html::{
 use crate::captcha_types::CaptchaData;
 use crate::Gate;
 use crate::GateError;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
+
+type BoxBody = Full<Bytes>;
 // form_urlencoded is available via crate root if dependency added
 
 /// HTTP server for the gate
@@ -26,30 +34,33 @@ impl GateServer {
         let gate = Arc::clone(&self.gate);
         let static_dir = self.static_dir.clone();
 
-        let make_svc = make_service_fn(move |_conn| {
+        let listener = TcpListener::bind(addr).await?;
+        tracing::info!("Gate HTTP server listening on {}", addr);
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let io = TokioIo::new(stream);
             let gate = Arc::clone(&gate);
             let static_dir = static_dir.clone();
 
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
+            tokio::spawn(async move {
+                let service = service_fn(move |req| {
                     handle_request(req, Arc::clone(&gate), static_dir.clone())
-                }))
-            }
-        });
+                });
 
-        let server = Server::bind(&addr).serve(make_svc);
-        tracing::info!("Gate HTTP server listening on {}", addr);
-
-        server.await?;
-        Ok(())
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                    tracing::error!("Error serving connection: {:?}", err);
+                }
+            });
+        }
     }
 }
 
 async fn handle_request(
-    req: Request<Body>,
+    req: Request<Incoming>,
     gate: Arc<Gate>,
     _static_dir: String,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<BoxBody>, Infallible> {
     let path = req.uri().path();
     let method = req.method();
 
@@ -101,7 +112,7 @@ async fn handle_request(
                         "Set-Cookie",
                         "fortify_test=1; Path=/; Max-Age=60; HttpOnly; SameSite=Lax",
                     )
-                    .body(Body::empty())
+                    .body(Full::new(Bytes::new()))
                     .unwrap());
             }
 
@@ -149,7 +160,7 @@ async fn handle_request(
                 "Set-Cookie",
                 "fortify_session=; Path=/; Max-Age=0; HttpOnly",
             )
-            .body(Body::empty())
+            .body(Full::new(Bytes::new()))
             .unwrap(),
     };
 
@@ -157,7 +168,7 @@ async fn handle_request(
 }
 
 /// Block page for clients that don't support cookies (likely bots)
-fn serve_cookie_blocked_page() -> Response<Body> {
+fn serve_cookie_blocked_page() -> Response<BoxBody> {
     let html = r###"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -237,11 +248,11 @@ fn serve_cookie_blocked_page() -> Response<Body> {
     Response::builder()
         .status(StatusCode::FORBIDDEN)
         .header("Content-Type", "text/html")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
-fn serve_landing_page(_gate: Arc<Gate>) -> Response<Body> {
+fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
     // Landing page for NEW users (first-time visitors)
     // Castle/Fortification themed - Retrosynth style
     // NO JAVASCRIPT ALLOWED
@@ -371,11 +382,11 @@ fn serve_landing_page(_gate: Arc<Gate>) -> Response<Body> {
             "Set-Cookie",
             "fortify_session=; Path=/; Max-Age=0; HttpOnly",
         )
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
-fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
+fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
     // Demoted users get an inline captcha on the same page
     // This reduces the friction vs requiring another click
     // Use HARD difficulty for demoted users as they've exhibited suspicious behavior
@@ -424,13 +435,13 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
                 "Set-Cookie",
                 "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
             )
-            .body(Body::from(render_captcha_page_with_timer(
+            .body(Full::new(Bytes::from(render_captcha_page_with_timer(
                 &captcha_state.session_id,
                 &captcha_state.session_id,
                 captcha_data,
                 true, // threat styling
                 timeout_seconds,
-            )))
+            ))))
             .unwrap();
     }
 
@@ -641,7 +652,7 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<Body> {
             "Set-Cookie",
             "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
         )
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap();
     response.headers_mut().append(
         "Set-Cookie",
@@ -685,7 +696,7 @@ fn serve_captcha_challenge(
     gate: Arc<Gate>,
     existing_session_id: Option<String>,
     reason: Option<&str>,
-) -> Response<Body> {
+) -> Response<BoxBody> {
     // Preserve existing session ID if available (demoted user re-verifying)
     // This keeps the same session ID so we can continue tracking them
     let session_id = existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -708,7 +719,7 @@ fn serve_captcha_challenge(
                 return Response::builder()
                     .status(StatusCode::OK)
                     .header("Content-Type", "text/html")
-                    .body(Body::from(html))
+                    .body(Full::new(Bytes::from(html)))
                     .unwrap();
             }
         }
@@ -934,15 +945,23 @@ fn serve_captcha_challenge(
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }
 
 /// Handle verification token upgrade to session token
-async fn handle_token_upgrade(mut req: Request<Body>, gate: Arc<Gate>) -> Response<Body> {
+async fn handle_token_upgrade(req: Request<Incoming>, gate: Arc<Gate>) -> Response<BoxBody> {
+    // Extract User-Agent before consuming body
+    let current_ua = req
+        .headers()
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
     // Parse JSON body
-    let body_bytes = match hyper::body::to_bytes(req.body_mut()).await {
-        Ok(b) => b,
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid request body"),
     };
 
@@ -972,13 +991,7 @@ async fn handle_token_upgrade(mut req: Request<Body>, gate: Arc<Gate>) -> Respon
     }
 
     // Validate User-Agent matches
-    let current_ua = req
-        .headers()
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown");
-
-    if !verification_token.validate_user_agent(current_ua) {
+    if !verification_token.validate_user_agent(&current_ua) {
         tracing::warn!(
             "User-Agent mismatch for token {}",
             verification_token.user_id
@@ -1019,7 +1032,7 @@ async fn handle_token_upgrade(mut req: Request<Body>, gate: Arc<Gate>) -> Respon
     let session_token = gate.create_session_token(
         &verification_token.user_id,
         fortify_core::TrustTier::Verified,
-        current_ua,
+        &current_ua,
     );
 
     tracing::info!(
@@ -1037,17 +1050,17 @@ async fn handle_token_upgrade(mut req: Request<Body>, gate: Arc<Gate>) -> Respon
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(response_json.to_string()))
+        .body(Full::new(Bytes::from(response_json.to_string())))
         .unwrap()
 }
 
 // Renamed for clarity in tool usage, originally serve_captcha in code
-async fn serve_captcha_image(path: &str, gate: Arc<Gate>) -> Response<Body> {
+async fn serve_captcha_image(path: &str, gate: Arc<Gate>) -> Response<BoxBody> {
     serve_captcha(path, gate).await
 }
 
 // Keep original serve_captcha for valid signature
-async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<Body> {
+async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<BoxBody> {
     let id = match path.strip_prefix("/gate/captcha/") {
         Some(id) => id,
         None => return not_found(),
@@ -1061,7 +1074,7 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<Body> {
                     .status(StatusCode::OK)
                     .header("Content-Type", "image/bmp")
                     .header("Cache-Control", "no-store, no-cache, must-revalidate")
-                    .body(Body::from(image_data.clone()))
+                    .body(Full::new(Bytes::from(image_data.clone())))
                     .unwrap();
             }
         }
@@ -1075,7 +1088,7 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<Body> {
                     .status(StatusCode::OK)
                     .header("Content-Type", "image/bmp")
                     .header("Cache-Control", "no-store, no-cache, must-revalidate")
-                    .body(Body::from(challenge.image_data.clone()))
+                    .body(Full::new(Bytes::from(challenge.image_data.clone())))
                     .unwrap()
             } else {
                 not_found()
@@ -1085,9 +1098,17 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<Body> {
     }
 }
 
-async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<Body> {
-    let body_bytes = match hyper::body::to_bytes(req.body_mut()).await {
-        Ok(b) => b,
+async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<BoxBody> {
+    // Extract User-Agent before consuming body
+    let user_agent = req
+        .headers()
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid body"),
     };
 
@@ -1137,15 +1158,8 @@ async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<
     match gate.verify_submission(session_id, captcha, pow_nonce) {
         Ok(_token) => {
             // Success - Issue verification token instead of session token
-            // Get User-Agent for binding
-            let user_agent = req
-                .headers()
-                .get("user-agent")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("unknown");
-
             // Create verification token (60s TTL, single-use)
-            let verification_token = crate::VerificationToken::new(user_agent);
+            let verification_token = crate::VerificationToken::new(&user_agent);
             let token_string = verification_token.encode();
 
             tracing::info!(
@@ -1425,7 +1439,7 @@ async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<
                         session_id
                     ),
                 )
-                .body(Body::from(html))
+                .body(Full::new(Bytes::from(html)))
                 .unwrap()
         }
         Err(GateError::AdditionalCaptchaRequired) => {
@@ -1481,7 +1495,7 @@ async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/html")
-                .body(Body::from(html))
+                .body(Full::new(Bytes::from(html)))
                 .unwrap()
         }
         Err(_e) => {
@@ -1593,17 +1607,20 @@ async fn verify_submission(mut req: Request<Body>, gate: Arc<Gate>) -> Response<
             Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .header("Content-Type", "text/html")
-                .body(Body::from(html))
+                .body(Full::new(Bytes::from(html)))
                 .unwrap()
         }
     }
 }
 
 /// Handle admin request to update captcha configuration
-async fn handle_update_captcha_config(mut req: Request<Body>, gate: Arc<Gate>) -> Response<Body> {
+async fn handle_update_captcha_config(
+    req: Request<Incoming>,
+    gate: Arc<Gate>,
+) -> Response<BoxBody> {
     // Read request body
-    let body_bytes = match hyper::body::to_bytes(req.body_mut()).await {
-        Ok(b) => b,
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid body"),
     };
 
@@ -1621,26 +1638,26 @@ async fn handle_update_captcha_config(mut req: Request<Body>, gate: Arc<Gate>) -
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(r#"{"status":"ok"}"#))
+        .body(Full::new(Bytes::from(r#"{"status":"ok"}"#)))
         .unwrap()
 }
 
-fn not_found() -> Response<Body> {
+fn not_found() -> Response<BoxBody> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
-        .body(Body::from("Not Found"))
+        .body(Full::new(Bytes::from("Not Found")))
         .unwrap()
 }
 
-fn error_response(status: StatusCode, msg: &str) -> Response<Body> {
+fn error_response(status: StatusCode, msg: &str) -> Response<BoxBody> {
     Response::builder()
         .status(status)
-        .body(Body::from(msg.to_string()))
+        .body(Full::new(Bytes::from(msg.to_string())))
         .unwrap()
 }
 
 /// Styled error response matching Fortify theme
-fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Response<Body> {
+fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Response<BoxBody> {
     let html = format!(
         r###"<!DOCTYPE html>
 <html lang="en">
@@ -1791,6 +1808,6 @@ fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Resp
     Response::builder()
         .status(status)
         .header("Content-Type", "text/html")
-        .body(Body::from(html))
+        .body(Full::new(Bytes::from(html)))
         .unwrap()
 }

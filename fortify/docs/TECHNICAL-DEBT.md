@@ -6,97 +6,56 @@ This document tracks known technical debt, security improvements, and developmen
 
 ---
 
-## 🔴 High Priority (Security-Related)
+## ✅ Completed (Security-Related)
 
 ### 1. reqwest 0.11 → 0.12+ Migration (hyper 0.14 → 1.x)
 
-**Status:** Ready to Begin  
-**Branch:** `feature/hyper-1x-migration` (to be created)  
-**Effort Estimate:** Large (2-3 days)  
-**Risk Level:** Medium - Security advisory on transitive dependency
+**Status:** ✅ Complete  
+**Branch:** `feature/hyper-1x-migration`  
+**Completed:** January 21, 2026  
+**Effort:** ~2 hours
 
-#### Problem
+#### Summary
 
-The project uses `reqwest = "0.11"` which depends on `rustls-pemfile` (unmaintained, RUSTSEC-2025-0134). Upgrading to reqwest 0.12+ requires migrating from hyper 0.14 to hyper 1.x, which has significant breaking changes.
+Successfully migrated all HTTP dependencies to modern versions:
+- hyper 0.14.32 → 1.8.1
+- reqwest 0.11.27 → 0.12.28
+- http 0.2.12 → 1.0 (fortify-http)
 
-#### Pre-Migration Audit Results (January 22, 2026)
+#### Changes Made by Crate
 
-**Dependabot PRs Reviewed:**
-| PR | Title | Status | Relevance |
-|----|-------|--------|-----------|
-| #5 | hyper 0.14 → 1.8 | Closed (deferred) | ✅ Direct - requires this migration |
-| #14 | http 0.2 → 1.4 | Closed (deferred) | ✅ Direct - coupled with hyper |
-| #15 | reqwest 0.11 → 0.13 | Closed (conflict) | ✅ Direct - triggers migration |
-| #16 | hyper-staticfile 0.9 → 0.10 | Closed (deferred) | ✅ Direct - needs hyper 1.x |
+| Crate | Changes |
+|-------|---------|
+| `fortify-tui` | reqwest 0.11 → 0.12 (no code changes) |
+| `fortify-controller` | hyper 1.8, hyper-util, http-body-util, bytes, reqwest 0.12 |
+| `fortify-gate` | hyper 1.8, hyper-util, http-body-util, bytes |
+| `fortify-node` | hyper 1.8, hyper-util, http-body-util, bytes, reqwest 0.12 |
+| `fortify-orchestrator` | hyper 1.8, hyper-util, http-body-util, bytes |
+| `fortify-http` | hyper 1.8, hyper-util, http-body-util, http 1.0, reqwest 0.12 |
 
-**Security Workflow Results:** ✅ All checks passing
-- cargo-audit: PASS
-- cargo-deny: PASS  
-- Semgrep SAST: PASS
-- Gitleaks: PASS
-- cargo-geiger: PASS
-- cargo-vet: PASS
+#### Key Migration Patterns Applied
 
-**Additional Findings from Pre-Migration Sweep:**
-1. **Dead dependency:** `hyper-staticfile = "0.9"` in fortify-gate (never used in code)
-2. **Direct http crate:** `http = "0.2"` in fortify-http must upgrade to 1.x
-3. **reqwest breaking changes in 0.13:**
-   - `rustls-tls` renamed to `rustls`
-   - `rustls` is now default TLS (was `native-tls`)
-   - aws-lc-rs crypto provider (was ring)
-4. **~33 tests** require updates post-migration
+| Old Pattern (hyper 0.14) | New Pattern (hyper 1.x) |
+|--------------------------|------------------------|
+| `Response<Body>` | `Response<Full<Bytes>>` |
+| `Request<Body>` (incoming) | `Request<Incoming>` |
+| `Body::from(x)` | `Full::new(Bytes::from(x))` |
+| `Body::empty()` | `Full::new(Bytes::new())` |
+| `hyper::body::to_bytes()` | `req.collect().await?.to_bytes()` |
+| `Server::bind(&addr).serve()` | TcpListener + accept loop + http1::Builder |
+| `make_service_fn` | service_fn directly in spawn loop |
 
-#### Current Usage Analysis
+#### Cleanup Also Performed
 
-**reqwest usage (4 crates):**
-| Crate | Features | Usage Pattern |
-|-------|----------|---------------|
-| `fortify-node` | rustls-tls, socks | Async client with SOCKS proxy for .onion backends |
-| `fortify-controller` | rustls-tls, socks, json | Health checks via Tor SOCKS proxy |
-| `fortify-tui` | json, rustls-tls | Deployment verification |
-| `fortify-http` | rustls-tls, blocking, json | Admin panel HTTP requests |
+Removed unused dependencies during migration:
+- `hyper-staticfile` from fortify-gate (never used)
+- `anyhow`, `hex`, `rand`, `tracing-appender` from fortify-core
+- `tracing-subscriber`, `urlencoding` from fortify-gate
+- `chrono`, `tracing-subscriber` from fortify-orchestrator
 
-**hyper usage (5 crates, ~80 occurrences of `hyper::Body`):**
-| Crate | Files | Key Patterns |
-|-------|-------|--------------|
-| `fortify-node` | 4 files | Server, Body, to_bytes (6 occurrences) |
-| `fortify-gate` | 1 file | Server, Body, form parsing (18 occurrences) |
-| `fortify-controller` | 1 file | Server, Body (8 occurrences) |
-| `fortify-orchestrator` | 1 file | Server, Client, Body (35+ occurrences) |
-| `fortify-http` | 4 files | Server, Client, proxy, admin (50+ occurrences) |
+---
 
-#### Breaking Changes in hyper 1.x
-
-From the [hyper upgrade guide](https://hyper.rs/guides/1/upgrading/):
-
-1. **`Body` is now a trait** (was a concrete type)
-   - Must use `http-body-util` for body types (`BoxBody`, `Full<Bytes>`, etc.)
-   - Every `hyper::Body` reference needs updating
-
-2. **`Server` removed** from hyper core
-   - Replace with `hyper-util::server::conn::auto::Builder`
-   - Need manual accept loop instead of `Server::bind()`
-
-3. **`Client` moved** to hyper-util
-   - Use `hyper_util::client::legacy::Client`
-   - Mostly drop-in but import paths change
-
-4. **`service_fn` signature changed**
-   - Now in `hyper::service` (not tower)
-   - Minor adjustments needed
-
-#### Migration Plan
-
-```
-Phase 0: Pre-Migration Cleanup (NEW)
-  ├── Create feature branch: feature/hyper-1x-migration
-  ├── Remove unused hyper-staticfile from fortify-gate/Cargo.toml
-  └── Commit baseline
-
-Phase 1: Preparation
-  ├── Add hyper features: ["backports", "deprecated"]
-  ├── Update http-body to 0.4.6+
-  └── Run cargo check to see deprecation warnings
+## 🔴 High Priority (Security-Related)
 
 Phase 2: Dependencies
   ├── Add hyper-util = "0.1"

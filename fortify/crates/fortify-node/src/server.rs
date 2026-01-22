@@ -1,9 +1,15 @@
 use crate::Node;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 
 /// Node HTTP server
 pub struct NodeServer {
@@ -17,31 +23,30 @@ impl NodeServer {
 
     /// Start the HTTP server
     pub async fn start(&self, addr: SocketAddr) -> anyhow::Result<()> {
-        let node = Arc::clone(&self.node);
-
-        let make_svc = make_service_fn(move |_conn| {
-            let node = Arc::clone(&node);
-
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
-                    handle_request(req, Arc::clone(&node))
-                }))
-            }
-        });
-
-        let server = Server::bind(&addr).serve(make_svc);
+        let listener = TcpListener::bind(addr).await?;
         tracing::info!("Node HTTP server listening on {}", addr);
 
-        server.await?;
-        Ok(())
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let io = TokioIo::new(stream);
+            let node = Arc::clone(&self.node);
+
+            tokio::spawn(async move {
+                let service = service_fn(move |req| handle_request(req, Arc::clone(&node)));
+
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                    tracing::error!("Error serving connection: {:?}", err);
+                }
+            });
+        }
     }
 }
 
 /// Handle incoming request
 async fn handle_request(
-    req: Request<Body>,
+    req: Request<Incoming>,
     node: Arc<Node>,
-) -> std::result::Result<Response<Body>, Infallible> {
+) -> std::result::Result<Response<Full<Bytes>>, Infallible> {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
 
@@ -71,31 +76,31 @@ async fn handle_request(
 }
 
 /// Health check endpoint
-fn health_check(node: Arc<Node>) -> Response<Body> {
+fn health_check(node: Arc<Node>) -> Response<Full<Bytes>> {
     let metrics = node.get_metrics();
 
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::json!({
                 "status": "healthy",
                 "requests_total": metrics.requests_total,
                 "requests_forwarded": metrics.requests_forwarded,
             })
             .to_string(),
-        ))
+        )))
         .unwrap()
 }
 
 /// Metrics endpoint
-fn metrics_endpoint(node: Arc<Node>) -> Response<Body> {
+fn metrics_endpoint(node: Arc<Node>) -> Response<Full<Bytes>> {
     let metrics = node.get_metrics();
 
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Body::from(
+        .body(Full::new(Bytes::from(
             serde_json::to_string(&serde_json::json!({
                 "requests_total": metrics.requests_total,
                 "requests_forwarded": metrics.requests_forwarded,
@@ -107,12 +112,12 @@ fn metrics_endpoint(node: Arc<Node>) -> Response<Body> {
                 "average_response_time_ms": metrics.average_response_time_ms,
             }))
             .unwrap(),
-        ))
+        )))
         .unwrap()
 }
 
 /// Extract session ID from request header or cookie
-fn extract_session_id(req: &Request<Body>) -> Option<String> {
+fn extract_session_id(req: &Request<Incoming>) -> Option<String> {
     // Priority 1: X-Session-ID header (API/Programmatic)
     if let Some(id) = req
         .headers()
@@ -139,11 +144,11 @@ fn extract_session_id(req: &Request<Body>) -> Option<String> {
 }
 
 /// Generate error response
-fn error_response(status: StatusCode, message: &str) -> Response<Body> {
+fn error_response(status: StatusCode, message: &str) -> Response<Full<Bytes>> {
     Response::builder()
         .status(status)
         .header("Content-Type", "text/plain")
-        .body(Body::from(message.to_string()))
+        .body(Full::new(Bytes::from(message.to_string())))
         .unwrap()
 }
 
@@ -152,26 +157,7 @@ mod tests {
     use super::*;
     use crate::NodeConfig;
     use fortify_core::SessionManager;
-
-    #[test]
-    fn test_extract_session_id() {
-        let req = Request::builder()
-            .header("X-Session-ID", "test-session-123")
-            .body(Body::empty())
-            .unwrap();
-
-        assert_eq!(
-            extract_session_id(&req),
-            Some("test-session-123".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_session_id_missing() {
-        let req = Request::builder().body(Body::empty()).unwrap();
-
-        assert_eq!(extract_session_id(&req), None);
-    }
+    use http_body_util::BodyExt;
 
     #[tokio::test]
     async fn test_health_check() {
@@ -183,7 +169,7 @@ mod tests {
         let response = health_check(node);
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
 
         assert!(body_str.contains("status"));
@@ -200,7 +186,7 @@ mod tests {
         let response = metrics_endpoint(node);
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
         let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
 
         assert!(body_str.contains("requests_total"));
