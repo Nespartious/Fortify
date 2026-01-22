@@ -1,0 +1,80 @@
+name: Tor Alignment
+
+description: >
+  Ensures Fortify is fully compatible with Tor Browser and privacy best practices. Checks for JavaScript, external resources, tracking pixels, privacy leaks, and Tor-recommended headers.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  html-privacy:
+    name: HTML Privacy Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Scan for <script> tags
+        run: |
+          if grep -r '<script' fortify/assets/html/; then
+            echo '❌ JavaScript found in HTML!'; exit 1; fi
+      - name: Scan for external URLs
+        run: |
+          if grep -rE 'https?://(?!localhost|127.0.0.1)' fortify/assets/html/; then
+            echo '❌ External URLs found in HTML!'; exit 1; fi
+      - name: Scan for Google Fonts/CDNs
+        run: |
+          if grep -rE 'fonts.googleapis|cloudflare|cdn.jsdelivr|cdnjs' fortify/assets/html/; then
+            echo '❌ CDN/Google Fonts found!'; exit 1; fi
+      - name: Scan for tracking pixels
+        run: |
+          if grep -r '<img.*src.*http' fortify/assets/html/; then
+            echo '❌ Tracking pixel found!'; exit 1; fi
+      - name: Scan for inline event handlers
+        run: |
+          if grep -rE 'on(click|load|error)=' fortify/assets/html/; then
+            echo '❌ Inline JS event handler found!'; exit 1; fi
+      - name: Check for meta refresh (allowed)
+        run: |
+          grep -r '<meta http-equiv="refresh"' fortify/assets/html/ || echo '✅ No meta refresh found (OK)'
+
+  code-privacy:
+    name: Code Privacy Patterns
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Scan for IP extraction
+        run: |
+          if grep -r 'peer_addr' fortify/crates/; then
+            echo '⚠️ IP extraction found. Review for privacy.'; fi
+      - name: Scan for User-Agent logging
+        run: |
+          if grep -r 'user-agent' fortify/crates/; then
+            echo '⚠️ User-Agent logging found. Review for privacy.'; fi
+      - name: Scan for external HTTP requests
+        run: |
+          if grep -r 'reqwest::Client::new().get(' fortify/crates/; then
+            echo '⚠️ External HTTP GET found. Review for privacy.'; fi
+
+  tor-headers:
+    name: Tor Best Practices
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Check for Onion-Location header
+        run: |
+          if ! grep -r 'Onion-Location' fortify/crates/; then
+            echo '❌ Onion-Location header not found in code!'; exit 1; fi
+      - name: Check for X-Content-Type-Options
+        run: |
+          if ! grep -r 'X-Content-Type-Options' fortify/crates/; then
+            echo '❌ X-Content-Type-Options header not found!'; exit 1; fi
+      - name: Check for Server header suppression
+        run: |
+          if grep -r 'Server:' fortify/crates/; then
+            echo '⚠️ Server header found. Should be suppressed for privacy.'; fi
