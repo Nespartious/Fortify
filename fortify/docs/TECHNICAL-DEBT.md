@@ -83,6 +83,287 @@ Phase 4: Finalize
   └── Set unmaintained = "warn" in deny.toml
 ```
 
+---
+
+#### Detailed Migration Code
+
+Below are the exact code changes needed for each pattern used in Fortify.
+
+##### 1. Cargo.toml Changes (All Crates)
+
+**Before:**
+```toml
+[dependencies]
+hyper = { version = "0.14", features = ["server", "client", "http1", "tcp"] }
+```
+
+**After:**
+```toml
+[dependencies]
+hyper = { version = "1.6", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+tokio = { version = "1.35", features = ["full", "net"] }  # Need net for TcpListener
+```
+
+##### 2. Body Type Changes
+
+**Before (0.14):**
+```rust
+use hyper::{Body, Response};
+
+fn make_response() -> Response<Body> {
+    Response::builder()
+        .status(200)
+        .body(Body::from("Hello"))
+        .unwrap()
+}
+
+// Reading body
+let body_bytes = hyper::body::to_bytes(req.into_body()).await?;
+```
+
+**After (1.x):**
+```rust
+use http_body_util::{Full, BodyExt};
+use hyper::body::Bytes;
+use hyper::Response;
+
+// For responses with known content
+fn make_response() -> Response<Full<Bytes>> {
+    Response::builder()
+        .status(200)
+        .body(Full::new(Bytes::from("Hello")))
+        .unwrap()
+}
+
+// For empty responses
+fn empty_response() -> Response<http_body_util::Empty<Bytes>> {
+    Response::builder()
+        .status(204)
+        .body(http_body_util::Empty::new())
+        .unwrap()
+}
+
+// Reading body - use BodyExt trait
+use http_body_util::BodyExt;
+let body_bytes = req.into_body().collect().await?.to_bytes();
+```
+
+##### 3. Server Changes (Critical - Used in 5 crates)
+
+**Before (0.14) - `fortify-http/src/lib.rs`:**
+```rust
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Server};
+
+pub async fn run(&self) -> Result<()> {
+    let make_svc = make_service_fn(move |_conn| {
+        let state = state.clone();
+        async move {
+            Ok::<_, hyper::Error>(service_fn(move |req| {
+                handle_request(req, state.clone())
+            }))
+        }
+    });
+
+    let server = Server::bind(&self.bind_addr).serve(make_svc);
+    server.await?;
+    Ok(())
+}
+```
+
+**After (1.x):**
+```rust
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpListener;
+use http_body_util::Full;
+use hyper::body::Bytes;
+
+pub async fn run(&self) -> Result<()> {
+    let listener = TcpListener::bind(&self.bind_addr).await?;
+    tracing::info!("Listening on {}", self.bind_addr);
+
+    loop {
+        let (stream, remote_addr) = listener.accept().await?;
+        let io = TokioIo::new(stream);
+        let state = self.state.clone();
+
+        tokio::spawn(async move {
+            let service = service_fn(move |req| {
+                let state = state.clone();
+                async move {
+                    handle_request(req, state).await
+                }
+            });
+
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(io, service)
+                .await
+            {
+                tracing::error!("Connection error from {}: {}", remote_addr, e);
+            }
+        });
+    }
+}
+```
+
+##### 4. Client Changes
+
+**Before (0.14):**
+```rust
+use hyper::{Client, Body};
+
+let client = Client::new();
+let resp = client.request(req).await?;
+```
+
+**After (1.x):**
+```rust
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
+use http_body_util::Full;
+use hyper::body::Bytes;
+
+let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new())
+    .build_http();
+let resp = client.request(req).await?;
+```
+
+##### 5. Request Handler Signature Changes
+
+**Before (0.14):**
+```rust
+async fn handle_request(
+    req: Request<Body>,
+) -> Result<Response<Body>, hyper::Error> {
+    // ...
+}
+```
+
+**After (1.x):**
+```rust
+use http_body_util::Full;
+use hyper::body::{Bytes, Incoming};
+
+async fn handle_request(
+    req: Request<Incoming>,  // Incoming is the new body type for requests
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    // ...
+}
+```
+
+##### 6. Error Type Changes
+
+**Before (0.14):**
+```rust
+type Result<T> = std::result::Result<T, hyper::Error>;
+```
+
+**After (1.x):**
+```rust
+// hyper::Error is now more specific - use Box<dyn Error> or custom error
+use std::error::Error;
+type BoxError = Box<dyn Error + Send + Sync>;
+type Result<T> = std::result::Result<T, BoxError>;
+
+// Or define a custom error enum
+#[derive(Debug, thiserror::Error)]
+pub enum ServerError {
+    #[error("Hyper error: {0}")]
+    Hyper(#[from] hyper::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
+```
+
+##### 7. Form Body Parsing (fortify-gate)
+
+**Before (0.14):**
+```rust
+let body_bytes = hyper::body::to_bytes(req.body_mut()).await?;
+let form_data = String::from_utf8_lossy(&body_bytes);
+```
+
+**After (1.x):**
+```rust
+use http_body_util::BodyExt;
+
+let body_bytes = req.into_body().collect().await?.to_bytes();
+let form_data = String::from_utf8_lossy(&body_bytes);
+```
+
+##### 8. Proxy Pass-Through (fortify-http/src/proxy.rs)
+
+**Before (0.14):**
+```rust
+use hyper::{Body, Request, Response};
+
+async fn proxy_request(
+    mut req: Request<Body>,
+    backend: &str,
+) -> Result<Response<Body>, hyper::Error> {
+    // Forward body as-is
+    let client = Client::new();
+    client.request(req).await
+}
+```
+
+**After (1.x):**
+```rust
+use hyper::body::Incoming;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Bytes;
+use hyper_util::client::legacy::Client;
+
+async fn proxy_request(
+    req: Request<Incoming>,
+    backend: &str,
+) -> Result<Response<Incoming>, BoxError> {
+    // Collect incoming body and forward
+    let (parts, body) = req.into_parts();
+    let body_bytes = body.collect().await?.to_bytes();
+    
+    let new_req = Request::from_parts(parts, Full::new(body_bytes));
+    
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    Ok(client.request(new_req).await?)
+}
+```
+
+---
+
+#### Fortify-Specific Migration Checklist
+
+- [ ] **fortify-http/src/lib.rs** (Priority 1 - Main server)
+  - [ ] Replace `Server::bind()` with `TcpListener` + loop
+  - [ ] Change `make_service_fn` to per-connection service_fn
+  - [ ] Update `handle_proxy_request` signature: `Request<Incoming>` → `Response<Full<Bytes>>`
+  - [ ] Update `hyper::body::to_bytes()` calls to use `BodyExt::collect()`
+
+- [ ] **fortify-http/src/admin.rs** (Priority 2 - Admin panel)
+  - [ ] All `Response<Body>` → `Response<Full<Bytes>>`
+  - [ ] Update body parsing in form handlers
+
+- [ ] **fortify-gate/src/server.rs** (Priority 3 - Captcha gate)
+  - [ ] Server builder changes
+  - [ ] Form body parsing updates
+
+- [ ] **fortify-node/src/server.rs** (Priority 4 - Node server)
+  - [ ] Server builder changes
+  - [ ] Proxy response handling
+
+- [ ] **fortify-orchestrator/src/server.rs** (Priority 5 - Orchestrator)
+  - [ ] Server builder changes
+  - [ ] Client updates for health checks
+
+- [ ] **fortify-controller/src/http.rs** (Priority 6 - Controller API)
+  - [ ] Server builder changes
+
+---
+
 #### Files Requiring Changes
 
 | File | Changes Needed |
@@ -125,152 +406,49 @@ The `rustls-pemfile` crate is unmaintained. This is a transitive dependency from
 
 ## 🟡 Medium Priority (Code Quality)
 
-### 1. Hardcoded HMAC Secret in Gate
+### 1. ~~Hardcoded HMAC Secret in Gate~~ ✅ COMPLETED
 
-**Location:** [crates/fortify-gate/src/lib.rs#L112](../crates/fortify-gate/src/lib.rs#L112)  
-**Effort:** Small (1-2 hours)
+**Status:** ✅ Fixed in commit `961d38e`  
+**Location:** [crates/fortify-gate/src/lib.rs](../crates/fortify-gate/src/lib.rs)
 
-```rust
-// TODO: Load secret from config
-let secret = b"fortify-verification-secret-change-in-production";
-```
-
-**Problem:** HMAC secret for captcha verification tokens is hardcoded.
-
-**Solution:**
-1. Add `hmac_secret` field to `GateConfig` struct
-2. Load from environment variable `FORTIFY_GATE_SECRET`
-3. Fall back to config file `gate.secret` if not set
-4. Fail startup if neither is set (no default in production)
-
-**Implementation:**
-```rust
-// In config
-pub struct GateConfig {
-    pub hmac_secret: String,  // Required, no default
-}
-
-// At startup
-let secret = std::env::var("FORTIFY_GATE_SECRET")
-    .or_else(|_| config.hmac_secret.clone())
-    .expect("FORTIFY_GATE_SECRET or gate.hmac_secret required");
-```
+HMAC secret now loaded from `FORTIFY_GATE_SECRET` environment variable using lazy_static.
+Falls back to default with warning if not set (for development only).
 
 ---
 
-### 2. Wipe Crypto Keys on Mirror Destroy
+### 2. ~~Wipe Crypto Keys on Mirror Destroy~~ ✅ COMPLETED
 
-**Location:** [crates/fortify-orchestrator/src/lib.rs#L2493](../crates/fortify-orchestrator/src/lib.rs#L2493)  
-**Effort:** Small (1-2 hours)
+**Status:** ✅ Fixed in commit `961d38e`  
+**Location:** [crates/fortify-orchestrator/src/lib.rs](../crates/fortify-orchestrator/src/lib.rs)
 
-```rust
-// TODO: Also wipe the keys from disk here
-// let key_path = mirror.tor_data_dir.join("private_key");
-// if key_path.exists() { std::fs::remove_file(key_path)?; }
-```
-
-**Problem:** When a mirror is permanently destroyed, its Tor private keys remain on disk.
-
-**Security Impact:** Medium - Attacker with disk access could recover .onion addresses.
-
-**Solution:**
-1. Implement secure key wiping (overwrite before delete)
-2. Also wipe `hostname`, `hs_ed25519_secret_key`, and `hs_ed25519_public_key`
-3. Use `zeroize` crate for secure memory clearing
-
-**Implementation:**
-```rust
-fn wipe_mirror_keys(tor_data_dir: &Path) -> std::io::Result<()> {
-    let key_files = [
-        "hostname",
-        "hs_ed25519_secret_key", 
-        "hs_ed25519_public_key",
-    ];
-    
-    for file in key_files {
-        let path = tor_data_dir.join("hidden_service").join(file);
-        if path.exists() {
-            // Overwrite with zeros before deleting
-            let len = std::fs::metadata(&path)?.len() as usize;
-            std::fs::write(&path, vec![0u8; len])?;
-            std::fs::remove_file(&path)?;
-        }
-    }
-    
-    Ok(())
-}
-```
+Implemented `wipe_mirror_keys()` function that:
+- Overwrites key files with zeros before deletion
+- Wipes: `hostname`, `hs_ed25519_secret_key`, `hs_ed25519_public_key`, `private_key`
+- Logs success/failure for audit trail
 
 ---
 
-### 3. Implement Real CPU Monitoring
+### 3. ~~Implement Real CPU Monitoring~~ ✅ COMPLETED
 
-**Location:** [crates/fortify-orchestrator/src/lib.rs#L3708](../crates/fortify-orchestrator/src/lib.rs#L3708)  
-**Effort:** Small (1-2 hours)
+**Status:** ✅ Fixed in commit `961d38e`  
+**Location:** [crates/fortify-orchestrator/src/lib.rs](../crates/fortify-orchestrator/src/lib.rs)
 
-```rust
-// TODO: Implement actual CPU monitoring via sys-info crate
-// Currently returns a simulated value for development
-```
-
-**Problem:** CPU usage is simulated with random values instead of real monitoring.
-
-**Impact:** Scaling decisions based on CPU load won't work correctly in production.
-
-**Solution:**
-The workspace already has `sysinfo = "0.30"` as a dependency.
-
-```rust
-use sysinfo::{System, CpuRefreshKind, RefreshKind};
-
-async fn get_cpu_usage() -> f32 {
-    let mut sys = System::new_with_specifics(
-        RefreshKind::new().with_cpu(CpuRefreshKind::new().with_cpu_usage())
-    );
-    
-    // First call returns 0, need to wait and refresh
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    sys.refresh_cpu_usage();
-    
-    sys.global_cpu_usage()
-}
-```
+Replaced simulated random values with real sysinfo monitoring:
+- Uses `sysinfo::System::global_cpu_info().cpu_usage()`
+- Static System instance for efficiency
+- Fallback to 25% if lock fails
 
 ---
 
-### 4. Pagination Query Parameter Parsing
+### 4. ~~Pagination Query Parameter Parsing~~ ✅ COMPLETED
 
-**Location:** [crates/fortify-http/src/admin.rs#L1919](../crates/fortify-http/src/admin.rs#L1919)  
-**Effort:** Small (30 min)
+**Status:** ✅ Fixed in commit `961d38e`  
+**Location:** [crates/fortify-http/src/admin.rs](../crates/fortify-http/src/admin.rs)
 
-```rust
-let page = 1; // TODO: parse from query param
-```
-
-**Problem:** Sessions page always shows page 1, no pagination navigation works.
-
-**Solution:**
-```rust
-fn parse_page_from_query(uri: &Uri) -> usize {
-    uri.query()
-        .and_then(|q| {
-            q.split('&')
-                .find_map(|pair| {
-                    let mut parts = pair.split('=');
-                    if parts.next() == Some("page") {
-                        parts.next()?.parse().ok()
-                    } else {
-                        None
-                    }
-                })
-        })
-        .unwrap_or(1)
-        .max(1)  // Minimum page 1
-}
-
-// Usage:
-let page = parse_page_from_query(req.uri());
-```
+Added `parse_page_from_query()` function that:
+- Parses `?page=N` from query string
+- Clamps to valid range (1 to total_pages)
+- Updated `render_sessions()` to accept URI parameter
 
 ---
 
@@ -280,7 +458,7 @@ These are tracked in [ROADMAP.md](./ROADMAP.md) but listed here for completeness
 
 | Phase | Feature | Effort | Notes |
 |-------|---------|--------|-------|
-| 3.1 | Dynamic rate limits (server load) | Medium | Depends on CPU monitoring fix |
+| 3.1 | Dynamic rate limits (server load) | Medium | ✅ Unblocked - CPU monitoring now works |
 | 3.1 | Per-path rate limiting | Medium | Requires path pattern matching |
 | 3.1 | Graduated slowdown | Small | Add delay tiers before hard block |
 | 3.2 | Tor circuit rotation detection | Large | Complex Tor protocol analysis |
@@ -294,10 +472,10 @@ These are tracked in [ROADMAP.md](./ROADMAP.md) but listed here for completeness
 ## Recommended Action Order
 
 ### Immediate (This Sprint)
-1. ✅ **Fix HMAC secret** - Quick security win
-2. ✅ **Implement key wiping** - Security hardening
-3. ✅ **Fix CPU monitoring** - Needed for production
-4. ✅ **Fix pagination** - Minor UX improvement
+1. ✅ **Fix HMAC secret** - Quick security win (DONE)
+2. ✅ **Implement key wiping** - Security hardening (DONE)
+3. ✅ **Fix CPU monitoring** - Needed for production (DONE)
+4. ✅ **Fix pagination** - Minor UX improvement (DONE)
 
 ### Short-term (Next Sprint)
 5. 🔄 **Prepare hyper migration** - Add backports, run deprecation check
