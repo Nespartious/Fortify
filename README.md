@@ -2,16 +2,53 @@
 
 > **Advanced DDoS Protection for Tor Hidden Services**
 
-<!-- Workflow Status Badges -->
+<!-- Primary Workflow Badges -->
 [![CI](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/Nespartious/Fortify/actions/workflows/security.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/security.yml)
 [![Code Quality](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/code-quality.yml)
+[![Coverage](https://github.com/Nespartious/Fortify/actions/workflows/coverage.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/coverage.yml)
+[![SBOM](https://github.com/Nespartious/Fortify/actions/workflows/sbom.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/sbom.yml)
+[![Dependency Review](https://github.com/Nespartious/Fortify/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/Nespartious/Fortify/actions/workflows/dependency-review.yml)
 
 <!-- Static Badges -->
 [![Status](https://img.shields.io/badge/Status-Alpha-orange)](https://github.com/Nespartious/Fortify)
 [![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
-[![Attack Tested](https://img.shields.io/badge/Attack%20Tested-65K%2B%20requests-green)](docs/Dev_Progress/Alpha_Review.md)
+[![Attack Tested](https://img.shields.io/badge/Attack%20Tested-65K%2B%20requests-green)](fortify/docs/Dev_Progress/Alpha_Review.md)
+
+---
+
+### 🔒 Security Verification
+
+<details>
+<summary><b>What does "Security Audit Passed" mean?</b></summary>
+
+Our Security Audit workflow runs **6 independent security checks**:
+
+| Check | Tool | What It Validates |
+|-------|------|-------------------|
+| **Vulnerability Scan** | `cargo-audit` | Checks all dependencies against [RustSec Advisory Database](https://rustsec.org/) for known CVEs |
+| **License Compliance** | `cargo-deny` | Ensures all dependencies use approved licenses (MIT, Apache-2.0, BSD) |
+| **SAST Analysis** | `Semgrep` | Static analysis for security anti-patterns, injection risks, unsafe patterns |
+| **Unsafe Code Audit** | `cargo-geiger` | Reports all `unsafe` blocks in codebase and dependencies |
+| **Secrets Detection** | `Gitleaks` | Scans for accidentally committed API keys, tokens, credentials |
+| **Supply Chain** | `cargo-vet` | Verifies dependency integrity and trusted sources |
+
+Runs **daily** and on every push to main. [View workflow →](.github/workflows/security.yml)
+
+</details>
+
+<details>
+<summary><b>What does "CI Passed" mean?</b></summary>
+
+| Check | Description |
+|-------|-------------|
+| **Build** | Compiles on stable Rust with all features |
+| **Tests** | 131+ unit and integration tests pass |
+| **Clippy** | Zero warnings from Rust linter |
+| **Format** | Code follows `rustfmt` standards |
+
+</details>
 
 **Fortify** is a sophisticated multi-layered defense system that protects Tor hidden services from DDoS attacks while maintaining access for legitimate users. Built in Rust for performance and security, Fortify acts as a proxy shield between attackers and your real hidden service.
 
