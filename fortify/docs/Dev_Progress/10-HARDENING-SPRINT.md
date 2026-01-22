@@ -304,116 +304,419 @@ After implementation, verify:
 
 **Context:** How should we handle attack traffic once identified? Options below.
 
-### Option 1: Simple 503 Reject
-**Description:** Return 503 immediately when threat-tier is at capacity.
+### Current Session Flow (Baseline)
 
-| Pros | Cons |
-|------|------|
-| ✅ Zero resource usage | ❌ Attacker knows they're blocked |
-| ✅ Simple implementation | ❌ Attacker can try different circuits |
-| ✅ No connection held open | ❌ Fast failure = fast retry |
+Before discussing options, here's how sessions currently traverse the system:
 
-**Resource Impact:** MINIMAL - Just TCP reset
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    CURRENT SESSION FLOW TRAVERSAL                                │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  NEW USER (No Token):                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request arrives at Mirror (.onion)                                   │   │
+│  │  2. fortify-http checks: No token/invalid token                          │   │
+│  │  3. TrustTier = Unknown → requires_gate() = TRUE                        │   │
+│  │  4. Proxy to Gate service                                                │   │
+│  │  5. Gate serves CAPTCHA page (currently dynamically, want static)       │   │
+│  │  6. User solves CAPTCHA → POST /verify                                  │   │
+│  │  7. Gate validates → Issues VERIFIED token                              │   │
+│  │  8. User redirected back with session cookie                            │   │
+│  │  9. Next request: token valid → TrustTier = Verified                    │   │
+│  │  10. Route to Healthy Nodes → See real site                              │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  VERIFIED USER (Good behavior):                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request with valid VERIFIED token                                    │   │
+│  │  2. requires_gate() = FALSE → Route to Healthy Nodes                    │   │
+│  │  3. Behavioral analysis runs on each request                            │   │
+│  │  4. Clean behavior → May promote to TRUSTED                             │   │
+│  │  5. Continue serving real site                                          │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  VERIFIED USER (Bad behavior → Demotion):                                       │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request with valid VERIFIED token                                    │   │
+│  │  2. Behavioral analysis detects: path enumeration, bot UA, etc.         │   │
+│  │  3. Violation count exceeds threshold                                   │   │
+│  │  4. DEMOTE: TrustTier → SUSPICIOUS                                      │   │
+│  │  5. Set fortify_demoted=1 cookie                                        │   │
+│  │  6. Redirect to Gate                                                    │   │
+│  │  7. Gate sees demoted=1 → HARD difficulty, 2 CAPTCHAs required         │   │
+│  │  8. User solves both → Re-issued as VERIFIED                            │   │
+│  │  9. Back to healthy path (with fresh token)                             │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  BURNED USER (Proven attacker):                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request with BURNED token OR admin-burned session ID                │   │
+│  │  2. serve_killed_session_page() → Static burned.html                    │   │
+│  │  3. No further processing                                               │   │
+│  │  4. NO RECOVERY PATH (permanent)                                        │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Insight:** The Gate (CAPTCHA) is the bottleneck. Attackers exhaust Gate capacity → legitimate new users can't get verified → service appears down to new visitors.
 
 ---
 
-### Option 2: Slow-Drip Response (Tarpit)
-**Description:** Accept connection but respond VERY slowly (1 byte per second).
+### How Each Option Changes Session Flow
 
-| Pros | Cons |
-|------|------|
-| ✅ Wastes attacker's connection slots | ❌ Uses our connection slot too |
-| ✅ Attacker thinks request is working | ❌ Memory for each tarpitted connection |
-| ✅ Can tie up bot resources | ❌ May hit our own connection limits |
-| ✅ Already have progressive delay logic | ❌ Needs careful resource accounting |
+#### Option 1: Simple 503 Reject
 
-**Resource Impact:** MEDIUM - 1 connection slot per tarpit + small memory
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    OPTION 1: 503 REJECT FLOW                                     │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  SYSTEM STATE: Threat capacity at 70%+                                          │
+│                                                                                  │
+│  NEW USER arrives:                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request → TrustTier = Unknown → requires_gate() = TRUE              │   │
+│  │  2. Check: threat_pool_usage > 70%?                                     │   │
+│  │     YES → Return 503 + static "busy.html"                               │   │
+│  │     NO  → Continue to Gate as normal                                    │   │
+│  │                                                                          │   │
+│  │  3. User sees: "Service is busy. Retry in 30 seconds."                  │   │
+│  │     <meta http-equiv="refresh" content="30"> (auto-refresh, no JS)      │   │
+│  │                                                                          │   │
+│  │  4. User refreshes → Same check → May get through if load drops         │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  VERIFIED/TRUSTED USER:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  ✅ UNAFFECTED - They never touch threat pool                           │   │
+│  │  Route directly to Healthy Nodes (separate capacity pool)               │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  FALSE POSITIVE IMPACT:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  - Legitimate new user during attack: Sees 503, waits, tries again      │   │
+│  │  - Recovery: Automatic on retry when load drops                         │   │
+│  │  - No permanent damage, just delayed access                             │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
-**Existing Code Reference:**
-```rust
-// fortify-gate/src/lib.rs line 794
-pub fn calculate_delay(&self, failed_attempts: u32) -> u64 {
-    match failed_attempts {
-        0 => 0, 1 => 2, 2 => 5, 3 => 10, 4 => 20, _ => 30
-    }
+**Session Flow Changes:**
+- NEW path adds capacity check before Gate proxy
+- VERIFIED/TRUSTED paths unchanged
+- DEMOTED users also hit the 503 check (they're in threat tier)
+
+**Problem:** Demoted legitimate users (false positive demotions) must wait out the 503 period even though they have a history.
+
+---
+
+#### Option 2: Slow-Drip Response (Tarpit)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    OPTION 2: SLOW-DRIP FLOW                                      │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  SYSTEM STATE: Threat capacity at 70%+                                          │
+│                                                                                  │
+│  NEW USER arrives during overload:                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request → TrustTier = Unknown → requires_gate() = TRUE              │   │
+│  │  2. Check: threat_pool_usage > 70%?                                     │   │
+│  │     YES → Route to TARPIT handler instead of Gate                       │   │
+│  │                                                                          │   │
+│  │  3. Tarpit handler:                                                     │   │
+│  │     - Accept TCP connection (uses 1 slot from tarpit pool)              │   │
+│  │     - Send HTTP headers very slowly (1 byte per second)                 │   │
+│  │     - Never complete response                                           │   │
+│  │     - Connection sits open for minutes                                  │   │
+│  │                                                                          │   │
+│  │  4. Attacker's client waits... and waits... (resource tied up)          │   │
+│  │  5. Eventually times out on attacker side                               │   │
+│  │  6. Our tarpit slot freed                                               │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  VERIFIED/TRUSTED USER:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  ✅ UNAFFECTED - They never touch threat pool                           │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  FALSE POSITIVE IMPACT:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  ⚠️ SEVERE - Legitimate new user gets tarpitted!                        │   │
+│  │  - Their browser hangs waiting for response                             │   │
+│  │  - No error message, just loading spinner                               │   │
+│  │  - Must manually cancel and retry                                       │   │
+│  │  - Much worse UX than 503                                               │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  RESOURCE ACCOUNTING:                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  - Each tarpit connection: ~1KB memory + 1 file descriptor              │   │
+│  │  - Max 50 concurrent tarpits = 50KB + 50 FDs                            │   │
+│  │  - Attacker with 1000 bots: 950 get 503, 50 get tarpitted               │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Session Flow Changes:**
+- NEW path can diverge to tarpit instead of Gate
+- Creates hanging connections for unknowns
+- VERIFIED/TRUSTED unchanged
+
+**Problem:** Legitimate new users get terrible UX (browser hangs indefinitely).
+
+---
+
+#### Option 3: Full Tarpit (Never Close)
+
+Same as Option 2 but MORE aggressive:
+- Never sends ANY bytes
+- Keeps connection open until client gives up or system reboot
+- Maximum resource waste on BOTH sides
+
+**Problem:** Same as Option 2 but even worse for false positives. Also risks running out of file descriptors if attackers open more connections than we can tarpit.
+
+---
+
+#### Option 4: Hybrid Approach (Refined)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    OPTION 4: HYBRID FLOW (RECOMMENDED)                           │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  KEY INSIGHT: Only tarpit REPEAT offenders, not first-timers                    │
+│                                                                                  │
+│  NEW USER (first visit, no history):                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request → TrustTier = Unknown                                       │   │
+│  │  2. Check: threat_pool_usage > 70%?                                     │   │
+│  │     YES → Return 503 + "busy.html" with auto-refresh                    │   │
+│  │     NO  → Serve static cached CAPTCHA page                              │   │
+│  │                                                                          │   │
+│  │  NOTE: First-timers ALWAYS get 503, never tarpit                        │   │
+│  │        They haven't proven malicious yet                                │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  SUSPICIOUS USER (demoted, failed CAPTCHAs):                                    │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request → TrustTier = Suspicious (has history of bad behavior)      │   │
+│  │  2. Check: failed_captcha_count > 3 AND threat_pool_usage > 80%?        │   │
+│  │     YES → Candidate for tarpit (if slots available)                     │   │
+│  │     NO  → Normal Gate flow with HARD difficulty                         │   │
+│  │                                                                          │   │
+│  │  3. If tarpit slot available:                                           │   │
+│  │     - Slow-drip response (tie up their resources)                       │   │
+│  │  4. If no tarpit slots:                                                 │   │
+│  │     - 503 reject                                                        │   │
+│  │                                                                          │   │
+│  │  NOTE: Only proven bad actors get tarpitted                             │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  BURNED USER:                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Request → TrustTier = Burned                                        │   │
+│  │  2. ALWAYS tarpit if slot available (they're confirmed bad)             │   │
+│  │  3. If no tarpit slots → Static burned.html                             │   │
+│  │                                                                          │   │
+│  │  NOTE: Burned users are ideal tarpit candidates                         │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  VERIFIED/TRUSTED USER:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  ✅ COMPLETELY UNAFFECTED                                                │   │
+│  │  - Separate capacity pool (healthy nodes)                               │   │
+│  │  - No 503, no tarpit, no delays                                         │   │
+│  │  - Only checked under EXTREME system-wide emergency (99%+ overall)      │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  FALSE POSITIVE PROTECTION:                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  - First-time visitors: 503 with friendly message, auto-retry           │   │
+│  │  - Demoted but legitimate: Gets 503, not tarpit (< 3 CAPTCHA fails)     │   │
+│  │  - Only tarpit: 3+ CAPTCHA failures OR burned status                    │   │
+│  │  - Recovery: Solve CAPTCHA → Back to healthy path                       │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Session Flow Changes:**
+
+| User Type | Normal Load | High Load (70%+) | Extreme (90%+) |
+|-----------|-------------|------------------|----------------|
+| **Unknown (new)** | CAPTCHA page | 503 + retry | 503 + retry |
+| **Suspicious (demoted)** | HARD CAPTCHA x2 | 503 OR tarpit* | Tarpit if available |
+| **Burned** | burned.html | Tarpit if available | Tarpit if available |
+| **Verified** | Real site | Real site | Real site |
+| **Trusted** | Real site | Real site | Real site (even at 99%) |
+
+*Tarpit only if: failed_captcha_count >= 3
+
+---
+
+### Critical Question: What Happens to Demoted Legitimate Users?
+
+This is where I need your input. Consider this scenario:
+
+**Scenario:** Legitimate user gets demoted due to borderline behavior (e.g., refreshed page 10 times quickly looking for updates).
+
+| Option | What They Experience | Recovery Path |
+|--------|---------------------|---------------|
+| **Option 1 (503)** | "Service busy" page, auto-refresh in 30s | Wait, retry, solve CAPTCHA when load drops |
+| **Option 2 (Tarpit)** | Browser hangs forever | Must close tab, come back later |
+| **Option 4 (Hybrid)** | Same as Option 1 (protected by fail count) | Wait, retry, solve CAPTCHA |
+
+With Option 4, a demoted user who hasn't failed multiple CAPTCHAs is NOT tarpitted. They get the friendly 503 experience.
+
+---
+
+### My Recommendation
+
+**Option 4 (Hybrid)** because:
+
+1. **First-timers protected** - Never tarpitted, just politely asked to retry
+2. **False positive demotions protected** - Need 3+ CAPTCHA failures before tarpit
+3. **Proven attackers punished** - Burned users always tarpit candidates
+4. **Resource controlled** - Fixed tarpit pool (50 max)
+5. **Verified/Trusted untouched** - Your primary goal achieved
+
+**Do you want me to refine Option 4 further, or do you have concerns about specific scenarios?**
+
+---
+
+## 📋 DISCUSSION: Busy Page / 503 Page Design (Question B)
+
+**Constraint:** NO JAVASCRIPT. Pure HTML/CSS only.
+
+### Available Mechanisms for Auto-Retry (No JS)
+
+#### 1. Meta Refresh Tag
+```html
+<meta http-equiv="refresh" content="30;url=/Fortify">
+```
+- Browser auto-refreshes after 30 seconds
+- Works in ALL browsers including Tor Browser Safest mode
+- Simple, reliable, no JS
+
+#### 2. Retry-After HTTP Header
+```http
+HTTP/1.1 503 Service Unavailable
+Retry-After: 30
+Content-Type: text/html
+```
+- Tells well-behaved clients when to retry
+- Not all browsers respect this automatically
+- Bots/scrapers may ignore
+
+#### 3. Pure CSS Countdown (Visual Only)
+```css
+/* CSS animation for visual countdown - no actual timer */
+@keyframes countdown {
+  0% { content: "30"; }
+  3.33% { content: "29"; }
+  /* ... */
+  100% { content: "0"; }
+}
+.timer::before {
+  animation: countdown 30s linear forwards;
 }
 ```
+- Visual countdown that matches meta refresh
+- Gives user feedback that page will auto-refresh
+- Purely decorative, meta refresh does the real work
 
----
+### Proposed 503 Page Design
 
-### Option 3: Full Tarpit (Never Close)
-**Description:** Accept connection and never respond or close it.
-
-| Pros | Cons |
-|------|------|
-| ✅ Maximum attacker resource waste | ❌ Maximum our resource waste |
-| ✅ Ties up attacker sockets forever | ❌ Can backfire if attackers have more resources |
-| | ❌ Tor may close circuits anyway (timeout) |
-| | ❌ Complex state management |
-
-**Resource Impact:** HIGH - Unbounded connections, significant memory
-
----
-
-### Option 4: Hybrid Approach (RECOMMENDED FOR DISCUSSION)
-
-**Description:** Tiered response based on system load and attacker persistence.
-
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="30;url=/Fortify">
+    <title>Service Busy - Please Wait</title>
+    <style>
+        body { 
+            background: #1a1a2e; 
+            color: #e0e0e0; 
+            font-family: monospace; 
+            text-align: center;
+            padding: 50px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            border: 1px solid #6B46C1;
+            padding: 40px;
+            border-radius: 8px;
+        }
+        h1 { color: #6B46C1; }
+        .status { 
+            font-size: 4em; 
+            color: #f59e0b; 
+        }
+        .message { 
+            margin: 20px 0; 
+            line-height: 1.6;
+        }
+        .retry-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 30px;
+            background: #6B46C1;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .auto-note {
+            margin-top: 30px;
+            color: #888;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="status">503</div>
+        <h1>Service Temporarily Busy</h1>
+        <p class="message">
+            The service is experiencing high demand.<br>
+            Your request could not be processed at this time.
+        </p>
+        <a href="/Fortify" class="retry-link">Retry Now</a>
+        <p class="auto-note">
+            This page will automatically retry in 30 seconds.
+        </p>
+    </div>
+</body>
+</html>
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    HYBRID ATTACK HANDLING FLOW                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  1. First request from unknown session:                                     │
-│     └─► Serve static cached CAPTCHA (nearly zero CPU)                       │
-│                                                                              │
-│  2. Failed CAPTCHA attempt:                                                 │
-│     └─► Progressive delay: 2s → 5s → 10s → 20s → 30s cap                   │
-│                                                                              │
-│  3. Multiple failures (5+) from same circuit:                               │
-│     └─► Mark circuit as suspicious, demote to SUSPICIOUS tier               │
-│                                                                              │
-│  4. System under load (threat capacity > 70%):                              │
-│     └─► 503 new threat-tier connections (protect healthy sessions)          │
-│                                                                              │
-│  5. System under extreme load (threat capacity > 90%):                      │
-│     └─► Slow-drip response for existing threat sessions                     │
-│     └─► Buying time for healthy sessions to complete                        │
-│                                                                              │
-│  6. Burned sessions (proven attackers):                                     │
-│     └─► Serve static "burned.html" page (no dynamic processing)             │
-│     └─► OR slow-drip if resources available                                 │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
 
-**Resource Budget:**
-| Component | Max Connections | Reasoning |
-|-----------|-----------------|-----------|
-| Healthy pool | 500 | Protected for verified/trusted users |
-| Threat pool | 200 | Lower limit, shed these first |
-| Tarpit pool | 50 | Small pool for slow-drip responses |
-| **Total** | 750 | Hard cap to protect system |
+### Page Variations Needed
 
-**Key Insight:** The tarpit pool is SEPARATE and SMALL. We only slow-drip a limited number of attackers to avoid exhausting our own resources.
+| Situation | Page | Auto-Refresh | Manual Retry |
+|-----------|------|--------------|--------------|
+| Threat pool full (new user) | 503-busy.html | 30s | Yes |
+| Threat pool full (demoted user) | 503-busy.html | 30s | Yes |
+| Healthy pool full (verified - rare) | 503-overload.html | 5s | Yes |
+| Burned session | burned.html | NO | NO |
+| Tarpitted session | (slow-drip response, no page) | N/A | N/A |
 
----
+### Question B Summary
 
-### Decision Needed
+**Recommended approach:**
+1. `<meta http-equiv="refresh" content="30">` for auto-retry
+2. Manual "Retry Now" link for impatient users
+3. Clear message explaining the situation
+4. No JavaScript required
+5. Works in Tor Browser Safest mode
 
-**Which approach aligns best with your service goals?**
-
-1. **Conservative (Option 1):** Just 503 threat sessions, no resource waste on attackers
-2. **Moderate (Option 4):** Hybrid with small tarpit pool (50 connections max)
-3. **Aggressive (Option 3):** Full tarpit but risks resource exhaustion
-
-**Resource Concern Trade-off:**
-- More tarpits = more attacker resources wasted BUT more of our resources used
-- Fewer tarpits = less attacker damage BUT attackers know they're blocked faster
-
----
-
-## 📋 DISCUSSION: Static CAPTCHA Serving (Question B)
+**Does this address your Question B concerns? Any adjustments needed?**
 
 **Current Architecture:**
 ```
