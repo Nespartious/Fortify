@@ -109,9 +109,8 @@ impl VerificationToken {
 
     /// Sign data with HMAC-SHA256
     fn sign(data: &str) -> String {
-        // TODO: Load secret from config
-        let secret = b"fortify-verification-secret-change-in-production";
-        let mut mac = HmacSha256::new_from_slice(secret).unwrap();
+        // Use secret from FORTIFY_GATE_SECRET env var (loaded at startup)
+        let mut mac = HmacSha256::new_from_slice(&HMAC_SECRET).unwrap();
         mac.update(data.as_bytes());
         format!("{:x}", mac.finalize().into_bytes())
     }
@@ -128,6 +127,25 @@ impl VerificationToken {
 lazy_static::lazy_static! {
     pub static ref VERIFICATION_TOKEN_CACHE: Arc<Mutex<HashMap<String, VerificationToken>>> =
         Arc::new(Mutex::new(HashMap::new()));
+
+    /// HMAC secret for signing verification tokens
+    /// Load from FORTIFY_GATE_SECRET environment variable
+    /// Falls back to a default for development ONLY - production MUST set this!
+    static ref HMAC_SECRET: Vec<u8> = {
+        match std::env::var("FORTIFY_GATE_SECRET") {
+            Ok(secret) if !secret.is_empty() => {
+                tracing::info!("Loaded HMAC secret from FORTIFY_GATE_SECRET environment variable");
+                secret.into_bytes()
+            }
+            _ => {
+                tracing::warn!(
+                    "FORTIFY_GATE_SECRET not set! Using default secret. \
+                    THIS IS INSECURE - set FORTIFY_GATE_SECRET in production!"
+                );
+                b"fortify-verification-secret-change-in-production".to_vec()
+            }
+        }
+    };
 }
 
 #[derive(Error, Debug)]

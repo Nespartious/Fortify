@@ -2490,9 +2490,38 @@ impl Orchestrator {
         );
         mirror.permanent_destroy();
 
-        // TODO: Also wipe the keys from disk here
-        // let key_path = mirror.tor_data_dir.join("private_key");
-        // if key_path.exists() { std::fs::remove_file(key_path)?; }
+        // Securely wipe Tor hidden service keys from disk
+        let hs_dir = mirror.tor_data_dir.join("hidden_service");
+        if let Err(e) = Self::wipe_mirror_keys(&hs_dir) {
+            tracing::error!("Failed to wipe keys for mirror {}: {}", mirror.id, e);
+            // Continue anyway - mirror is already marked destroyed
+        } else {
+            tracing::info!("Securely wiped keys for mirror {}", mirror.id);
+        }
+
+        Ok(())
+    }
+
+    /// Securely wipe Tor hidden service keys from disk
+    /// Overwrites with zeros before deletion to prevent recovery
+    fn wipe_mirror_keys(hs_dir: &std::path::Path) -> std::io::Result<()> {
+        let key_files = [
+            "hostname",
+            "hs_ed25519_secret_key",
+            "hs_ed25519_public_key",
+            "private_key",  // Legacy v2 onion (if present)
+        ];
+
+        for file in key_files {
+            let path = hs_dir.join(file);
+            if path.exists() {
+                // Overwrite with zeros before deleting (secure wipe)
+                let len = std::fs::metadata(&path)?.len() as usize;
+                std::fs::write(&path, vec![0u8; len])?;
+                std::fs::remove_file(&path)?;
+                tracing::debug!("Wiped key file: {}", path.display());
+            }
+        }
 
         Ok(())
     }
@@ -3698,21 +3727,30 @@ impl Orchestrator {
         });
     }
 
-    /// Get current CPU usage percentage
-    ///
-    /// In production, this would use sys-info crate or /proc/stat parsing.
-    /// Currently returns a simulated value for development.
+    /// Get current CPU usage percentage using sysinfo crate
     async fn get_cpu_usage() -> f32 {
-        // Read /proc/stat for actual CPU usage
-        // For now, return a low value to enable generation
-        // TODO: Implement actual CPU monitoring via sys-info crate
+        use sysinfo::System;
 
-        // Simulate some variance for realistic behavior
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let base: f32 = 15.0;
-        let variance: f32 = rng.gen_range(-10.0..20.0);
-        (base + variance).max(0.0).min(100.0)
+        // Create a static System instance for efficiency
+        // sysinfo needs two measurements to calculate CPU usage
+        static CPU_SYSTEM: std::sync::OnceLock<std::sync::Mutex<System>> =
+            std::sync::OnceLock::new();
+
+        let system = CPU_SYSTEM.get_or_init(|| {
+            let mut sys = System::new();
+            sys.refresh_cpu_usage();
+            std::sync::Mutex::new(sys)
+        });
+
+        // Lock and refresh CPU usage
+        if let Ok(mut sys) = system.lock() {
+            sys.refresh_cpu_usage();
+            sys.global_cpu_info().cpu_usage()
+        } else {
+            // Fallback if lock fails
+            tracing::warn!("Failed to lock CPU monitor, returning estimate");
+            25.0
+        }
     }
 
     fn generate_mirror_id(&self) -> String {

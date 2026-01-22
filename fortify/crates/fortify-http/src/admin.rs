@@ -1138,7 +1138,7 @@ pub async fn handle_admin_request(
         (Method::GET, "" | "/") => render_dashboard(&admin_state),
 
         // Sessions
-        (Method::GET, "/sessions") => render_sessions(&admin_state),
+        (Method::GET, "/sessions") => render_sessions(&admin_state, req.uri()),
         (Method::GET, p) if p.starts_with("/session/") => {
             let id = p.strip_prefix("/session/").unwrap_or("");
             render_session_detail(&admin_state, id)
@@ -1906,7 +1906,24 @@ fn render_dashboard(state: &AdminState) -> Response<Body> {
     html_page("Dashboard", &content)
 }
 
-fn render_sessions(state: &AdminState) -> Response<Body> {
+/// Parse page number from query string (e.g., "?page=2")
+fn parse_page_from_query(uri: &hyper::Uri) -> usize {
+    uri.query()
+        .and_then(|q| {
+            q.split('&').find_map(|pair| {
+                let mut parts = pair.split('=');
+                if parts.next() == Some("page") {
+                    parts.next()?.parse().ok()
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or(1)
+        .max(1) // Minimum page 1
+}
+
+fn render_sessions(state: &AdminState, uri: &hyper::Uri) -> Response<Body> {
     let mut sessions = state.get_sessions();
     let traffic_stats = state.get_traffic_stats();
 
@@ -1915,8 +1932,8 @@ fn render_sessions(state: &AdminState) -> Response<Body> {
 
     // Pagination (50 per page)
     let per_page = 50;
-    let _total_pages = (sessions.len() + per_page - 1) / per_page;
-    let page = 1; // TODO: parse from query param
+    let total_pages = (sessions.len() + per_page - 1) / per_page;
+    let page = parse_page_from_query(uri).min(total_pages.max(1)); // Clamp to valid range
     let start = (page - 1) * per_page;
     let end = start + per_page;
     let page_sessions = &sessions[start..end.min(sessions.len())];
