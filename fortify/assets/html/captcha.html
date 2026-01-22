@@ -3,24 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Portcullis Verification</title>
+    <title>{{SERVICE_NAME}} — Verification</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
             --bg-input: #1a1a1f;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
-            --gold-light: #d4b85a;
-            --bronze: #8b7355;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --sage: #9ab893;
-            --slate-blue: #6b7c8c;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -48,12 +56,17 @@
             margin-bottom: 28px;
             border-bottom: 1px solid var(--border-subtle);
         }
+        .brand-logo {
+            max-width: 64px;
+            max-height: 64px;
+            margin-bottom: 12px;
+        }
         .lock-icon {
             font-size: 2.5rem;
             margin-bottom: 12px;
             opacity: 0.9;
         }
-        h1 {
+        .brand-name {
             font-size: 1.1rem;
             font-weight: 500;
             letter-spacing: 0.15em;
@@ -63,7 +76,7 @@
         }
         .subtitle {
             font-size: 0.75rem;
-            color: var(--gold-muted);
+            color: var(--brand-secondary);
             letter-spacing: 0.1em;
         }
         .captcha-display {
@@ -113,8 +126,8 @@
         }
         input[type="text"]:focus {
             outline: none;
-            border-color: var(--gold-muted);
-            box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.1);
+            border-color: var(--brand-secondary);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 10%, transparent);
         }
         input[type="text"]::placeholder {
             color: var(--text-muted);
@@ -122,7 +135,7 @@
         }
         button {
             width: 100%;
-            background: var(--gold-primary);
+            background: var(--brand-primary);
             color: var(--bg-deep);
             border: none;
             border-radius: 3px;
@@ -136,8 +149,8 @@
             transition: all 0.2s ease;
         }
         button:hover {
-            background: var(--gold-light);
-            box-shadow: 0 4px 16px rgba(201, 162, 39, 0.3);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--brand-primary) 30%, transparent);
         }
         .footer-note {
             text-align: center;
@@ -147,36 +160,36 @@
             line-height: 1.6;
         }
         .footer-note a {
-            color: var(--gold-muted);
+            color: var(--brand-secondary);
             text-decoration: none;
             transition: color 0.2s ease;
         }
         .footer-note a:hover {
-            color: var(--gold-primary);
+            color: var(--brand-primary);
         }
     </style>
 </head>
 <body>
     <div class="panel">
-        <div class="panel-header">
+        <header class="panel-header">
             <div class="lock-icon">🔐</div>
-            <h1>Portcullis</h1>
+            <h1 class="brand-name">{{SERVICE_NAME}}</h1>
             <div class="subtitle">Identity Verification</div>
-        </div>
+        </header>
         <form method="POST" action="/gate/verify">
             <div class="captcha-display">
                 <span class="captcha-placeholder">Loading challenge...</span>
             </div>
             <div class="input-group">
-                <label>Enter Verification Code</label>
-                <input type="text" name="solution" placeholder="• • • • • •" required autofocus autocomplete="off">
+                <label for="solution">Enter Verification Code</label>
+                <input type="text" id="solution" name="solution" placeholder="• • • • • •" required autofocus autocomplete="off">
             </div>
             <button type="submit">Verify Access</button>
         </form>
-        <div class="footer-note">
+        <footer class="footer-note">
             Server-side verification • No scripts required<br>
             <a href="/Fortify">← Return to gate</a>
-        </div>
+        </footer>
     </div>
 </body>
 </html>

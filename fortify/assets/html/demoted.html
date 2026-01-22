@@ -3,22 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Session Cooldown</title>
+    <title>{{SERVICE_NAME}} — Session Cooldown</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
-            --gold-light: #d4b85a;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --amber: #e4bc5e;
-            --slate-blue: #6b7c8c;
+            
+            /* Status Colors */
+            --status-warning: #e4bc5e;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -37,12 +49,19 @@
             margin-bottom: 20px;
             opacity: 0.9;
         }
+        .brand-name {
+            font-size: 0.75rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
         h1 {
             font-size: clamp(1.5rem, 3vw, 2rem);
             font-weight: 400;
             letter-spacing: 0.1em;
             text-transform: uppercase;
-            color: var(--amber);
+            color: var(--status-warning);
             margin-bottom: 8px;
         }
         .subtitle {
@@ -56,7 +75,7 @@
             max-width: 480px;
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
-            border-left: 3px solid var(--amber);
+            border-left: 3px solid var(--status-warning);
             border-radius: 0 4px 4px 0;
             padding: 24px 28px;
             margin-bottom: 32px;
@@ -83,7 +102,7 @@
         }
         .proceed-btn {
             display: inline-block;
-            background: var(--gold-primary);
+            background: var(--brand-primary);
             color: var(--bg-deep);
             border: none;
             border-radius: 3px;
@@ -97,8 +116,8 @@
             transition: all 0.2s ease;
         }
         .proceed-btn:hover {
-            background: var(--gold-light);
-            box-shadow: 0 4px 16px rgba(201, 162, 39, 0.25);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--brand-primary) 25%, transparent);
         }
         .mirror-section {
             max-width: 480px;
@@ -126,13 +145,13 @@
         .mirror-list li {
             background: var(--bg-elevated);
             border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--gold-muted);
+            border-left: 2px solid var(--brand-secondary);
             border-radius: 0 3px 3px 0;
             margin-bottom: 8px;
             transition: all 0.2s ease;
         }
         .mirror-list li:hover {
-            border-left-color: var(--gold-primary);
+            border-left-color: var(--brand-primary);
         }
         .mirror-list a {
             display: block;
@@ -145,7 +164,7 @@
         .mirror-list li:hover a {
             color: var(--text-primary);
         }
-        .footer {
+        .footer-text {
             position: fixed;
             bottom: 16px;
             font-size: 0.65rem;
@@ -153,14 +172,25 @@
             letter-spacing: 0.1em;
             text-transform: uppercase;
         }
+        
+        /* Accessibility: Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            .delay-show {
+                animation: none;
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="shield-icon">🛡️</div>
-    <h1>Hold Position</h1>
-    <p class="subtitle">Cooldown Protocol Engaged</p>
+    <header>
+        <div class="shield-icon">🛡️</div>
+        <p class="brand-name">{{SERVICE_NAME}}</p>
+        <h1>Hold Position</h1>
+        <p class="subtitle">Cooldown Protocol Engaged</p>
+    </header>
     
-    <div class="message-box">
+    <main class="message-box">
         <p>
             Our defense systems detected elevated activity from your session.
             <span class="highlight">No action required</span> — this is a routine security measure.
@@ -169,21 +199,21 @@
             Complete a quick verification to resume browsing. This helps protect 
             the network for all users.
         </p>
-    </div>
+    </main>
     
     <div class="delay-show">
         <a href="/Fortify/Portcullis" class="proceed-btn">Resume Access →</a>
     </div>
     
-    <div class="mirror-section delay-show">
+    <section class="mirror-section delay-show">
         <h3>Or try an alternative mirror</h3>
         <ul class="mirror-list">
             {{MIRROR_LIST}}
         </ul>
-    </div>
+    </section>
     
-    <div class="footer">
-        Fortify Defense Grid • Session Cooldown
-    </div>
+    <footer class="footer-text">
+        Defense Grid • Session Cooldown
+    </footer>
 </body>
 </html>

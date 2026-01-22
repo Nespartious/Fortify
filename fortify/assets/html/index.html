@@ -4,21 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="10;url=/">
-    <title>Fortify — Access Granted</title>
+    <title>{{SERVICE_NAME}} — Access Granted</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
-            --gold-light: #d4b85a;
-            --bronze: #8b7355;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
+            
+            /* Status Colors */
             --sage: #9ab893;
             --slate-blue: #6b7c8c;
         }
@@ -148,8 +160,8 @@
         .proceed-btn {
             display: inline-block;
             background: transparent;
-            color: var(--gold-muted);
-            border: 1px solid var(--gold-muted);
+            color: var(--brand-secondary);
+            border: 1px solid var(--brand-secondary);
             border-radius: 3px;
             padding: 12px 32px;
             font-family: inherit;
@@ -163,7 +175,7 @@
             animation: fadeIn 0.5s ease-out 2s forwards;
         }
         .proceed-btn:hover {
-            background: var(--gold-muted);
+            background: var(--brand-secondary);
             color: var(--bg-deep);
         }
         .footer-text {
@@ -173,34 +185,51 @@
             letter-spacing: 0.1em;
             text-transform: uppercase;
         }
+        .brand-name {
+            font-size: 0.7rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        
+        /* Accessibility: Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            .proceed-btn {
+                transition: none;
+                animation: none;
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="success-badge">✓ Verified</div>
-        <div class="icon-row">🔓</div>
+    <main class="container" role="main">
+        <div class="success-badge" aria-label="Verified status">✓ Verified</div>
+        <div class="icon-row" aria-hidden="true">🔓</div>
+        <p class="brand-name">{{SERVICE_NAME}}</p>
         <h1>Access Granted</h1>
         <p class="tagline">Identity Confirmed</p>
         
-        <div class="message-box">
+        <section class="message-box">
             <p>Verification complete. You will be transferred to the <strong>secure zone</strong> momentarily.</p>
+        </section>
+        
+        <div class="status-indicators" role="list" aria-label="Security status">
+            <span class="indicator" role="listitem">Encrypted</span>
+            <span class="indicator" role="listitem">Verified</span>
+            <span class="indicator" role="listitem">Secure</span>
         </div>
         
-        <div class="status-indicators">
-            <span class="indicator">Encrypted</span>
-            <span class="indicator">Verified</span>
-            <span class="indicator">Secure</span>
-        </div>
-        
-        <div class="redirect-notice">
+        <div class="redirect-notice" aria-live="polite">
             Preparing secure connection...
         </div>
         
         <a href="/" class="proceed-btn">Continue Now →</a>
         
-        <div class="footer-text">
-            Fortify Security Layer • Trust Established
-        </div>
-    </div>
+        <footer class="footer-text">
+            {{SERVICE_NAME}} Security Layer • Trust Established
+        </footer>
+    </main>
 </body>
 </html>

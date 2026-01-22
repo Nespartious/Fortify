@@ -45,8 +45,12 @@ pub struct BrandingConfig {
     pub logo_max_width: u32,
     /// Maximum logo height in pixels
     pub logo_max_height: u32,
-    /// Primary color (hex)
+    /// Primary brand color (hex format: #RRGGBB)
     pub primary_color: String,
+    /// Secondary/accent color (hex format: #RRGGBB)
+    pub secondary_color: String,
+    /// Tertiary/subtle accent color (hex format: #RRGGBB)
+    pub tertiary_color: String,
     /// Custom CSS for gate pages
     pub custom_css: Option<String>,
     /// Welcome message on CAPTCHA page
@@ -190,10 +194,61 @@ impl Default for BrandingConfig {
             logo_base64: None,
             logo_max_width: 256,
             logo_max_height: 256,
-            primary_color: "#6B46C1".to_string(), // Purple
+            primary_color: "#c9a227".to_string(),   // Gold - primary brand
+            secondary_color: "#a68b5b".to_string(), // Muted gold - accents
+            tertiary_color: "#2D3748".to_string(),  // Dark slate - subtle elements
             custom_css: None,
             welcome_message: "Please complete the verification to continue.".to_string(),
         }
+    }
+}
+
+impl BrandingConfig {
+    /// Maximum allowed length for service name
+    pub const MAX_SERVICE_NAME_LEN: usize = 100;
+    /// Maximum allowed length for description
+    pub const MAX_DESCRIPTION_LEN: usize = 100;
+
+    /// Validate all branding configuration fields
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate service name length
+        if self.service_name.len() > Self::MAX_SERVICE_NAME_LEN {
+            return Err(format!(
+                "Service name exceeds {} characters",
+                Self::MAX_SERVICE_NAME_LEN
+            ));
+        }
+
+        // Validate description length
+        if self.description.len() > Self::MAX_DESCRIPTION_LEN {
+            return Err(format!(
+                "Description exceeds {} characters",
+                Self::MAX_DESCRIPTION_LEN
+            ));
+        }
+
+        // Validate hex colors
+        for (name, color) in [
+            ("primary_color", &self.primary_color),
+            ("secondary_color", &self.secondary_color),
+            ("tertiary_color", &self.tertiary_color),
+        ] {
+            if !Self::is_valid_hex_color(color) {
+                return Err(format!(
+                    "{} is not a valid hex color (expected #RRGGBB): {}",
+                    name, color
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if a string is a valid hex color (#RRGGBB format)
+    pub fn is_valid_hex_color(color: &str) -> bool {
+        color.starts_with('#')
+            && color.len() == 7
+            && color[1..].chars().all(|c| c.is_ascii_hexdigit())
     }
 }
 

@@ -3,19 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Mirror Retiring</title>
+    <title>{{SERVICE_NAME}} — Mirror Retiring</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
+            
+            /* Status Colors */
             --amber: #d4a54a;
             --amber-muted: #8b7235;
             --sage: #9ab893;
@@ -68,8 +82,8 @@
             transition: all 0.2s ease;
         }
         .discovery-link:hover {
-            background: rgba(201, 162, 39, 0.08);
-            border-color: var(--gold-muted);
+            background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+            border-color: var(--brand-secondary);
             color: var(--text-primary);
         }
         .discovery-link.active {
@@ -186,15 +200,15 @@
         .mirror-list li {
             background: var(--bg-elevated);
             border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--gold-muted);
+            border-left: 2px solid var(--brand-secondary);
             border-radius: 0 3px 3px 0;
             margin-bottom: 10px;
             transition: all 0.2s ease;
         }
         .mirror-list li:last-child { margin-bottom: 0; }
         .mirror-list li:hover {
-            border-left-color: var(--gold-primary);
-            background: rgba(201, 162, 39, 0.03);
+            border-left-color: var(--brand-primary);
+            background: color-mix(in srgb, var(--brand-primary) 3%, transparent);
         }
         .mirror-list a {
             display: block;
@@ -235,24 +249,41 @@
             text-align: center;
             font-size: 0.85rem;
         }
+        .brand-name {
+            font-size: 0.7rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        
+        /* Accessibility: Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            .btn, .discovery-link, .mirror-list li, .mirror-list a {
+                transition: none;
+            }
+        }
     </style>
 </head>
 <body>
     <!-- Discovery Bar: Always shows available mirrors -->
-    <div class="discovery-bar">
+    <header class="discovery-bar" role="navigation" aria-label="Mirror navigation">
         <span class="discovery-label">Active Mirrors:</span>
-        <div class="discovery-mirrors">
+        <nav class="discovery-mirrors">
             {{DISCOVERY_BAR}}
-        </div>
-    </div>
+        </nav>
+    </header>
     
-    <div class="main-content">
+    <main class="main-content">
         <div class="container">
-            <div class="alert-box">
-                <div class="alert-header">
-                    <span class="alert-icon">⏳</span>
-                    <h1>Mirror Retiring</h1>
-                </div>
+            <article class="alert-box">
+                <header class="alert-header">
+                    <span class="alert-icon" aria-hidden="true">⏳</span>
+                    <div>
+                        <p class="brand-name">{{SERVICE_NAME}}</p>
+                        <h1>Mirror Retiring</h1>
+                    </div>
+                </header>
                 <p class="status-msg">
                     <strong>This entry point is scheduled for retirement.</strong><br><br>
                     This mirror is being gracefully retired and will be taken offline soon.
@@ -260,20 +291,20 @@
                 </p>
                 <div class="countdown-box">
                     <div class="countdown-label">Page Available For</div>
-                    <div class="countdown-time">{{COUNTDOWN_TIME}}</div>
+                    <div class="countdown-time" aria-live="polite">{{COUNTDOWN_TIME}}</div>
                     <div class="countdown-note">After this, you will need to use another mirror</div>
                 </div>
-            </div>
-            <div class="migration-box">
+            </article>
+            <section class="migration-box">
                 <h2>Available Mirrors</h2>
-                <ul class="mirror-list">
+                <ul class="mirror-list" role="list">
                     {{MIRROR_LIST}}
                 </ul>
-            </div>
-            <div class="footer-note">
+            </section>
+            <footer class="footer-note">
                 Scheduled Maintenance • Save Alternative Links Now
-            </div>
+            </footer>
         </div>
-    </div>
+    </main>
 </body>
 </html>

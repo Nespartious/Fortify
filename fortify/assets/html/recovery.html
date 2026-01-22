@@ -3,22 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Session Recovery</title>
+    <title>{{SERVICE_NAME}} — Session Recovery</title>
     <meta http-equiv="refresh" content="10;url=?action=resume">
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --sage: #9ab893;
-            --crimson: #c96969;
+            
+            /* Status Colors */
+            --status-success: #9ab893;
+            --status-danger: #c96969;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -38,7 +52,7 @@
         }
         .recovery-box {
             background: var(--bg-surface);
-            border: 1px solid var(--gold-muted);
+            border: 1px solid var(--brand-secondary);
             border-radius: 4px;
             padding: 40px 32px;
             margin-bottom: 24px;
@@ -47,12 +61,19 @@
             font-size: 3rem;
             margin-bottom: 20px;
         }
+        .brand-name {
+            font-size: 0.7rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
         h1 {
             font-size: 1.4rem;
             font-weight: 500;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: var(--gold-primary);
+            color: var(--brand-primary);
             margin-bottom: 16px;
         }
         .status-msg {
@@ -77,7 +98,7 @@
         }
         .timer-value {
             font-size: 2.5rem;
-            color: var(--gold-primary);
+            color: var(--brand-primary);
             font-weight: 300;
             font-variant-numeric: tabular-nums;
         }
@@ -106,18 +127,18 @@
             border: 1px solid transparent;
         }
         .btn-resume {
-            background: rgba(201, 162, 39, 0.15);
-            border-color: var(--gold-muted);
-            color: var(--gold-primary);
+            background: color-mix(in srgb, var(--brand-primary) 15%, transparent);
+            border-color: var(--brand-secondary);
+            color: var(--brand-primary);
         }
         .btn-resume:hover {
-            background: rgba(201, 162, 39, 0.25);
-            border-color: var(--gold-primary);
+            background: color-mix(in srgb, var(--brand-primary) 25%, transparent);
+            border-color: var(--brand-primary);
         }
         .btn-wipe {
             background: rgba(201, 105, 105, 0.1);
-            border-color: var(--crimson);
-            color: var(--crimson);
+            border-color: var(--status-danger);
+            color: var(--status-danger);
         }
         .btn-wipe:hover {
             background: rgba(201, 105, 105, 0.2);
@@ -188,12 +209,23 @@
             counter-reset: time var(--time);
             content: counter(time) "s";
         }
+        
+        /* Accessibility: Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            .timer-value {
+                animation: none;
+            }
+            .timer-value::after {
+                content: "10s";
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="recovery-box">
+        <article class="recovery-box">
             <div class="icon">🔄</div>
+            <p class="brand-name">{{SERVICE_NAME}}</p>
             <h1>Session Recovery</h1>
             <p class="status-msg">
                 A previous session was detected. Would you like to resume 
@@ -202,17 +234,17 @@
             
             <div class="timer-box">
                 <div class="timer-label">Auto-Resume In</div>
-                <div class="timer-value"></div>
+                <div class="timer-value" aria-label="Countdown timer"></div>
                 <div class="timer-note">Resuming automatically unless you choose otherwise</div>
             </div>
             
-            <div class="action-buttons">
+            <nav class="action-buttons">
                 <a href="?action=resume" class="btn btn-resume">↩ Resume Session</a>
                 <a href="?action=wipe" class="btn btn-wipe">🗑 Start Fresh</a>
-            </div>
-        </div>
+            </nav>
+        </article>
         
-        <div class="session-info">
+        <section class="session-info">
             <h2>Previous Session</h2>
             <div class="info-row">
                 <span class="info-label">Trust Level</span>
@@ -230,11 +262,11 @@
                 <span class="info-label">Session Age</span>
                 <span class="info-value">{{SESSION_AGE}}</span>
             </div>
-        </div>
+        </section>
         
-        <div class="footer-note">
-            Fortify Session Recovery • Your choice is remembered
-        </div>
+        <footer class="footer-note">
+            Session Recovery • Your choice is remembered
+        </footer>
     </div>
 </body>
 </html>

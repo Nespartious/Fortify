@@ -1,4 +1,5 @@
 pub mod behavioral;
+pub mod branding;
 pub mod config;
 pub mod logging;
 pub mod session;
@@ -6,6 +7,7 @@ pub mod templates;
 pub mod trust;
 
 pub use behavioral::*;
+pub use branding::{html_escape, is_valid_hex_color, render_html_template, TemplateBranding};
 pub use config::*;
 pub use logging::*;
 pub use session::*;

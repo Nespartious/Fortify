@@ -3,21 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Request Failed</title>
+    <title>{{SERVICE_NAME}} — Request Failed</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --amber: #e4bc5e;
-            --slate-blue: #6b7c8c;
+            
+            /* Status Colors */
+            --status-warning: #e4bc5e;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -40,12 +53,20 @@
             margin-bottom: 20px;
             opacity: 0.9;
         }
+        .brand-name {
+            font-size: 0.8rem;
+            font-weight: 400;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--brand-secondary);
+            margin-bottom: 8px;
+        }
         h1 {
             font-size: 1.4rem;
             font-weight: 400;
             letter-spacing: 0.1em;
             text-transform: uppercase;
-            color: var(--amber);
+            color: var(--status-warning);
             margin-bottom: 6px;
         }
         .error-code {
@@ -57,7 +78,7 @@
         .error-box {
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
-            border-left: 3px solid var(--amber);
+            border-left: 3px solid var(--status-warning);
             border-radius: 0 4px 4px 0;
             padding: 24px;
             margin-bottom: 28px;
@@ -80,8 +101,8 @@
         .retry-btn {
             display: inline-block;
             background: transparent;
-            color: var(--gold-primary);
-            border: 1px solid var(--gold-muted);
+            color: var(--brand-primary);
+            border: 1px solid var(--brand-secondary);
             border-radius: 3px;
             padding: 14px 36px;
             font-family: inherit;
@@ -93,8 +114,8 @@
             transition: all 0.2s ease;
         }
         .retry-btn:hover {
-            background: var(--gold-primary);
-            border-color: var(--gold-primary);
+            background: var(--brand-primary);
+            border-color: var(--brand-primary);
             color: var(--bg-deep);
         }
         .mirror-section {
@@ -119,13 +140,13 @@
         .mirror-list li {
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--gold-muted);
+            border-left: 2px solid var(--brand-secondary);
             border-radius: 0 3px 3px 0;
             margin-bottom: 8px;
             transition: all 0.2s ease;
         }
         .mirror-list li:hover {
-            border-left-color: var(--gold-primary);
+            border-left-color: var(--brand-primary);
             background: var(--bg-elevated);
         }
         .mirror-list a {
@@ -150,6 +171,7 @@
 <body>
     <div class="container">
         <div class="error-icon">⚠️</div>
+        <p class="brand-name">{{SERVICE_NAME}}</p>
         <h1>Request Failed</h1>
         <div class="error-code">Processing Error</div>
         <div class="error-box">
@@ -168,9 +190,9 @@
                 {{MIRROR_LIST}}
             </ul>
         </div>
-        <div class="footer-note">
+        <footer class="footer-note">
             If this persists, try an alternative mirror above
-        </div>
+        </footer>
     </div>
 </body>
 </html>
