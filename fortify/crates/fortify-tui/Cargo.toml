@@ -31,7 +31,7 @@ fortify-orchestrator = { path = "../fortify-orchestrator" }
 fortify-controller = { path = "../fortify-controller" }
 
 # HTTP client for status polling
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
