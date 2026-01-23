@@ -229,6 +229,23 @@ The TUI provides:
 - Quick Deploy from saved configurations
 - Destroy instance with double confirmation
 
+## Recent Updates
+
+### Sprint 12: Template Migration (January 2025) ✅
+
+- **Template Engine**: All HTML pages now use compile-time template system with `TemplateEngine` and `BrandingVars`
+- **Citadel/Gold Theme**: Migrated from legacy neon-pink/cyan theme to professional citadel/gold branding
+- **New Templates**: Added `verification-failed.html` and `session-expired.html` templates
+- **Bug Fix**: Fixed demoted user captcha loop where users solving 2 captchas were sent back to solve more
+- **Session Handling**: Verification tokens now always take priority; tier overrides cleared for all session types
+
+### Sprint 11: Static CAPTCHA & Templates (January 2025) ✅
+
+- **Pre-generation Pool**: CaptchaPoolManager with 200+ pre-generated CAPTCHAs
+- **CPU-aware Generation**: Pauses at 70% CPU usage
+- **Disk Persistence**: CAPTCHA pool saved to `captcha_pool.json`
+- **Zero Runtime HTML Generation**: Templates loaded via `include_str!()` for DDoS resilience
+
 ## Project Status
 
 **Core phases complete!** ✅ | **TUI Phase in progress** 🚧

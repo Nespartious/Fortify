@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="10;url=/">
-    <title>{{SERVICE_NAME}} — Access Granted</title>
+    <meta http-equiv="refresh" content="{{REDIRECT_DELAY}};url=/">
+    <title>{{SERVICE_NAME}} — Verified</title>
     <style>
         /* ============================================================
          * BRANDING CONFIGURATION
@@ -31,8 +31,7 @@
             --text-muted: #6b6862;
             
             /* Status Colors */
-            --sage: #9ab893;
-            --slate-blue: #6b7c8c;
+            --status-success: #9ab893;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -45,78 +44,71 @@
             align-items: center;
             padding: 24px;
         }
-        /* Subtle radial glow */
+        /* Subtle texture overlay */
         body::before {
             content: '';
             position: fixed;
             inset: 0;
-            background: radial-gradient(ellipse at 50% 30%, rgba(125, 154, 120, 0.04) 0%, transparent 50%);
+            background: 
+                radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--brand-primary) 3%, transparent) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--status-success) 3%, transparent) 0%, transparent 40%);
             pointer-events: none;
         }
-        .container {
+        .panel {
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
             border-radius: 4px;
-            padding: 48px 56px;
-            max-width: 460px;
+            padding: 48px 40px;
+            max-width: 440px;
             width: 100%;
             text-align: center;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
             position: relative;
-        }
-        /* Top accent line */
-        .container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 20%;
-            right: 20%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--sage), transparent);
-            border-radius: 1px;
+            z-index: 1;
         }
         .success-badge {
             display: inline-block;
-            background: var(--sage);
+            background: var(--status-success);
             color: var(--bg-deep);
             padding: 6px 20px;
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.15em;
             text-transform: uppercase;
             border-radius: 2px;
-            margin-bottom: 28px;
+            margin-bottom: 24px;
         }
         .icon-row {
-            font-size: 3rem;
+            font-size: 3.5rem;
             margin-bottom: 16px;
-            opacity: 0.9;
+            filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--status-success) 20%, transparent));
         }
         h1 {
             font-size: 1.5rem;
-            font-weight: 400;
-            letter-spacing: 0.1em;
+            font-weight: 500;
+            letter-spacing: 0.15em;
             text-transform: uppercase;
-            margin-bottom: 6px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
         }
         .tagline {
             font-size: 0.75rem;
-            color: var(--sage);
+            color: var(--brand-secondary);
             letter-spacing: 0.1em;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
         }
         .message-box {
             background: var(--bg-elevated);
-            border-left: 2px solid var(--sage);
+            border-left: 3px solid var(--status-success);
             border-radius: 0 3px 3px 0;
-            padding: 20px 24px;
+            padding: 20px;
             margin-bottom: 28px;
             text-align: left;
         }
         .message-box p {
             color: var(--text-secondary);
-            font-size: 0.9rem;
-            line-height: 1.6;
+            font-size: 0.85rem;
+            line-height: 1.7;
             margin: 0;
         }
         .message-box strong {
@@ -126,110 +118,86 @@
             display: flex;
             justify-content: center;
             gap: 16px;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
             flex-wrap: wrap;
         }
         .indicator {
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             padding: 6px 14px;
             border: 1px solid var(--border-accent);
             border-radius: 2px;
-            color: var(--text-secondary);
             letter-spacing: 0.1em;
-            text-transform: uppercase;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            color: var(--text-muted);
         }
-        .indicator::before {
-            content: '';
-            width: 5px;
-            height: 5px;
-            background: var(--sage);
-            border-radius: 50%;
+        .indicator.active {
+            border-color: var(--status-success);
+            color: var(--status-success);
         }
         .redirect-notice {
             color: var(--text-muted);
             font-size: 0.75rem;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
+            letter-spacing: 0.05em;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
+        /* Button appears after 3 seconds using CSS animation */
         .proceed-btn {
             display: inline-block;
-            background: transparent;
-            color: var(--brand-secondary);
-            border: 1px solid var(--brand-secondary);
+            background: var(--brand-primary);
+            color: var(--bg-deep);
+            border: none;
             border-radius: 3px;
-            padding: 12px 32px;
+            padding: 14px 32px;
             font-family: inherit;
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-weight: 600;
+            font-size: 0.85rem;
             text-transform: uppercase;
             letter-spacing: 0.15em;
             text-decoration: none;
             transition: all 0.2s ease;
             opacity: 0;
-            animation: fadeIn 0.5s ease-out 2s forwards;
+            animation: fadeInButton 0.5s ease-out 3s forwards;
+        }
+        @keyframes fadeInButton {
+            to { opacity: 1; }
         }
         .proceed-btn:hover {
-            background: var(--brand-secondary);
-            color: var(--bg-deep);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--brand-primary) 30%, transparent);
         }
         .footer-text {
             margin-top: 28px;
-            font-size: 0.6rem;
+            font-size: 0.65rem;
             color: var(--text-muted);
             letter-spacing: 0.1em;
-            text-transform: uppercase;
-        }
-        .brand-name {
-            font-size: 0.7rem;
-            color: var(--brand-secondary);
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        
-        /* Accessibility: Reduced motion preference */
-        @media (prefers-reduced-motion: reduce) {
-            .proceed-btn {
-                transition: none;
-                animation: none;
-                opacity: 1;
-            }
         }
     </style>
 </head>
 <body>
-    <main class="container" role="main">
-        <div class="success-badge" aria-label="Verified status">✓ Verified</div>
-        <div class="icon-row" aria-hidden="true">🔓</div>
-        <p class="brand-name">{{SERVICE_NAME}}</p>
+    <div class="panel">
+        <div class="success-badge">✓ Verified</div>
+        <div class="icon-row">🔓</div>
         <h1>Access Granted</h1>
-        <p class="tagline">Identity Confirmed</p>
+        <div class="tagline">Identity Confirmed</div>
         
-        <section class="message-box">
-            <p>Verification complete. You will be transferred to the <strong>secure zone</strong> momentarily.</p>
-        </section>
-        
-        <div class="status-indicators" role="list" aria-label="Security status">
-            <span class="indicator" role="listitem">Encrypted</span>
-            <span class="indicator" role="listitem">Verified</span>
-            <span class="indicator" role="listitem">Secure</span>
+        <div class="message-box">
+            <p>Your verification is complete. You will be automatically transferred to the <strong>secure zone</strong> in a few moments.</p>
         </div>
         
-        <div class="redirect-notice" aria-live="polite">
+        <div class="status-indicators">
+            <span class="indicator active">◉ Encrypted</span>
+            <span class="indicator active">◉ Verified</span>
+            <span class="indicator active">◉ Secure</span>
+        </div>
+        
+        <div class="redirect-notice">
             Preparing secure connection...
         </div>
         
         <a href="/" class="proceed-btn">Continue Now →</a>
         
-        <footer class="footer-text">
-            {{SERVICE_NAME}} Security Layer • Trust Established
-        </footer>
-    </main>
+        <div class="footer-text">
+            {{SERVICE_NAME}} • Trust Established
+        </div>
+    </div>
 </body>
 </html>

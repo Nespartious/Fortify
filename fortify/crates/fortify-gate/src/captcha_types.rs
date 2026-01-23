@@ -220,47 +220,60 @@ pub struct EmojiCategory {
 }
 
 /// Get all emoji categories
+/// Each category has visually distinct emojis that are easy to identify
+/// and render correctly in most browsers including Tor Browser
 pub fn get_emoji_categories() -> Vec<EmojiCategory> {
     vec![
         EmojiCategory {
             name: "happy",
-            description: "happy or smiling face",
-            emojis: vec!["😀", "😃", "😄", "😁", "😊", "🙂", "😎", "🤗"],
+            description: "smiling or happy face",
+            emojis: vec!["😀", "😃", "😄", "😁", "😊", "🙂"],
         },
         EmojiCategory {
             name: "sad",
-            description: "sad or unhappy face",
-            emojis: vec!["😢", "😭", "😞", "😔", "🙁", "☹️", "😿", "😥"],
+            description: "sad or crying face",
+            emojis: vec!["😢", "😭", "😞", "😔", "🙁", "😥"],
         },
         EmojiCategory {
             name: "angry",
-            description: "angry or upset face",
-            emojis: vec!["😠", "😡", "🤬", "👿", "💢", "😤", "🔥", "⚡"],
+            description: "red angry face",
+            // Use only the most recognizable angry faces with red coloring
+            emojis: vec!["😠", "😡", "🤬", "😤"],
         },
         EmojiCategory {
-            name: "love",
-            description: "love or heart",
-            emojis: vec!["❤️", "💕", "💖", "💗", "💓", "😍", "🥰", "💘"],
+            name: "heart",
+            description: "heart",
+            emojis: vec!["❤️", "💕", "💖", "💗", "💓", "💘"],
         },
         EmojiCategory {
             name: "animal",
-            description: "animal",
-            emojis: vec!["🐶", "🐱", "🐭", "🐰", "🦊", "🐻", "🐼", "🐨"],
+            description: "animal face",
+            emojis: vec!["🐶", "🐱", "🐭", "🐰", "🦊", "🐻", "🐼"],
         },
         EmojiCategory {
             name: "food",
-            description: "food or drink",
-            emojis: vec!["🍕", "🍔", "🍟", "🌮", "🍩", "🍪", "☕", "🍺"],
+            description: "food",
+            emojis: vec!["🍕", "🍔", "🍟", "🌮", "🍩", "🍪"],
         },
         EmojiCategory {
-            name: "nature",
-            description: "nature or plant",
-            emojis: vec!["🌲", "🌳", "🌴", "🌵", "🌺", "🌻", "🌹", "🍀"],
+            name: "tree",
+            description: "tree or plant",
+            emojis: vec!["🌲", "🌳", "🌴", "🌵", "🌺", "🌻"],
         },
         EmojiCategory {
-            name: "weather",
-            description: "weather or sky",
-            emojis: vec!["☀️", "🌙", "⭐", "🌧️", "⛈️", "🌈", "❄️", "🌊"],
+            name: "sun",
+            description: "sun",
+            emojis: vec!["☀️", "🌞", "🔆", "💛"],
+        },
+        EmojiCategory {
+            name: "moon",
+            description: "moon",
+            emojis: vec!["🌙", "🌛", "🌜", "🌝"],
+        },
+        EmojiCategory {
+            name: "star",
+            description: "star",
+            emojis: vec!["⭐", "🌟", "✨", "💫"],
         },
     ]
 }
@@ -283,8 +296,21 @@ pub struct EmojiOption {
 
 impl EmojiChallenge {
     pub fn generate(option_count: usize) -> Self {
+        Self::generate_validated(option_count).unwrap_or_else(|| {
+            // Fallback: generate a simple valid challenge
+            Self::generate_simple_fallback(option_count)
+        })
+    }
+
+    /// Generate with validation, returns None if invalid
+    fn generate_validated(option_count: usize) -> Option<Self> {
         let categories = get_emoji_categories();
         let mut rng = rand::rng();
+
+        // Need at least as many categories as options for variety
+        if option_count > categories.len() {
+            return None;
+        }
 
         // Pick a target category
         let target_idx = rng.random_range(0..categories.len());
@@ -298,7 +324,16 @@ impl EmojiChallenge {
         let mut options: Vec<EmojiOption> = Vec::with_capacity(option_count);
         let correct_position = rng.random_range(0..option_count);
 
-        let mut used_categories = vec![target_idx];
+        // Create a shuffled list of available category indices (excluding target)
+        let mut available_cats: Vec<usize> = (0..categories.len())
+            .filter(|&i| i != target_idx)
+            .collect();
+        // Shuffle for randomness
+        for i in (1..available_cats.len()).rev() {
+            let j = rng.random_range(0..=i);
+            available_cats.swap(i, j);
+        }
+        let mut cat_iter = available_cats.into_iter();
 
         for i in 0..option_count {
             if i == correct_position {
@@ -306,28 +341,55 @@ impl EmojiChallenge {
                     emoji: correct_emoji.clone(),
                     index: i,
                 });
-            } else {
-                // Pick from a different category
-                let mut cat_idx = rng.random_range(0..categories.len());
-                while used_categories.contains(&cat_idx) {
-                    cat_idx = rng.random_range(0..categories.len());
-                    // Prevent infinite loop if we've used all categories
-                    if used_categories.len() >= categories.len() - 1 {
-                        cat_idx = (target_idx + i + 1) % categories.len();
-                        break;
-                    }
-                }
-                used_categories.push(cat_idx);
-
+            } else if let Some(cat_idx) = cat_iter.next() {
                 let other_cat = &categories[cat_idx];
                 let emoji_idx = rng.random_range(0..other_cat.emojis.len());
                 options.push(EmojiOption {
                     emoji: other_cat.emojis[emoji_idx].to_string(),
                     index: i,
                 });
+            } else {
+                // Not enough categories - validation will fail
+                return None;
             }
         }
 
+        let challenge = Self {
+            target_category: target.name.to_string(),
+            target_description: target.description.to_string(),
+            options,
+            correct_index: correct_position,
+            created_at: Instant::now(),
+        };
+
+        // Validate before returning
+        if challenge.validate() {
+            Some(challenge)
+        } else {
+            None
+        }
+    }
+
+    /// Simple fallback that guarantees validity
+    fn generate_simple_fallback(option_count: usize) -> Self {
+        let categories = get_emoji_categories();
+        let mut rng = rand::rng();
+        
+        // Use first N categories to ensure uniqueness
+        let count = option_count.min(categories.len());
+        let correct_position = rng.random_range(0..count);
+        
+        let target = &categories[correct_position];
+        
+        let mut options = Vec::with_capacity(count);
+        for i in 0..count {
+            let cat = &categories[i];
+            options.push(EmojiOption {
+                emoji: cat.emojis[0].to_string(),
+                index: i,
+            });
+        }
+        
         Self {
             target_category: target.name.to_string(),
             target_description: target.description.to_string(),
@@ -335,6 +397,29 @@ impl EmojiChallenge {
             correct_index: correct_position,
             created_at: Instant::now(),
         }
+    }
+
+    /// Validate that the challenge is solvable
+    pub fn validate(&self) -> bool {
+        // 1. Must have options
+        if self.options.is_empty() {
+            return false;
+        }
+        
+        // 2. Correct index must be valid
+        if self.correct_index >= self.options.len() {
+            return false;
+        }
+        
+        // 3. No duplicate emojis (each option must be unique)
+        let mut seen = std::collections::HashSet::new();
+        for opt in &self.options {
+            if !seen.insert(&opt.emoji) {
+                return false; // Duplicate found
+            }
+        }
+        
+        true
     }
 
     pub fn is_expired(&self, timeout: Duration) -> bool {
@@ -592,9 +677,20 @@ impl SequenceChallenge {
         };
 
         // Build options with correct answer in random position
+        // Ensure we always have enough wrong answers
         let correct_position = rng.random_range(0..option_count);
         let mut options: Vec<SequenceOption> = Vec::with_capacity(option_count);
-        let mut wrong_iter = wrong_answers.into_iter();
+        
+        // Extend wrong_answers if we don't have enough
+        let mut wrongs = wrong_answers;
+        while wrongs.len() < option_count - 1 {
+            // Generate more plausible wrong answers
+            let extra = format!("{}", rng.random_range(1..100));
+            if !wrongs.contains(&extra) && extra != correct_answer {
+                wrongs.push(extra);
+            }
+        }
+        let mut wrong_iter = wrongs.into_iter();
 
         for i in 0..option_count {
             if i == correct_position {
@@ -607,9 +703,58 @@ impl SequenceChallenge {
                     display: wrong,
                     index: i,
                 });
+            } else {
+                // Fallback: use a placeholder (should never reach here now)
+                options.push(SequenceOption {
+                    display: "?".to_string(),
+                    index: i,
+                });
             }
         }
 
+        let challenge = Self {
+            sequence_display: sequence,
+            question_text: "What comes next?".to_string(),
+            options,
+            correct_index: correct_position,
+            created_at: Instant::now(),
+        };
+
+        // Validate and retry if needed
+        if challenge.validate() {
+            challenge
+        } else {
+            // Fallback to simple number sequence
+            Self::generate_simple_fallback(option_count)
+        }
+    }
+
+    /// Simple fallback that guarantees validity
+    fn generate_simple_fallback(option_count: usize) -> Self {
+        let mut rng = rand::rng();
+        let start = rng.random_range(1..10);
+        let sequence: Vec<String> = (0..3).map(|i| (start + i).to_string()).collect();
+        let correct_answer = (start + 3).to_string();
+        
+        let correct_position = rng.random_range(0..option_count);
+        let mut options = Vec::with_capacity(option_count);
+        let mut wrong_val = start + 4;
+        
+        for i in 0..option_count {
+            if i == correct_position {
+                options.push(SequenceOption {
+                    display: correct_answer.clone(),
+                    index: i,
+                });
+            } else {
+                options.push(SequenceOption {
+                    display: wrong_val.to_string(),
+                    index: i,
+                });
+                wrong_val += 1;
+            }
+        }
+        
         Self {
             sequence_display: sequence,
             question_text: "What comes next?".to_string(),
@@ -617,6 +762,36 @@ impl SequenceChallenge {
             correct_index: correct_position,
             created_at: Instant::now(),
         }
+    }
+
+    /// Validate that the challenge is solvable
+    pub fn validate(&self) -> bool {
+        // 1. Must have options
+        if self.options.is_empty() {
+            return false;
+        }
+        
+        // 2. Correct index must be valid
+        if self.correct_index >= self.options.len() {
+            return false;
+        }
+        
+        // 3. All options must have valid display text
+        for opt in &self.options {
+            if opt.display.is_empty() || opt.display == "?" {
+                return false;
+            }
+        }
+        
+        // 4. No duplicate options
+        let mut seen = std::collections::HashSet::new();
+        for opt in &self.options {
+            if !seen.insert(&opt.display) {
+                return false;
+            }
+        }
+        
+        true
     }
 
     pub fn is_expired(&self, timeout: Duration) -> bool {
@@ -868,6 +1043,9 @@ impl SilhouetteChallenge {
         let categories = get_silhouette_categories();
         let mut rng = rand::rng();
 
+        // Limit options to available categories
+        let actual_count = option_count.min(categories.len());
+
         // Pick correct category and symbol
         let correct_cat_idx = rng.random_range(0..categories.len());
         let correct_cat = &categories[correct_cat_idx];
@@ -875,23 +1053,39 @@ impl SilhouetteChallenge {
         let symbol = correct_cat.symbols[symbol_idx].to_string();
 
         // Position correct answer randomly
-        let correct_position = rng.random_range(0..option_count.min(categories.len()));
+        let correct_position = rng.random_range(0..actual_count);
 
-        // Build options
-        let mut options: Vec<SilhouetteOption> = Vec::with_capacity(option_count);
-        let mut cat_idx_iter = (0..categories.len())
+        // Build shuffled list of wrong categories
+        let mut other_cats: Vec<usize> = (0..categories.len())
             .filter(|&i| i != correct_cat_idx)
-            .collect::<Vec<_>>();
+            .collect();
+        // Shuffle for randomness
+        for i in (1..other_cats.len()).rev() {
+            let j = rng.random_range(0..=i);
+            other_cats.swap(i, j);
+        }
+        let mut cat_iter = other_cats.into_iter();
 
-        for i in 0..option_count.min(categories.len()) {
+        // Build options - always ensure correct answer is included
+        let mut options: Vec<SilhouetteOption> = Vec::with_capacity(actual_count);
+
+        for i in 0..actual_count {
             if i == correct_position {
                 options.push(SilhouetteOption {
                     category_name: correct_cat.name.to_string(),
                     description: correct_cat.description.to_string(),
                     index: i,
                 });
-            } else if let Some(cat_idx) = cat_idx_iter.pop() {
+            } else if let Some(cat_idx) = cat_iter.next() {
                 let cat = &categories[cat_idx];
+                options.push(SilhouetteOption {
+                    category_name: cat.name.to_string(),
+                    description: cat.description.to_string(),
+                    index: i,
+                });
+            } else {
+                // Fallback: duplicate first other category (shouldn't happen)
+                let cat = &categories[(correct_cat_idx + 1) % categories.len()];
                 options.push(SilhouetteOption {
                     category_name: cat.name.to_string(),
                     description: cat.description.to_string(),
@@ -900,6 +1094,43 @@ impl SilhouetteChallenge {
             }
         }
 
+        let challenge = Self {
+            silhouette_symbol: symbol,
+            correct_category: correct_cat.name.to_string(),
+            options,
+            correct_index: correct_position,
+            created_at: Instant::now(),
+        };
+
+        // Validate
+        if challenge.validate() {
+            challenge
+        } else {
+            // Fallback: use first N categories
+            Self::generate_simple_fallback(actual_count)
+        }
+    }
+
+    /// Simple fallback that guarantees validity
+    fn generate_simple_fallback(option_count: usize) -> Self {
+        let categories = get_silhouette_categories();
+        let mut rng = rand::rng();
+        
+        let correct_position = rng.random_range(0..option_count.min(categories.len()));
+        let correct_cat = &categories[correct_position];
+        let symbol = correct_cat.symbols[0].to_string();
+        
+        let options: Vec<SilhouetteOption> = (0..option_count.min(categories.len()))
+            .map(|i| {
+                let cat = &categories[i];
+                SilhouetteOption {
+                    category_name: cat.name.to_string(),
+                    description: cat.description.to_string(),
+                    index: i,
+                }
+            })
+            .collect();
+        
         Self {
             silhouette_symbol: symbol,
             correct_category: correct_cat.name.to_string(),
@@ -907,6 +1138,34 @@ impl SilhouetteChallenge {
             correct_index: correct_position,
             created_at: Instant::now(),
         }
+    }
+
+    /// Validate that the challenge is solvable
+    pub fn validate(&self) -> bool {
+        // 1. Must have options
+        if self.options.is_empty() {
+            return false;
+        }
+        
+        // 2. Correct index must be valid
+        if self.correct_index >= self.options.len() {
+            return false;
+        }
+        
+        // 3. Correct category must be in options at correct_index
+        if self.options[self.correct_index].category_name != self.correct_category {
+            return false;
+        }
+        
+        // 4. No duplicate categories
+        let mut seen = std::collections::HashSet::new();
+        for opt in &self.options {
+            if !seen.insert(&opt.category_name) {
+                return false;
+            }
+        }
+        
+        true
     }
 
     pub fn is_expired(&self, timeout: Duration) -> bool {
@@ -971,6 +1230,26 @@ impl CaptchaData {
             _ => false,
         }
     }
+
+    /// Validate that the CAPTCHA is solvable
+    /// Returns true if the CAPTCHA has a valid correct answer in its options
+    pub fn validate(&self) -> bool {
+        match self {
+            Self::BmpText { text, image_data } => {
+                // BmpText is valid if it has text and image data
+                !text.is_empty() && !image_data.is_empty()
+            }
+            Self::Emoji(c) => c.validate(),
+            Self::Direction(_) => true, // Direction always uses all 4/8 arrows
+            Self::Sequence(c) => c.validate(),
+            Self::WordUnscramble(c) => {
+                // Valid if word exists and scrambled is different
+                !c.original_word.is_empty() && c.scrambled != c.original_word
+            }
+            Self::ImageRotation(_) => true, // Always has 4 rotation options
+            Self::Silhouette(c) => c.validate(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -981,8 +1260,20 @@ mod tests {
     fn test_emoji_challenge() {
         let challenge = EmojiChallenge::generate(6);
         assert_eq!(challenge.options.len(), 6);
+        assert!(challenge.validate(), "Emoji challenge should be valid");
         assert!(challenge.verify(&challenge.correct_index.to_string()));
         assert!(!challenge.verify(&((challenge.correct_index + 1) % 6).to_string()));
+    }
+
+    #[test]
+    fn test_emoji_challenge_many() {
+        // Generate many challenges to catch edge cases
+        for _ in 0..100 {
+            let challenge = EmojiChallenge::generate(6);
+            assert!(challenge.validate(), "Generated challenge must be valid");
+            assert_eq!(challenge.options.len(), 6);
+            assert!(challenge.correct_index < 6);
+        }
     }
 
     #[test]
@@ -995,8 +1286,36 @@ mod tests {
     #[test]
     fn test_sequence_challenge() {
         let challenge = SequenceChallenge::generate(4);
-        assert!(challenge.options.len() <= 4);
+        assert_eq!(challenge.options.len(), 4, "Sequence should always have requested options");
+        assert!(challenge.validate(), "Sequence challenge should be valid");
         assert!(challenge.verify(&challenge.correct_index.to_string()));
+    }
+
+    #[test]
+    fn test_sequence_challenge_many() {
+        // Generate many to catch edge cases
+        for _ in 0..100 {
+            let challenge = SequenceChallenge::generate(4);
+            assert!(challenge.validate(), "Generated challenge must be valid");
+            assert_eq!(challenge.options.len(), 4);
+            assert!(challenge.correct_index < 4);
+        }
+    }
+
+    #[test]
+    fn test_silhouette_challenge() {
+        let challenge = SilhouetteChallenge::generate(4);
+        assert!(challenge.validate(), "Silhouette challenge should be valid");
+        assert!(challenge.verify(&challenge.correct_index.to_string()));
+    }
+
+    #[test]
+    fn test_silhouette_challenge_many() {
+        for _ in 0..100 {
+            let challenge = SilhouetteChallenge::generate(4);
+            assert!(challenge.validate(), "Generated challenge must be valid");
+            assert!(challenge.correct_index < challenge.options.len());
+        }
     }
 
     #[test]

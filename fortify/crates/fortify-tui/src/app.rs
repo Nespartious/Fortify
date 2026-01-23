@@ -688,6 +688,10 @@ impl App {
                 self.last_session_cleanup = std::time::Instant::now();
             }
 
+            // Tick security status for bucket swaps, decay, and level computation
+            // This ensures status degrades properly even without new events
+            self.security_status.tick();
+
             // Check for security level changes and log attack events
             let current_level = self.security_status.level;
             if current_level != self.last_security_level {
@@ -2576,7 +2580,7 @@ impl App {
         let unknown: (String, String) = ("Unknown".to_string(), String::new());
         match tab {
             SettingsTab::Branding => {
-                let fields: [(String, String); 5] = [
+                let fields: [(String, String); 8] = [
                     (
                         "Service Name".to_string(),
                         self.config.branding.service_name.clone(),
@@ -2594,6 +2598,14 @@ impl App {
                         self.config.branding.primary_color.clone(),
                     ),
                     (
+                        "Secondary Color".to_string(),
+                        self.config.branding.secondary_color.clone(),
+                    ),
+                    (
+                        "Tertiary Color".to_string(),
+                        self.config.branding.tertiary_color.clone(),
+                    ),
+                    (
                         "Logo Path".to_string(),
                         self.config
                             .branding
@@ -2602,11 +2614,19 @@ impl App {
                             .map(|p| p.display().to_string())
                             .unwrap_or_default(),
                     ),
+                    (
+                        "Custom CSS".to_string(),
+                        self.config
+                            .branding
+                            .custom_css
+                            .clone()
+                            .unwrap_or_default(),
+                    ),
                 ];
                 fields.get(index).cloned().unwrap_or(unknown)
             }
             SettingsTab::Captcha => {
-                let fields: [(String, String); 5] = [
+                let fields: [(String, String); 10] = [
                     (
                         "Enabled".to_string(),
                         self.config.captcha.enabled.to_string(),
@@ -2616,24 +2636,44 @@ impl App {
                         self.config.captcha.pool_size.to_string(),
                     ),
                     (
-                        "Difficulty".to_string(),
+                        "Min Pool".to_string(),
+                        self.config.captcha.min_pool_size.to_string(),
+                    ),
+                    (
+                        "Max Pool".to_string(),
+                        self.config.captcha.max_pool_size.to_string(),
+                    ),
+                    (
+                        "Difficulty (1-10)".to_string(),
                         self.config.captcha.difficulty.to_string(),
                     ),
                     (
-                        "Timeout (sec)".to_string(),
+                        "Timeout (seconds)".to_string(),
                         self.config.captcha.timeout_seconds.to_string(),
                     ),
                     (
                         "Max Attempts".to_string(),
                         self.config.captcha.max_attempts.to_string(),
                     ),
+                    (
+                        "Audio Enabled".to_string(),
+                        self.config.captcha.audio_enabled.to_string(),
+                    ),
+                    (
+                        "Rotation %".to_string(),
+                        self.config.captcha.rotation_percent.to_string(),
+                    ),
+                    (
+                        "Rotation Days".to_string(),
+                        self.config.captcha.rotation_interval_days.to_string(),
+                    ),
                 ];
                 fields.get(index).cloned().unwrap_or(unknown)
             }
             SettingsTab::Thresholds => {
-                let fields: [(String, String); 5] = [
+                let fields: [(String, String); 10] = [
                     (
-                        "Rate Limit (RPM)".to_string(),
+                        "Rate Limit (req/min)".to_string(),
                         self.config.thresholds.rate_limit_rpm.to_string(),
                     ),
                     (
@@ -2641,16 +2681,36 @@ impl App {
                         self.config.thresholds.captcha_fail_limit.to_string(),
                     ),
                     (
-                        "Temp Ban (min)".to_string(),
+                        "Temp Ban Duration (min)".to_string(),
                         self.config.thresholds.temp_ban_minutes.to_string(),
+                    ),
+                    (
+                        "Perm Ban Threshold".to_string(),
+                        self.config.thresholds.perm_ban_threshold.to_string(),
+                    ),
+                    (
+                        "Suspicion Threshold".to_string(),
+                        format!("{:.1}", self.config.thresholds.suspicion_threshold),
+                    ),
+                    (
+                        "Threat Threshold".to_string(),
+                        format!("{:.1}", self.config.thresholds.threat_threshold),
                     ),
                     (
                         "Burn Threshold".to_string(),
                         self.config.thresholds.burn_threshold.to_string(),
                     ),
                     (
+                        "Auto Ban Enabled".to_string(),
+                        self.config.thresholds.auto_ban_enabled.to_string(),
+                    ),
+                    (
                         "DDoS RPS Threshold".to_string(),
                         self.config.thresholds.ddos_rps_threshold.to_string(),
+                    ),
+                    (
+                        "Probe Sensitivity (1-10)".to_string(),
+                        self.config.thresholds.probe_sensitivity.to_string(),
                     ),
                 ];
                 fields.get(index).cloned().unwrap_or(unknown)
@@ -2748,11 +2808,20 @@ impl App {
             "Description" => self.config.branding.description = value.to_string(),
             "Welcome Message" => self.config.branding.welcome_message = value.to_string(),
             "Primary Color" => self.config.branding.primary_color = value.to_string(),
+            "Secondary Color" => self.config.branding.secondary_color = value.to_string(),
+            "Tertiary Color" => self.config.branding.tertiary_color = value.to_string(),
             "Logo Path" => {
                 self.config.branding.logo_path = if value.is_empty() {
                     None
                 } else {
                     Some(std::path::PathBuf::from(value))
+                }
+            }
+            "Custom CSS" => {
+                self.config.branding.custom_css = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
                 }
             }
             "Enabled" => self.config.captcha.enabled = parse_yes_no(value, true),
@@ -2766,24 +2835,40 @@ impl App {
                 self.config.captcha.timeout_seconds = value.parse().unwrap_or(120)
             }
             "Max Attempts" => self.config.captcha.max_attempts = value.parse().unwrap_or(3),
+            "Audio Enabled" => self.config.captcha.audio_enabled = parse_yes_no(value, false),
             "Rotation %" => self.config.captcha.rotation_percent = value.parse().unwrap_or(25),
             "Rotation Days" => {
                 self.config.captcha.rotation_interval_days = value.parse().unwrap_or(10)
             }
-            "Rate Limit (RPM)" => {
+            "Rate Limit (RPM)" | "Rate Limit (req/min)" => {
                 self.config.thresholds.rate_limit_rpm = value.parse().unwrap_or(60)
             }
             "CAPTCHA Fail Limit" => {
                 self.config.thresholds.captcha_fail_limit = value.parse().unwrap_or(5)
             }
-            "Temp Ban (min)" => {
+            "Temp Ban (min)" | "Temp Ban Duration (min)" => {
                 self.config.thresholds.temp_ban_minutes = value.parse().unwrap_or(30)
+            }
+            "Perm Ban Threshold" => {
+                self.config.thresholds.perm_ban_threshold = value.parse().unwrap_or(3)
+            }
+            "Suspicion Threshold" => {
+                self.config.thresholds.suspicion_threshold = value.parse().unwrap_or(5.0)
+            }
+            "Threat Threshold" => {
+                self.config.thresholds.threat_threshold = value.parse().unwrap_or(10.0)
             }
             "Burn Threshold" => {
                 self.config.thresholds.burn_threshold = value.parse().unwrap_or(0.7)
             }
+            "Auto Ban Enabled" => {
+                self.config.thresholds.auto_ban_enabled = parse_yes_no(value, true)
+            }
             "DDoS RPS Threshold" => {
                 self.config.thresholds.ddos_rps_threshold = value.parse().unwrap_or(100)
+            }
+            "Probe Sensitivity (1-10)" => {
+                self.config.thresholds.probe_sensitivity = value.parse().unwrap_or(5)
             }
             "Backend Address" => self.config.network.backend_address = value.to_string(),
             "HTTP Bind" => self.config.network.http_bind = value.to_string(),

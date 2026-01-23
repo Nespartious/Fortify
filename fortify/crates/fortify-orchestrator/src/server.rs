@@ -6,7 +6,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::client::legacy::Client;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -99,6 +99,7 @@ impl OrchestratorServer {
                 // Configure HTTP/1.1 with timeouts for internal API server
                 // Shorter timeouts acceptable since this is local communication
                 let result = http1::Builder::new()
+                    .timer(TokioTimer::new())
                     .header_read_timeout(Duration::from_secs(10))
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
@@ -359,23 +360,23 @@ fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<BoxBody> {
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0a0a0f 100%);
+            background: linear-gradient(135deg, #141417 0%, #18181b 50%, #141417 100%);
             font-family: 'Segoe UI', system-ui, sans-serif;
-            color: #e0e0e0;
+            color: #e4e4e7;
             padding: 20px;
         }}
         .container {{
             max-width: 600px;
             text-align: center;
-            background: rgba(20, 20, 35, 0.9);
-            border: 1px solid rgba(255, 165, 0, 0.4);
+            background: rgba(24, 24, 27, 0.9);
+            border: 1px solid rgba(201, 162, 39, 0.4);
             border-radius: 12px;
             padding: 40px;
-            box-shadow: 0 0 40px rgba(255, 165, 0, 0.2);
+            box-shadow: 0 0 40px rgba(201, 162, 39, 0.2);
         }}
         .icon {{ font-size: 64px; margin-bottom: 20px; }}
-        h1 {{ color: #ffa500; font-size: 2em; margin-bottom: 15px; }}
-        p {{ color: #aaa; line-height: 1.6; margin-bottom: 25px; }}
+        h1 {{ color: #c9a227; font-size: 2em; margin-bottom: 15px; }}
+        p {{ color: #a1a1aa; line-height: 1.6; margin-bottom: 25px; }}
     </style>
 </head>
 <body>
@@ -384,7 +385,7 @@ fn serve_paused_mirror_page(orchestrator: &Orchestrator) -> Response<BoxBody> {
         <h1>Mirror Under Maintenance</h1>
         <p>This mirror is temporarily offline. Please use an alternative mirror:</p>
         {}
-        <p style="margin-top: 30px; font-size: 0.8em; color: #666;">🛡️ Protected by Fortify</p>
+        <p style="margin-top: 30px; font-size: 0.8em; color: #71717a;">🛡️ Protected by Fortify</p>
     </div>
 </body>
 </html>"#,

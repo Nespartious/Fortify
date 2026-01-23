@@ -3,22 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Mirror Decommissioned</title>
+    <title>{{SERVICE_NAME}} — Mirror Decommissioned</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --crimson: #c96969;
-            --crimson-muted: #8b5252;
-            --sage: #9ab893;
+            
+            /* Status Colors */
+            --status-danger: #c96969;
+            --status-danger-muted: #8b5252;
+            --status-success: #9ab893;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -37,7 +51,7 @@
         }
         .alert-box {
             background: var(--bg-surface);
-            border: 1px solid var(--crimson-muted);
+            border: 1px solid var(--status-danger-muted);
             border-radius: 4px;
             padding: 32px;
             margin-bottom: 24px;
@@ -54,12 +68,19 @@
             font-size: 2.25rem;
             opacity: 0.9;
         }
+        .brand-name {
+            font-size: 0.7rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
         h1 {
             font-size: 1.2rem;
             font-weight: 500;
             letter-spacing: 0.1em;
             text-transform: uppercase;
-            color: var(--crimson);
+            color: var(--status-danger);
         }
         .status-msg {
             color: var(--text-secondary);
@@ -67,7 +88,7 @@
             font-size: 0.9rem;
         }
         .status-msg strong {
-            color: var(--crimson);
+            color: var(--status-danger);
             font-weight: 500;
         }
         .migration-box {
@@ -92,15 +113,15 @@
         .mirror-list li {
             background: var(--bg-elevated);
             border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--gold-muted);
+            border-left: 2px solid var(--brand-secondary);
             border-radius: 0 3px 3px 0;
             margin-bottom: 10px;
             transition: all 0.2s ease;
         }
         .mirror-list li:last-child { margin-bottom: 0; }
         .mirror-list li:hover {
-            border-left-color: var(--gold-primary);
-            background: rgba(201, 162, 39, 0.03);
+            border-left-color: var(--brand-primary);
+            background: color-mix(in srgb, var(--brand-primary) 3%, transparent);
         }
         .mirror-list a {
             display: block;
@@ -117,7 +138,7 @@
         .pow-badge {
             display: inline-block;
             background: rgba(125, 154, 120, 0.15);
-            color: var(--sage);
+            color: var(--status-success);
             padding: 2px 8px;
             font-size: 0.6rem;
             font-weight: 500;
@@ -145,26 +166,29 @@
 </head>
 <body>
     <div class="container">
-        <div class="alert-box">
-            <div class="alert-header">
+        <article class="alert-box">
+            <header class="alert-header">
                 <span class="alert-icon">🔥</span>
-                <h1>Mirror Burned</h1>
-            </div>
+                <div>
+                    <p class="brand-name">{{SERVICE_NAME}}</p>
+                    <h1>Mirror Burned</h1>
+                </div>
+            </header>
             <p class="status-msg">
                 <strong>This entry point has been compromised and decommissioned.</strong><br><br>
                 For security, this mirror has been taken offline. Please migrate to 
                 an alternative entry point below.
             </p>
-        </div>
-        <div class="migration-box">
+        </article>
+        <section class="migration-box">
             <h2>Available Mirrors</h2>
             <ul class="mirror-list">
                 {{MIRROR_LIST}}
             </ul>
-        </div>
-        <div class="footer-note">
+        </section>
+        <footer class="footer-note">
             Automated Defense Response • Re-verification Required
-        </div>
+        </footer>
     </div>
 </body>
 </html>

@@ -52,26 +52,71 @@ pub fn draw(
 }
 
 fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
-    let titles: Vec<Line> = SettingsTab::all()
-        .iter()
-        .map(|tab| {
-            let style = if *tab == current {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    let available_width = area.width as usize;
+    let tabs = SettingsTab::all();
+    
+    // Calculate full width needed for verbose tabs
+    let full_width: usize = tabs.iter()
+        .map(|t| t.label().len() + 5) // " Label │ "
+        .sum();
+    
+    // Use compact dot mode if tabs would overflow
+    let use_compact = full_width > available_width.saturating_sub(4);
+    
+    if use_compact {
+        // Compact: ● ○ ○ ○ ○ ○  [Branding]
+        let mut progress: Vec<Span> = Vec::new();
+        
+        for tab in tabs.iter() {
+            let is_current = *tab == current;
+            let (symbol, color) = if is_current {
+                ("◉", Color::Yellow)
             } else {
-                Style::default().fg(Color::White)
+                ("○", Color::DarkGray)
             };
-            Line::styled(format!(" {} ", tab.label()), style)
-        })
-        .collect();
+            progress.push(Span::styled(
+                format!("{} ", symbol),
+                Style::default().fg(color),
+            ));
+        }
+        
+        // Add current tab name
+        progress.push(Span::raw(" "));
+        progress.push(Span::styled(
+            format!("[{}]", current.label()),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+        
+        let line = Line::from(progress);
+        let para = Paragraph::new(line)
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::BOTTOM));
+        frame.render_widget(para, area);
+    } else {
+        // Full format with labels
+        let titles: Vec<Line> = tabs
+            .iter()
+            .map(|tab| {
+                let style = if *tab == current {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::styled(format!(" {} ", tab.label()), style)
+            })
+            .collect();
 
-    let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::BOTTOM))
-        .highlight_style(Style::default().fg(Color::Yellow))
-        .divider(Span::raw(" │ "));
+        let tabs_widget = Tabs::new(titles)
+            .block(Block::default().borders(Borders::BOTTOM))
+            .highlight_style(Style::default().fg(Color::Yellow))
+            .divider(Span::raw(" │ "));
 
-    frame.render_widget(tabs, area);
+        frame.render_widget(tabs_widget, area);
+    }
 }
 
 fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
@@ -83,6 +128,14 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(none)".to_string());
 
+    let custom_css = app
+        .config
+        .branding
+        .custom_css
+        .as_ref()
+        .map(|s| if s.len() > 30 { format!("{}...", &s[..30]) } else { s.clone() })
+        .unwrap_or_else(|| "(none)".to_string());
+
     let fields = [
         ("Service Name", app.config.branding.service_name.as_str()),
         ("Description", app.config.branding.description.as_str()),
@@ -91,7 +144,10 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
             app.config.branding.welcome_message.as_str(),
         ),
         ("Primary Color", app.config.branding.primary_color.as_str()),
+        ("Secondary Color", app.config.branding.secondary_color.as_str()),
+        ("Tertiary Color", app.config.branding.tertiary_color.as_str()),
         ("Logo Path", logo_path.as_str()),
+        ("Custom CSS", custom_css.as_str()),
     ];
 
     draw_field_list(frame, area, &fields, selected);
@@ -109,6 +165,11 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let diff = app.config.captcha.difficulty.to_string();
     let timeout = app.config.captcha.timeout_seconds.to_string();
     let attempts = app.config.captcha.max_attempts.to_string();
+    let audio = if app.config.captcha.audio_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
     let rotation_pct = app.config.captcha.rotation_percent.to_string();
     let rotation_days = app.config.captcha.rotation_interval_days.to_string();
 
@@ -120,6 +181,7 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
         ("Difficulty (1-10)", diff.as_str()),
         ("Timeout (seconds)", timeout.as_str()),
         ("Max Attempts", attempts.as_str()),
+        ("Audio Enabled", audio),
         ("Rotation %", rotation_pct.as_str()),
         ("Rotation Days", rotation_days.as_str()),
     ];
@@ -132,7 +194,14 @@ fn draw_thresholds(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let fail = app.config.thresholds.captcha_fail_limit.to_string();
     let temp = app.config.thresholds.temp_ban_minutes.to_string();
     let perm = app.config.thresholds.perm_ban_threshold.to_string();
+    let suspicion = format!("{:.1}", app.config.thresholds.suspicion_threshold);
+    let threat = format!("{:.1}", app.config.thresholds.threat_threshold);
     let burn = app.config.thresholds.burn_threshold.to_string();
+    let auto_ban = if app.config.thresholds.auto_ban_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
     let ddos = app.config.thresholds.ddos_rps_threshold.to_string();
     let probe = app.config.thresholds.probe_sensitivity.to_string();
 
@@ -141,7 +210,10 @@ fn draw_thresholds(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
         ("CAPTCHA Fail Limit", fail.as_str()),
         ("Temp Ban Duration (min)", temp.as_str()),
         ("Perm Ban Threshold", perm.as_str()),
+        ("Suspicion Threshold", suspicion.as_str()),
+        ("Threat Threshold", threat.as_str()),
         ("Burn Threshold", burn.as_str()),
+        ("Auto Ban Enabled", auto_ban),
         ("DDoS RPS Threshold", ddos.as_str()),
         ("Probe Sensitivity (1-10)", probe.as_str()),
     ];

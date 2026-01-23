@@ -30,8 +30,11 @@ fortify-core = { path = "../fortify-core" }
 fortify-orchestrator = { path = "../fortify-orchestrator" }
 fortify-controller = { path = "../fortify-controller" }
 
-# HTTP client for status polling
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# HTTP client for status polling and verification
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks"] }
+
+# Async utilities
+futures = "0.3"
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }

@@ -99,8 +99,8 @@ impl SystemStatus {
 // Security Status (Attack Detection)
 // ============================================================================
 
-/// Security threat level
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Security threat level (ordered from least to most severe)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum SecurityLevel {
     /// No threats, normal traffic
     #[default]
@@ -185,6 +185,10 @@ pub struct SecurityStatus {
     pub last_bucket_swap: std::time::Instant,
     /// Suspicious pattern flags detected
     pub suspicious_flags: Vec<String>,
+    /// When the current level was set (for hysteresis)
+    pub level_since: std::time::Instant,
+    /// Last tick time (for periodic decay)
+    pub last_tick: std::time::Instant,
 }
 
 impl Default for SecurityStatus {
@@ -199,6 +203,8 @@ impl Default for SecurityStatus {
             failed_captcha_attempts: 0,
             last_bucket_swap: std::time::Instant::now(),
             suspicious_flags: Vec::new(),
+            level_since: std::time::Instant::now(),
+            last_tick: std::time::Instant::now(),
         }
     }
 }
@@ -222,8 +228,33 @@ impl SecurityStatus {
             self.suspicious_flags.clear();
             // Decay resolved count slowly
             self.resolved_sessions = self.resolved_sessions.saturating_sub(5);
-            self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_sub(2);
+            // Faster decay for failed_captcha when not under attack
+            // This fixes the bug where Attack status persists too long
+            let decay_rate = if self.level == SecurityLevel::Attack { 2 } else { 5 };
+            self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_sub(decay_rate);
         }
+    }
+
+    /// Called periodically from main loop (every second recommended)
+    /// Ensures buckets swap and counters decay even without events
+    pub fn tick(&mut self) {
+        // Ensure buckets swap even during quiet periods
+        self.maybe_swap_buckets();
+        
+        // Additional per-second decay for faster recovery
+        // Only decay if we haven't had a tick in the last second
+        if self.last_tick.elapsed().as_secs() >= 1 {
+            self.last_tick = std::time::Instant::now();
+            
+            // Decay failed_captcha faster when not actively under attack
+            // This prevents status from being "stuck" at Attack level
+            if self.level != SecurityLevel::Attack {
+                self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_sub(1);
+            }
+        }
+        
+        // Recompute level with hysteresis
+        self.compute_level();
     }
 
     /// Record a new session
@@ -268,17 +299,15 @@ impl SecurityStatus {
             .saturating_add(self.unverified_requests_previous)
     }
 
-    /// Compute the security level based on current metrics
-    pub fn compute_level(&mut self) {
-        self.maybe_swap_buckets();
-
+    /// Calculate what level metrics suggest (without hysteresis)
+    fn calculate_candidate_level(&self) -> SecurityLevel {
         let sessions_per_min = self.new_sessions_per_minute();
         let unverified_per_min = self.unverified_requests_per_minute();
         let failed_captcha = self.failed_captcha_attempts;
         let has_suspicious_flags = !self.suspicious_flags.is_empty();
 
         // Thresholds (these could be configurable)
-        self.level = if sessions_per_min > 100 || unverified_per_min > 500 || failed_captcha > 20 {
+        if sessions_per_min > 100 || unverified_per_min > 500 || failed_captcha > 20 {
             SecurityLevel::Attack
         } else if sessions_per_min > 60
             || unverified_per_min > 300
@@ -294,7 +323,50 @@ impl SecurityStatus {
             SecurityLevel::Normal
         } else {
             SecurityLevel::Clear
-        };
+        }
+    }
+
+    /// Get the hold time required before downgrading from current level
+    fn level_hold_seconds(&self) -> u64 {
+        match self.level {
+            SecurityLevel::Attack => 120,    // 2 minutes before downgrade from Attack
+            SecurityLevel::Warning => 60,    // 1 minute before downgrade from Warning
+            SecurityLevel::Suspicious => 30, // 30 seconds from Suspicious
+            _ => 10,                         // 10 seconds for lower levels
+        }
+    }
+
+    /// Compute the security level based on current metrics with hysteresis
+    /// Upgrades happen immediately, downgrades require sustained improvement
+    pub fn compute_level(&mut self) {
+        self.maybe_swap_buckets();
+
+        let candidate_level = self.calculate_candidate_level();
+        
+        // Immediate upgrade: threats should escalate quickly
+        if candidate_level > self.level {
+            self.level = candidate_level;
+            self.level_since = std::time::Instant::now();
+            return;
+        }
+        
+        // Downgrade with hysteresis: require sustained improvement
+        if candidate_level < self.level {
+            let hold_time = self.level_hold_seconds();
+            if self.level_since.elapsed().as_secs() >= hold_time {
+                // Step down one level at a time for gradual recovery
+                self.level = match self.level {
+                    SecurityLevel::Attack => SecurityLevel::Warning,
+                    SecurityLevel::Warning => SecurityLevel::Suspicious,
+                    SecurityLevel::Suspicious => SecurityLevel::Elevated,
+                    SecurityLevel::Elevated => SecurityLevel::Normal,
+                    SecurityLevel::Normal => SecurityLevel::Clear,
+                    SecurityLevel::Clear => SecurityLevel::Clear,
+                };
+                self.level_since = std::time::Instant::now();
+            }
+        }
+        // If candidate_level == self.level, do nothing (stable)
     }
 }
 

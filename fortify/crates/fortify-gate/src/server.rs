@@ -1,4 +1,5 @@
 use fortify_core::safe_lock;
+use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
 use crate::captcha_html::{
     render_captcha_page_with_timer, render_captcha_page_with_timer_and_reason,
 };
@@ -11,7 +12,7 @@ use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -53,6 +54,7 @@ impl GateServer {
                 // Gate server with timeouts to protect against slow-loris attacks
                 // 30s header timeout accommodates Tor latency
                 let result = http1::Builder::new()
+                    .timer(TokioTimer::new())
                     .header_read_timeout(Duration::from_secs(30))
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
@@ -81,8 +83,14 @@ async fn handle_request(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    // Check if user was demoted (has the demoted cookie from node redirect)
-    let was_demoted = cookies.contains("fortify_demoted=1");
+    // Check if user was demoted - either via cookie OR via header from HTTP proxy
+    // The header is set by HTTP proxy for immediate detection (before cookie round-trip)
+    let was_demoted = cookies.contains("fortify_demoted=1") 
+        || req.headers().get("X-Fortify-Demoted").map(|v| v == "1").unwrap_or(false);
+    
+    if was_demoted {
+        tracing::info!("Demoted user detected at Gate (cookie or header)");
+    }
 
     // Extract existing session ID for preservation (even if demoted)
     // This is stored when user is demoted so we can track them across re-verifications
@@ -104,32 +112,15 @@ async fn handle_request(
     // Use existing session > pending session > generate new
     let session_id_for_captcha = existing_session_id.clone().or(pending_session_id);
 
-    // Cookie compliance check - filter out bots that don't handle cookies
-    let has_cookie_test = cookies.contains("fortify_test=1");
+    // Query string for routing
     let query = req.uri().query().unwrap_or("");
-    let is_cookie_check = query.contains("check=1");
 
     let response = match (method, path) {
         // Landing page: different content for new vs demoted users
         (&Method::GET, "/Fortify") => {
-            // Cookie compliance check (skip for demoted users who already passed)
-            if !was_demoted && !has_cookie_test && !is_cookie_check {
-                // First visit - set test cookie and redirect to check
-                return Ok(Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header("Location", "/Fortify?check=1")
-                    .header(
-                        "Set-Cookie",
-                        "fortify_test=1; Path=/; Max-Age=60; HttpOnly; SameSite=Lax",
-                    )
-                    .body(Full::new(Bytes::new()))
-                    .unwrap());
-            }
-
-            if is_cookie_check && !has_cookie_test {
-                // Came back without cookie - likely a bot
-                return Ok(serve_cookie_blocked_page());
-            }
+            // NOTE: Cookie compliance check removed - was causing false positives
+            // with Tor Browser and privacy-focused clients. The CAPTCHA challenge
+            // provides sufficient bot protection without pre-filtering.
 
             if was_demoted {
                 // Demoted user: show "hold position" friendly message, clear demoted cookie
@@ -142,13 +133,14 @@ async fn handle_request(
 
         // The captcha challenge page - accessible by all
         // Pass the session ID from cookie (pending or existing) to preserve identity
+        // Also pass demoted status to ensure threat sessions get proper treatment
         (&Method::GET, "/Fortify/Portcullis") => {
             // Parse query parameters for reason
             let reason = query
                 .split('&')
                 .find(|p| p.starts_with("reason="))
                 .and_then(|p| p.strip_prefix("reason="));
-            serve_captcha_challenge(gate, session_id_for_captcha, reason)
+            serve_captcha_challenge(gate, session_id_for_captcha, reason, was_demoted)
         }
 
         // Dynamic routes
@@ -177,212 +169,14 @@ async fn handle_request(
     Ok(response)
 }
 
-/// Block page for clients that don't support cookies (likely bots)
-fn serve_cookie_blocked_page() -> Response<BoxBody> {
-    let html = r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// ACCESS DENIED</title>
-    <style>
-        :root {
-            --bg-deep: #0a0012;
-            --neon-pink: #ff2a6d;
-            --neon-red: #ff3366;
-            --neon-cyan: #05d9e8;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background: linear-gradient(180deg, #1a0a2e 0%, #0a0012 50%, #05020a 100%);
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-red);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .container {
-            background: rgba(18, 3, 24, 0.95);
-            border: 2px solid var(--neon-red);
-            box-shadow: 0 0 40px rgba(255, 51, 102, 0.3);
-            padding: 40px 45px;
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-        }
-        .icon { font-size: 4rem; margin-bottom: 20px; }
-        h1 {
-            font-size: 1.5rem;
-            color: var(--neon-red);
-            text-transform: uppercase;
-            letter-spacing: 4px;
-            margin-bottom: 20px;
-            text-shadow: 0 0 10px currentColor;
-        }
-        .message {
-            color: #888;
-            font-size: 0.85rem;
-            line-height: 1.6;
-            margin-bottom: 25px;
-        }
-        .code {
-            font-family: 'Courier New', monospace;
-            background: rgba(255, 51, 102, 0.1);
-            padding: 12px 18px;
-            border: 1px solid var(--neon-red);
-            color: var(--neon-red);
-            font-size: 0.75rem;
-            margin-bottom: 25px;
-        }
-        .requirement {
-            font-size: 0.75rem;
-            color: var(--neon-cyan);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">⛔</div>
-        <h1>Access Denied</h1>
-        <p class="message">Your client does not support the required security mechanisms to access this service.</p>
-        <div class="code">ERROR: COOKIE_SUPPORT_REQUIRED</div>
-        <p class="requirement">Enable cookies and try again</p>
-    </div>
-</body>
-</html>"###;
-
-    Response::builder()
-        .status(StatusCode::FORBIDDEN)
-        .header("Content-Type", "text/html")
-        .body(Full::new(Bytes::from(html)))
-        .unwrap()
-}
-
 fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
     // Landing page for NEW users (first-time visitors)
-    // Castle/Fortification themed - Retrosynth style
+    // Uses template engine with citadel/gold theme
     // NO JAVASCRIPT ALLOWED
-    let html = r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// SHIELD ACTIVE</title>
-    <style>
-        :root {
-            --bg-color: #0b0014;
-            --neon-pink: #d500f9;
-            --neon-cyan: #00e5ff;
-            --grid-color: rgba(213, 0, 249, 0.1);
-        }
-        * { box-sizing: border-box; }
-        body {
-            background-color: var(--bg-color);
-            background-image: 
-                linear-gradient(var(--grid-color) 1px, transparent 1px),
-                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-            background-size: 50px 50px;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            text-align: center;
-        }
-        .container { max-width: 520px; width: 100%; }
-        .icon { font-size: 4rem; margin-bottom: 15px; }
-        h1 {
-            font-size: 2rem;
-            margin: 0 0 8px 0;
-            color: var(--neon-pink);
-            text-transform: uppercase;
-            letter-spacing: 4px;
-        }
-        .tagline {
-            font-size: 0.8rem;
-            color: #888;
-            letter-spacing: 2px;
-            margin-bottom: 30px;
-        }
-        .info-box {
-            background: rgba(213, 0, 249, 0.08);
-            border: 1px solid var(--neon-pink);
-            padding: 20px;
-            margin-bottom: 25px;
-            text-align: left;
-        }
-        .info-box p {
-            margin: 0 0 12px 0;
-            color: #aaa;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-        .info-box p:last-child { margin-bottom: 0; }
-        @keyframes fadeInDelay {
-            0% { opacity: 0; pointer-events: none; }
-            60% { opacity: 0; pointer-events: none; }
-            100% { opacity: 1; pointer-events: auto; }
-        }
-        .delay-btn {
-            animation: fadeInDelay 1.5s forwards;
-            opacity: 0;
-        }
-        .proceed-btn {
-            background: transparent;
-            color: var(--neon-cyan);
-            border: 2px solid var(--neon-cyan);
-            padding: 16px 40px;
-            font-family: inherit;
-            font-weight: 700;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-decoration: none;
-            display: inline-block;
-            transition: all 0.2s;
-        }
-        .proceed-btn:hover {
-            background: var(--neon-cyan);
-            color: #000;
-            box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
-        }
-        .status-bar {
-            margin-top: 30px;
-            font-size: 0.65rem;
-            color: #444;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">🏰</div>
-        <h1>FORTIFY SHIELD</h1>
-        <div class="tagline">▸ GATEWAY PROTECTION ACTIVE ◂</div>
-        <div class="info-box">
-            <p>This site is protected by <strong style="color: var(--neon-pink);">Fortify</strong> - a decentralized verification system designed to defend against automated threats.</p>
-            <p>Complete a quick verification to proceed. No accounts or tracking required.</p>
-        </div>
-        <div class="delay-btn">
-            <a href="/Fortify/Portcullis" class="proceed-btn">INITIALIZE HANDSHAKE</a>
-        </div>
-        <div class="status-bar">
-            <span>ONION-V3</span>
-            <span>NO-JS</span>
-            <span>ZERO-TRACK</span>
-        </div>
-    </div>
-</body>
-</html>"###;
+    
+    let engine = TemplateEngine::new();
+    let branding = BrandingVars::default();
+    let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
 
     Response::builder()
         .status(StatusCode::OK)
@@ -396,281 +190,30 @@ fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
         .unwrap()
 }
 
-fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
-    // Demoted users get an inline captcha on the same page
-    // This reduces the friction vs requiring another click
-    // Use HARD difficulty for demoted users as they've exhibited suspicious behavior
+fn serve_demoted_page(_gate: Arc<Gate>) -> Response<BoxBody> {
+    // Demoted users see the "Hold Position" page with a friendly message
+    // They click "Resume Access" to go to /Fortify/Portcullis for the 2-captcha challenge
+    // This intermediate page reduces friction and explains what's happening
+    
+    // Use template engine to render demoted.html with branding
+    let engine = TemplateEngine::new();
+    let branding = BrandingVars::default();
+    
+    // Mirror list is currently not available from Gate context
+    // Hide the section by providing an empty list with a message
+    let mut extra_vars = std::collections::HashMap::new();
+    extra_vars.insert("MIRROR_LIST".to_string(), 
+        "<li><a href=\"/Fortify/Portcullis\">Click Resume Access above to continue</a></li>".to_string());
+    
+    let html = engine.render_with_branding(TemplateType::Demoted, &branding, Some(&extra_vars));
 
-    // Create a verification session with harder difficulty
-    let session_id = uuid::Uuid::new_v4().to_string();
-
-    // Get captcha type from config - use threat captcha type for demoted users
-    let config = gate.get_captcha_config();
-    let captcha_type = config.get_captcha_type(true); // threat mode
-    let timeout_seconds = gate.get_verification_timeout();
-
-    // Force create with hard difficulty for demoted users using configured captcha type
-    let captcha_state = match gate.create_verification_with_type(
-        session_id.clone(),
-        captcha_type,
-        crate::CaptchaDifficulty::Hard,
-        true, // threat mode - requires 2 captchas
-    ) {
-        Ok(s) => s,
-        Err(_) => {
-            // Fallback: use default captcha type but still set threat mode for 2 captchas
-            match gate.create_verification_with_type(
-                session_id.clone(),
-                crate::CaptchaType::BmpText, // Default type
-                crate::CaptchaDifficulty::Hard,
-                true, // CRITICAL: still threat mode for 2 captchas
-            ) {
-                Ok(s) => s,
-                Err(e) => {
-                    return error_response(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        &format!("Gate busy: {}", e),
-                    )
-                }
-            }
-        }
-    };
-
-    // If we have the new captcha_data, render the modern captcha page with threat styling
-    if let Some(ref captcha_data) = captcha_state.captcha_data {
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "text/html")
-            .header(
-                "Set-Cookie",
-                "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
-            )
-            .body(Full::new(Bytes::from(render_captcha_page_with_timer(
-                &captcha_state.session_id,
-                &captcha_state.session_id,
-                captcha_data,
-                true, // threat styling
-                timeout_seconds,
-            ))))
-            .unwrap();
-    }
-
-    let captcha_id = &captcha_state.session_id;
-
-    // Amber warning theme with inline captcha - harder difficulty for demoted users
-    let html = format!(
-        r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// SESSION REVIEW</title>
-    <style>
-        :root {{
-            --bg-deep: #0a0012;
-            --panel-bg: #120318;
-            --neon-pink: #ff2a6d;
-            --neon-cyan: #05d9e8;
-            --neon-amber: #ffab00;
-            --neon-orange: #ff6b35;
-            --grid-color: rgba(255, 107, 53, 0.08);
-        }}
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            background: linear-gradient(180deg, #1a0a2e 0%, #0a0012 50%, #05020a 100%);
-            background-attachment: fixed;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            position: relative;
-        }}
-        body::before {{
-            content: '';
-            position: fixed;
-            bottom: 0;
-            left: -50%;
-            right: -50%;
-            height: 40%;
-            background: 
-                linear-gradient(to top, rgba(255, 107, 53, 0.1) 0%, transparent 100%),
-                repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(255, 107, 53, 0.15) 60px, rgba(255, 107, 53, 0.15) 61px);
-            transform: perspective(500px) rotateX(60deg);
-            transform-origin: bottom;
-            pointer-events: none;
-        }}
-        .container {{
-            background: rgba(18, 3, 24, 0.95);
-            border: 2px solid var(--neon-orange);
-            box-shadow: 0 0 40px rgba(255, 107, 53, 0.3), inset 0 0 60px rgba(0, 0, 0, 0.5);
-            padding: 35px 40px;
-            max-width: 460px;
-            width: 100%;
-            text-align: center;
-            position: relative;
-            z-index: 1;
-        }}
-        .warning-badge {{
-            display: inline-block;
-            background: linear-gradient(135deg, var(--neon-orange), var(--neon-amber));
-            color: #000;
-            padding: 6px 20px;
-            font-size: 0.65rem;
-            font-weight: bold;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            margin-bottom: 20px;
-        }}
-        .icon {{ font-size: 3rem; margin-bottom: 12px; }}
-        h1 {{
-            font-size: 1.5rem;
-            color: var(--neon-orange);
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            margin-bottom: 6px;
-        }}
-        .tagline {{
-            font-size: 0.7rem;
-            color: var(--neon-pink);
-            letter-spacing: 2px;
-            margin-bottom: 20px;
-        }}
-        .message-box {{
-            background: rgba(255, 107, 53, 0.08);
-            border-left: 3px solid var(--neon-orange);
-            padding: 15px;
-            margin-bottom: 25px;
-            text-align: left;
-        }}
-        .message-box p {{
-            color: #999;
-            font-size: 0.8rem;
-            line-height: 1.5;
-            margin: 0;
-        }}
-        .message-box strong {{ color: var(--neon-cyan); }}
-        
-        /* Captcha Section */
-        .captcha-section {{
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--neon-cyan);
-            padding: 20px;
-            margin-bottom: 20px;
-        }}
-        .captcha-label {{
-            font-size: 0.7rem;
-            color: var(--neon-pink);
-            letter-spacing: 2px;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-        }}
-        .captcha-display {{
-            background: #000;
-            border: 1px solid var(--neon-cyan);
-            padding: 10px;
-            margin-bottom: 15px;
-            min-height: 100px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }}
-        .captcha-display img {{ max-width: 100%; height: auto; }}
-        input[type="text"] {{
-            width: 100%;
-            background: #000;
-            border: 1px solid var(--neon-cyan);
-            color: var(--neon-cyan);
-            padding: 12px 14px;
-            font-family: inherit;
-            font-size: 1rem;
-            letter-spacing: 3px;
-            text-align: center;
-            text-transform: uppercase;
-            margin-bottom: 15px;
-        }}
-        input[type="text"]:focus {{
-            outline: none;
-            border-color: var(--neon-orange);
-            box-shadow: 0 0 10px rgba(255, 107, 53, 0.3);
-        }}
-        input[type="text"]::placeholder {{ color: #444; letter-spacing: 1px; }}
-        button {{
-            width: 100%;
-            background: transparent;
-            color: var(--neon-orange);
-            border: 2px solid var(--neon-orange);
-            padding: 14px;
-            font-family: inherit;
-            font-weight: 700;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }}
-        button:hover {{
-            background: var(--neon-orange);
-            color: #000;
-            box-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
-        }}
-        .footer-note {{
-            margin-top: 20px;
-            font-size: 0.6rem;
-            color: #444;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="warning-badge">⚠ SESSION REVIEW</div>
-        <div class="icon">🛡️</div>
-        <h1>HOLD POSITION</h1>
-        <div class="tagline">▸ ENHANCED VERIFICATION REQUIRED ◂</div>
-        
-        <div class="message-box">
-            <p>Elevated activity detected from your session. Complete verification to <strong>resume access</strong>. This is a routine security measure.</p>
-        </div>
-        
-        <form method="POST" action="/gate/verify" class="captcha-section">
-            <input type="hidden" name="session_id" value="{captcha_id}">
-            <input type="hidden" name="pow_nonce" value="0">
-            <div class="captcha-label">Security Challenge</div>
-            <div class="captcha-display">
-                <img src="/gate/captcha/{captcha_id}" alt="Verification Code">
-            </div>
-            <input type="text" name="captcha" placeholder="Enter code above" required autofocus autocomplete="off">
-            <button type="submit">VERIFY &amp; RESUME</button>
-        </form>
-        
-        <div class="footer-note">
-            No scripts • Server-verified • Session preserved
-        </div>
-    </div>
-</body>
-</html>"###,
-        captcha_id = captcha_id
-    );
-
-    // Build response - clear demoted cookie after showing the page
-    let mut response = Response::builder()
+    // Build response - do NOT clear demoted cookie here
+    // The demoted cookie will be cleared when verification succeeds at /gate/verify
+    Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
-        .header(
-            "Set-Cookie",
-            "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
-        )
         .body(Full::new(Bytes::from(html)))
-        .unwrap();
-    response.headers_mut().append(
-        "Set-Cookie",
-        "fortify_session=; Path=/; Max-Age=0; HttpOnly"
-            .parse()
-            .unwrap(),
-    );
-    response
+        .unwrap()
 }
 
 /// Render a page for the second captcha challenge (for demoted/threat sessions)
@@ -706,18 +249,40 @@ fn serve_captcha_challenge(
     gate: Arc<Gate>,
     existing_session_id: Option<String>,
     reason: Option<&str>,
+    is_demoted: bool,
 ) -> Response<BoxBody> {
     // Preserve existing session ID if available (demoted user re-verifying)
     // This keeps the same session ID so we can continue tracking them
-    let session_id = existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let session_id = existing_session_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    // Check if this is an existing threat session - if so, don't overwrite it!
-    // This prevents demoted users who navigate to /Fortify/Portcullis from losing their threat status
+    tracing::debug!(
+        "serve_captcha_challenge entry: session={}, existing_id={:?}, is_demoted={}",
+        session_id, existing_session_id, is_demoted
+    );
+
+    // Check if this is an existing session - handle various states
     if let Some(existing_state) = gate.get_verification_state(&session_id) {
-        if existing_state.is_threat {
-            // This is an existing threat session - return the existing captcha page
+        tracing::debug!(
+            "Found existing session {}: is_threat={}, captchas_remaining={}, captcha_solved={}",
+            session_id, existing_state.is_threat, existing_state.captchas_remaining, existing_state.captcha_solved
+        );
+
+        // If session already completed all captchas, we need to create a fresh session
+        // This happens when a demoted user returns after previously completing verification
+        if existing_state.captchas_remaining == 0 {
+            tracing::info!(
+                "Session {} already completed (captchas_remaining=0), creating fresh session for re-verification",
+                session_id
+            );
+            // Fall through to create new session below
+        } else if existing_state.is_threat && existing_state.captchas_remaining > 0 {
+            // This is an active threat session with captchas still needed - return the existing captcha page
             let timeout_seconds = gate.get_verification_timeout();
             if let Some(ref captcha_data) = existing_state.captcha_data {
+                tracing::info!(
+                    "Returning existing captcha for active threat session {}, captchas_remaining={}",
+                    session_id, existing_state.captchas_remaining
+                );
                 let html = render_captcha_page_with_timer_and_reason(
                     &session_id,
                     &session_id,
@@ -733,18 +298,32 @@ fn serve_captcha_challenge(
                     .unwrap();
             }
         }
+        // For non-threat sessions with remaining captchas, fall through to refresh
     }
 
-    // Get captcha type from configuration (supports random cycling)
+    // Demoted users (from cookie) should be treated as threat mode with 2 captchas
+    // This ensures they don't bypass threat handling by navigating to /Fortify/Portcullis directly
+    let is_threat_mode = is_demoted;
+    
+    // Get captcha type from configuration
+    // CRITICAL: For threat/demoted users, the FIRST captcha uses gate_captcha_type
+    // The SECOND captcha (after AdditionalCaptchaRequired) uses threat_captcha_type
+    // This ensures the two captchas are DIFFERENT types as required
     let config = gate.get_captcha_config();
-    let captcha_type = config.get_captcha_type(false); // not threat mode
+    let captcha_type = if is_threat_mode {
+        // First captcha for threat users: use gate type (BmpText by default)
+        // Second captcha will use threat type (Emoji by default) - set in verify handler
+        config.gate_captcha_type
+    } else {
+        config.get_captcha_type(false)
+    };
     let timeout_seconds = gate.get_verification_timeout();
 
     let state = match gate.create_verification_with_type(
         session_id.clone(),
         captcha_type,
-        crate::CaptchaDifficulty::Medium,
-        false, // not threat mode
+        if is_threat_mode { crate::CaptchaDifficulty::Hard } else { crate::CaptchaDifficulty::Medium },
+        is_threat_mode, // threat mode based on demoted status
     ) {
         Ok(s) => s,
         Err(e) => {
@@ -755,201 +334,31 @@ fn serve_captcha_challenge(
         }
     };
 
+    tracing::info!(
+        "serve_captcha_challenge: session={}, is_demoted={}, is_threat_mode={}, captchas_remaining={}, captcha_type={:?}",
+        session_id, is_demoted, is_threat_mode, state.captchas_remaining, captcha_type
+    );
+
     // Render the appropriate captcha page based on type
     let html = if let Some(ref captcha_data) = state.captcha_data {
         render_captcha_page_with_timer_and_reason(
             &state.session_id,
             &state.session_id,
             captcha_data,
-            false,
+            is_threat_mode,
             timeout_seconds,
             reason,
         )
     } else {
-        // Fallback to legacy BMP text captcha page if no captcha_data
+        // Fallback: use template engine for BMP text captcha page
         let captcha_id = &state.session_id;
-        format!(
-            r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
-    <style>
-        :root {{
-            --bg-color: #0d0211;
-            --panel-bg: #150520;
-            --neon-pink: #d500f9;
-            --neon-cyan: #00e5ff;
-            --neon-green: #00e676;
-            --grid-color: rgba(213, 0, 249, 0.15);
-        }}
-        body {{
-            background-color: var(--bg-color);
-            background-image: 
-                linear-gradient(var(--grid-color) 1px, transparent 1px),
-                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-            background-size: 50px 50px;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            height: 100vh;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }}
-        .panel {{
-            background: rgba(21, 5, 32, 0.95);
-            border: 2px solid var(--neon-cyan);
-            box-shadow: 0 0 20px rgba(0, 229, 255, 0.3), inset 0 0 30px rgba(0,0,0,0.8);
-            padding: 3rem 2rem;
-            width: 100%;
-            max-width: 480px;
-            position: relative;
-            box-sizing: border-box;
-            border-radius: 4px;
-        }}
-        .scanline {{
-            width: 100%;
-            height: 100px;
-            z-index: 10;
-            background: linear-gradient(0deg, rgba(0,0,0,0) 0%, rgba(255, 255, 255, 0.04) 50%, rgba(0,0,0,0) 100%);
-            opacity: 0.1;
-            position: absolute;
-            bottom: 100%;
-            animation: scanline 10s linear infinite;
-            pointer-events: none;
-        }}
-        @keyframes scanline {{
-            0% {{ bottom: 100%; }}
-            100% {{ bottom: -100px; }}
-        }}
-        h1 {{
-            text-align: center;
-            margin: 0 0 10px 0;
-            color: var(--neon-pink);
-            text-shadow: 2px 2px 0px rgba(255,0,255,0.4);
-            font-size: 2.5rem;
-            letter-spacing: 6px;
-            text-transform: uppercase;
-            font-weight: 900;
-        }}
-        .subtitle {{
-            text-align: center;
-            color: #fff;
-            margin-bottom: 30px;
-            font-size: 0.8rem;
-            letter-spacing: 3px;
-            opacity: 0.7;
-            border-bottom: 1px solid var(--neon-pink);
-            padding-bottom: 10px;
-            display: inline-block;
-            width: 100%;
-        }}
-        .captcha-container {{
-            background: #000;
-            border: 1px solid var(--neon-cyan);
-            padding: 15px;
-            margin-bottom: 25px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 130px;
-            box-shadow: inset 0 0 20px rgba(0, 229, 255, 0.1);
-            position: relative;
-        }}
-        .captcha-container::after {{
-            content: "VISUAL CHALLENGE";
-            position: absolute;
-            bottom: 5px;
-            right: 5px;
-            font-size: 0.6em;
-            color: #555;
-        }}
-        .captcha-container img {{
-            display: block;
-            border: 1px solid #222;
-        }}
-        input[type="text"] {{
-            width: 100%;
-            box-sizing: border-box;
-            background: rgba(0, 0, 0, 0.6);
-            border: 1px solid var(--neon-cyan);
-            border-left: 5px solid var(--neon-cyan);
-            color: var(--neon-green);
-            padding: 15px;
-            font-family: inherit;
-            font-size: 1.4rem;
-            text-align: center;
-            outline: none;
-            margin-bottom: 25px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            transition: all 0.3s ease;
-        }}
-        input[type="text"]:focus {{
-            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
-            background: rgba(0, 229, 255, 0.1);
-        }}
-        button {{
-            width: 100%;
-            box-sizing: border-box;
-            background: var(--neon-cyan);
-            border: none;
-            color: #000;
-            padding: 18px;
-            font-family: inherit;
-            font-size: 1.2rem;
-            font-weight: 900;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 4px;
-            transition: all 0.2s;
-            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-        }}
-        button:hover {{
-            background: var(--neon-pink);
-            color: #fff;
-            text-shadow: 0 0 5px rgba(0,0,0,0.5);
-            box-shadow: 0 0 30px var(--neon-pink);
-        }}
-        .footer-status {{
-            margin-top: 20px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.7rem;
-            color: #555;
-            text-transform: uppercase;
-        }}
-    </style>
-</head>
-<body>
-    <div class="panel">
-        <div class="scanline"></div>
-        <h1>FORTIFY</h1>
-        <div class="subtitle">SECURE GATEWAY ACCESS</div>
-        
-        <form method="POST" action="/gate/verify">
-            <div class="captcha-container">
-                <img src="/gate/captcha/{}" alt="Security Challenge">
-            </div>
-            
-            <input type="text" name="captcha" placeholder="ENTER CODE" required autocomplete="off" autofocus>
-            
-            <input type="hidden" name="session_id" value="{}">
-            
-            <button type="submit">AUTHENTICATE</button>
-        </form>
-        
-        <div class="footer-status">
-            <span>ENCRYPTION: ONION-V3</span>
-            <span>NO-JS: ACTIVE</span>
-        </div>
-    </div>
-</body>
-</html>"#,
-            captcha_id, session_id
-        )
+        let engine = TemplateEngine::new();
+        let branding = BrandingVars::default();
+        let mut extra_vars = std::collections::HashMap::new();
+        extra_vars.insert("CAPTCHA_IMAGE_URL".to_string(), format!("/gate/captcha/{}", captcha_id));
+        extra_vars.insert("SESSION_ID".to_string(), session_id.to_string());
+        extra_vars.insert("CAPTCHA_TYPE".to_string(), "bmptext".to_string());
+        engine.render_with_branding(TemplateType::Captcha, &branding, Some(&extra_vars))
     };
 
     Response::builder()
@@ -1197,241 +606,16 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
                 7 + (seed % 7) // 7 to 13 seconds
             };
 
-            let html = format!(
-                r###"<!DOCTYPE html>>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="{delay};url=/">
-    <title>FORTIFY /// VERIFIED</title>
-    <style>
-        :root {{
-            --bg-deep: #0a0012;
-            --bg-panel: #120318;
-            --neon-pink: #ff2a6d;
-            --neon-cyan: #05d9e8;
-            --neon-purple: #d300c5;
-            --sunset-orange: #ff6b35;
-            --sunset-yellow: #f7c80e;
-            --grid-color: rgba(213, 0, 197, 0.08);
-        }}
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            background: linear-gradient(180deg, #1a0a2e 0%, #0a0012 50%, #05020a 100%);
-            background-attachment: fixed;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            position: relative;
-            overflow: hidden;
-        }}
-        /* Retro grid floor effect */
-        body::before {{
-            content: '';
-            position: fixed;
-            bottom: 0;
-            left: -50%;
-            right: -50%;
-            height: 45%;
-            background: 
-                linear-gradient(to top, rgba(255, 42, 109, 0.15) 0%, transparent 100%),
-                repeating-linear-gradient(
-                    90deg,
-                    transparent,
-                    transparent 60px,
-                    rgba(255, 42, 109, 0.2) 60px,
-                    rgba(255, 42, 109, 0.2) 61px
-                ),
-                repeating-linear-gradient(
-                    0deg,
-                    transparent,
-                    transparent 30px,
-                    rgba(5, 217, 232, 0.15) 30px,
-                    rgba(5, 217, 232, 0.15) 31px
-                );
-            transform: perspective(500px) rotateX(60deg);
-            transform-origin: bottom;
-            pointer-events: none;
-        }}
-        /* Horizon glow */
-        body::after {{
-            content: '';
-            position: fixed;
-            bottom: 30%;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, transparent, var(--neon-pink), var(--sunset-orange), var(--neon-pink), transparent);
-            box-shadow: 0 0 40px var(--neon-pink), 0 0 80px var(--sunset-orange);
-            opacity: 0.7;
-        }}
-        .container {{
-            background: rgba(18, 3, 24, 0.9);
-            border: 2px solid var(--neon-pink);
-            box-shadow: 0 0 40px rgba(255, 42, 109, 0.3), inset 0 0 60px rgba(0, 0, 0, 0.5);
-            padding: 40px 50px;
-            max-width: 480px;
-            width: 100%;
-            text-align: center;
-            position: relative;
-            z-index: 1;
-        }}
-        .container::before {{
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: 20%;
-            right: 20%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
-        }}
-        .success-badge {{
-            display: inline-block;
-            background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
-            color: #fff;
-            padding: 8px 25px;
-            font-size: 0.7rem;
-            font-weight: bold;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-            margin-bottom: 25px;
-            box-shadow: 0 0 20px rgba(255, 42, 109, 0.5);
-        }}
-        .icon-row {{
-            font-size: 3rem;
-            margin-bottom: 15px;
-            text-shadow: 0 0 30px var(--neon-cyan);
-        }}
-        h1 {{
-            font-size: 1.8rem;
-            color: #fff;
-            text-transform: uppercase;
-            letter-spacing: 5px;
-            margin-bottom: 8px;
-            text-shadow: 0 0 10px var(--neon-cyan), 2px 2px 0 var(--neon-pink);
-        }}
-        .tagline {{
-            font-size: 0.75rem;
-            color: var(--neon-pink);
-            letter-spacing: 2px;
-            margin-bottom: 30px;
-        }}
-        .message-box {{
-            background: rgba(5, 217, 232, 0.05);
-            border-left: 3px solid var(--neon-cyan);
-            padding: 20px;
-            margin-bottom: 25px;
-            text-align: left;
-        }}
-        .message-box p {{
-            color: #aaa;
-            font-size: 0.85rem;
-            line-height: 1.6;
-            margin: 0;
-        }}
-        .message-box strong {{
-            color: var(--neon-cyan);
-        }}
-        .status-indicators {{
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-        }}
-        .indicator {{
-            font-size: 0.7rem;
-            padding: 6px 12px;
-            border: 1px solid;
-            letter-spacing: 1px;
-        }}
-        .indicator.active {{
-            border-color: var(--neon-cyan);
-            color: var(--neon-cyan);
-            animation: pulse-glow 2s ease-in-out infinite;
-        }}
-        @keyframes pulse-glow {{
-            0%, 100% {{ box-shadow: 0 0 5px currentColor; }}
-            50% {{ box-shadow: 0 0 15px currentColor; }}
-        }}
-        .redirect-notice {{
-            color: #555;
-            font-size: 0.75rem;
-            margin-bottom: 20px;
-            letter-spacing: 1px;
-        }}
-        /* Button appears after 3 seconds using CSS animation */
-        .proceed-btn {{
-            display: inline-block;
-            background: transparent;
-            color: var(--sunset-orange);
-            border: 2px solid var(--sunset-orange);
-            padding: 14px 35px;
-            font-family: inherit;
-            font-weight: bold;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            opacity: 0;
-            animation: fadeInButton 0.5s ease-out 3s forwards;
-        }}
-        @keyframes fadeInButton {{
-            to {{ opacity: 1; }}
-        }}
-        .proceed-btn:hover {{
-            background: var(--sunset-orange);
-            color: #000;
-            box-shadow: 0 0 25px rgba(255, 107, 53, 0.6);
-        }}
-        .footer-text {{
-            margin-top: 25px;
-            font-size: 0.6rem;
-            color: #333;
-            letter-spacing: 1px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="success-badge">★ VERIFIED ★</div>
-        <div class="icon-row">🔓</div>
-        <h1>Access Granted</h1>
-        <div class="tagline">▸ IDENTITY CONFIRMED ◂</div>
-        
-        <div class="message-box">
-            <p>Your verification is complete. You will be automatically transferred to the <strong>secure zone</strong> in a few moments.</p>
-        </div>
-        
-        <div class="status-indicators">
-            <span class="indicator active">◉ ENCRYPTED</span>
-            <span class="indicator active">◉ VERIFIED</span>
-            <span class="indicator active">◉ SECURE</span>
-        </div>
-        
-        <div class="redirect-notice">
-            [ Preparing secure connection... ]
-        </div>
-        
-        <a href="/" class="proceed-btn">Continue Now →</a>
-        
-        <div class="footer-text">
-            FORTIFY SECURITY LAYER • TRUST ESTABLISHED
-        </div>
-    </div>
-</body>
-</html>"###,
-                delay = delay_secs
-            );
+            // Use the template engine for the verified page
+            let engine = TemplateEngine::new();
+            let branding = BrandingVars::default();
+            let mut extra_vars = std::collections::HashMap::new();
+            extra_vars.insert("REDIRECT_DELAY".to_string(), delay_secs.to_string());
+            let html = engine.render_with_branding(TemplateType::Verified, &branding, Some(&extra_vars));
 
             // Set verification token cookie (60s expiry, single-use)
             // User must use this token on their next request to get a session token
+            // Also clear fortify_demoted cookie now that verification is complete
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/html")
@@ -1449,14 +633,24 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
                         session_id
                     ),
                 )
+                .header(
+                    "Set-Cookie",
+                    "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
+                )
                 .body(Full::new(Bytes::from(html)))
                 .unwrap()
         }
         Err(GateError::AdditionalCaptchaRequired) => {
             // First captcha solved - need second captcha for threat session
-            // Get the threat captcha type from config and generate new captcha
+            // Get the threat captcha type from config (MUST be different from first captcha)
+            // First captcha used gate_captcha_type, second uses threat_captcha_type
             let captcha_config = gate.get_captcha_config();
             let second_captcha_type = captcha_config.threat_captcha_type;
+            
+            tracing::info!(
+                "Second captcha for threat session: type={:?} (first was {:?})",
+                second_captcha_type, captcha_config.gate_captcha_type
+            );
 
             // Regenerate captcha with the threat type for second challenge
             if gate
@@ -1513,106 +707,15 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
             let failed_attempts = gate.get_failed_attempts(session_id);
             let delay_seconds = gate.calculate_delay(failed_attempts);
 
-            // Generate themed error page with retry functionality and progressive delay
-            let html = format!(
-                r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// VERIFICATION FAILED</title>
-    <style>
-        :root {{
-            --bg-deep: #0a0012;
-            --neon-pink: #ff2a6d;
-            --neon-cyan: #05d9e8;
-            --neon-red: #ff3366;
-        }}
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            background: linear-gradient(180deg, #1a0a2e 0%, #0a0012 50%, #05020a 100%);
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }}
-        .container {{
-            background: rgba(18, 3, 24, 0.95);
-            border: 2px solid var(--neon-red);
-            box-shadow: 0 0 40px rgba(255, 51, 102, 0.3);
-            padding: 35px 40px;
-            max-width: 450px;
-            width: 100%;
-            text-align: center;
-        }}
-        .icon {{ font-size: 3rem; margin-bottom: 15px; }}
-        h1 {{
-            font-size: 1.4rem;
-            color: var(--neon-red);
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            margin-bottom: 15px;
-        }}
-        .message {{
-            color: #999;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            margin-bottom: 20px;
-        }}
-        .attempts {{
-            font-size: 0.75rem;
-            color: var(--neon-pink);
-            margin-bottom: 20px;
-        }}
-        .delay-notice {{
-            background: rgba(255, 51, 102, 0.1);
-            border: 1px solid var(--neon-red);
-            padding: 15px;
-            margin-bottom: 20px;
-            font-size: 0.8rem;
-            color: var(--neon-red);
-            display: {delay_display};
-        }}
-        .retry-btn {{
-            display: inline-block;
-            background: transparent;
-            color: var(--neon-cyan);
-            border: 2px solid var(--neon-cyan);
-            padding: 14px 35px;
-            font-family: inherit;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-decoration: none;
-            transition: all 0.2s;
-            opacity: 0;
-            animation: fadeIn 0.5s ease-out {delay}s forwards;
-        }}
-        @keyframes fadeIn {{ to {{ opacity: 1; }} }}
-        .retry-btn:hover {{
-            background: var(--neon-cyan);
-            color: #000;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">✗</div>
-        <h1>Verification Failed</h1>
-        <p class="message">The code you entered was incorrect. Please try again with a new challenge.</p>
-        <p class="attempts">Attempts: {attempts}</p>
-        <div class="delay-notice">Please wait before retrying...</div>
-        <a href="/Fortify/Portcullis" class="retry-btn">Try Again</a>
-    </div>
-</body>
-</html>"###,
-                delay = delay_seconds,
-                delay_display = if delay_seconds > 0 { "block" } else { "none" },
-                attempts = failed_attempts
-            );
+            // Use template engine for verification failed page
+            let engine = TemplateEngine::new();
+            let branding = BrandingVars::default();
+            let mut extra_vars = std::collections::HashMap::new();
+            extra_vars.insert("ATTEMPTS".to_string(), failed_attempts.to_string());
+            extra_vars.insert("DELAY_SECONDS".to_string(), delay_seconds.to_string());
+            extra_vars.insert("DELAY_DISPLAY".to_string(), 
+                if delay_seconds > 0 { "block".to_string() } else { "none".to_string() });
+            let html = engine.render_with_branding(TemplateType::VerificationFailed, &branding, Some(&extra_vars));
 
             Response::builder()
                 .status(StatusCode::FORBIDDEN)
@@ -1666,154 +769,15 @@ fn error_response(status: StatusCode, msg: &str) -> Response<BoxBody> {
         .unwrap()
 }
 
-/// Styled error response matching Fortify theme
+/// Styled error response using template engine for consistent citadel/gold theme
 fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Response<BoxBody> {
-    let html = format!(
-        r###"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// ERROR</title>
-    <style>
-        :root {{
-            --bg-deep: #0a0012;
-            --panel-bg: #120318;
-            --neon-pink: #ff2a6d;
-            --neon-cyan: #05d9e8;
-            --neon-red: #ff3366;
-            --neon-orange: #ff6b35;
-            --grid-color: rgba(255, 51, 102, 0.08);
-        }}
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        body {{
-            background: linear-gradient(180deg, #1a0a2e 0%, #0a0012 50%, #05020a 100%);
-            background-attachment: fixed;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            position: relative;
-        }}
-        body::before {{
-            content: '';
-            position: fixed;
-            bottom: 0;
-            left: -50%;
-            right: -50%;
-            height: 40%;
-            background: 
-                linear-gradient(to top, rgba(255, 51, 102, 0.1) 0%, transparent 100%),
-                repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(255, 51, 102, 0.15) 60px, rgba(255, 51, 102, 0.15) 61px);
-            transform: perspective(500px) rotateX(60deg);
-            transform-origin: bottom;
-            pointer-events: none;
-        }}
-        .container {{
-            background: rgba(18, 3, 24, 0.95);
-            border: 2px solid var(--neon-red);
-            box-shadow: 0 0 40px rgba(255, 51, 102, 0.3), inset 0 0 60px rgba(0, 0, 0, 0.5);
-            padding: 40px 45px;
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-            position: relative;
-        }}
-        .container::before {{
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60%;
-            height: 4px;
-            background: linear-gradient(90deg, transparent, var(--neon-red), transparent);
-        }}
-        .icon {{
-            font-size: 4rem;
-            margin-bottom: 20px;
-            animation: pulse 2s ease-in-out infinite;
-        }}
-        @keyframes pulse {{
-            0%, 100% {{ opacity: 1; }}
-            50% {{ opacity: 0.5; }}
-        }}
-        h1 {{
-            font-size: 1.8rem;
-            color: var(--neon-red);
-            text-transform: uppercase;
-            letter-spacing: 4px;
-            margin-bottom: 15px;
-            text-shadow: 0 0 10px currentColor;
-        }}
-        .code {{
-            font-family: 'Courier New', monospace;
-            background: rgba(255, 51, 102, 0.1);
-            padding: 10px 15px;
-            border: 1px solid var(--neon-red);
-            color: var(--neon-red);
-            font-size: 0.8rem;
-            margin-bottom: 20px;
-            letter-spacing: 2px;
-        }}
-        .message {{
-            color: #888;
-            font-size: 0.9rem;
-            line-height: 1.6;
-            margin-bottom: 25px;
-        }}
-        .retry-btn {{
-            display: inline-block;
-            background: var(--neon-cyan);
-            border: none;
-            color: #000;
-            padding: 14px 40px;
-            font-family: inherit;
-            font-size: 1rem;
-            font-weight: 900;
-            cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            text-decoration: none;
-            transition: all 0.2s;
-        }}
-        .retry-btn:hover {{
-            background: var(--neon-pink);
-            color: #fff;
-            box-shadow: 0 0 20px var(--neon-pink);
-        }}
-        .footer {{
-            margin-top: 25px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.65rem;
-            color: #444;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">⚠</div>
-        <h1>{title}</h1>
-        <div class="code">ERROR {status_code}</div>
-        <p class="message">{message}</p>
-        <a href="/Fortify/Portcullis" class="retry-btn">⟳ Try Again</a>
-        <div class="footer">
-            <span>FORTIFY</span>
-            <span>ERROR HANDLER</span>
-        </div>
-    </div>
-</body>
-</html>"###,
-        title = title,
-        status_code = status.as_u16(),
-        message = message
-    );
+    let engine = TemplateEngine::new();
+    let branding = BrandingVars::default();
+    let mut extra_vars = std::collections::HashMap::new();
+    extra_vars.insert("ERROR_TITLE".to_string(), title.to_string());
+    extra_vars.insert("ERROR_CODE".to_string(), status.as_u16().to_string());
+    extra_vars.insert("ERROR_MESSAGE".to_string(), message.to_string());
+    let html = engine.render_with_branding(TemplateType::Error, &branding, Some(&extra_vars));
 
     Response::builder()
         .status(status)

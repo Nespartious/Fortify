@@ -3,22 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fortify — Mirror Maintenance</title>
+    <title>{{SERVICE_NAME}} — Mirror Maintenance</title>
     <style>
+        /* ============================================================
+         * BRANDING CONFIGURATION
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
         :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{TERTIARY_COLOR}};
+            
+            /* Background Colors */
             --bg-deep: #141417;
             --bg-surface: #1e1e23;
             --bg-elevated: #26262d;
+            
+            /* Border Colors */
             --border-subtle: #3a3a42;
             --border-accent: #4a4a55;
-            --gold-primary: #c9a227;
-            --gold-muted: #a68b5b;
+            
+            /* Text Colors */
             --text-primary: #f5f0e8;
             --text-secondary: #a8a4a0;
             --text-muted: #6b6862;
-            --amber: #e4bc5e;
-            --slate-blue: #6b7c8c;
-            --sage: #9ab893;
+            
+            /* Status Colors */
+            --status-warning: #e4bc5e;
+            --status-success: #9ab893;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -37,7 +50,7 @@
         }
         .maintenance-box {
             background: var(--bg-surface);
-            border: 1px solid var(--amber);
+            border: 1px solid var(--status-warning);
             border-radius: 4px;
             padding: 32px;
             margin-bottom: 24px;
@@ -54,12 +67,19 @@
             font-size: 2.25rem;
             opacity: 0.9;
         }
+        .brand-name {
+            font-size: 0.7rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
         h1 {
             font-size: 1.2rem;
             font-weight: 500;
             letter-spacing: 0.1em;
             text-transform: uppercase;
-            color: var(--amber);
+            color: var(--status-warning);
         }
         .status-msg {
             color: var(--text-secondary);
@@ -67,7 +87,7 @@
             font-size: 0.9rem;
         }
         .status-msg strong {
-            color: var(--amber);
+            color: var(--status-warning);
             font-weight: 500;
         }
         .progress-bar {
@@ -79,7 +99,7 @@
         }
         .progress-bar-inner {
             height: 100%;
-            background: var(--amber);
+            background: var(--status-warning);
             border-radius: 2px;
             animation: progress 2.5s ease-in-out infinite;
         }
@@ -109,15 +129,15 @@
         .mirror-list li {
             background: var(--bg-elevated);
             border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--gold-muted);
+            border-left: 2px solid var(--brand-secondary);
             border-radius: 0 3px 3px 0;
             margin-bottom: 10px;
             transition: all 0.2s ease;
         }
         .mirror-list li:last-child { margin-bottom: 0; }
         .mirror-list li:hover {
-            border-left-color: var(--gold-primary);
-            background: rgba(201, 162, 39, 0.03);
+            border-left-color: var(--brand-primary);
+            background: color-mix(in srgb, var(--brand-primary) 3%, transparent);
         }
         .mirror-list a {
             display: block;
@@ -134,7 +154,7 @@
         .pow-badge {
             display: inline-block;
             background: rgba(125, 154, 120, 0.15);
-            color: var(--sage);
+            color: var(--status-success);
             padding: 2px 8px;
             font-size: 0.6rem;
             font-weight: 500;
@@ -158,33 +178,44 @@
             text-align: center;
             font-size: 0.85rem;
         }
+        
+        /* Accessibility: Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            .progress-bar-inner {
+                animation: none;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="maintenance-box">
-            <div class="maintenance-header">
+        <article class="maintenance-box">
+            <header class="maintenance-header">
                 <span class="maintenance-icon">⚙️</span>
-                <h1>Mirror Maintenance</h1>
-            </div>
+                <div>
+                    <p class="brand-name">{{SERVICE_NAME}}</p>
+                    <h1>Mirror Maintenance</h1>
+                </div>
+            </header>
             <p class="status-msg">
                 <strong>This mirror is temporarily offline for scheduled maintenance.</strong><br><br>
                 The administrator has taken this entry point down. Please select 
                 an alternative mirror below to continue accessing the service.
             </p>
-            <div class="progress-bar">
+            <div class="progress-bar" aria-label="Maintenance in progress">
                 <div class="progress-bar-inner"></div>
             </div>
-        </div>
-        <div class="migration-box">
+        </article>
+        <section class="migration-box">
             <h2>Select an Active Mirror</h2>
             <ul class="mirror-list">
                 {{MIRROR_LIST}}
             </ul>
-        </div>
-        <div class="footer-note">
+        </section>
+        <footer class="footer-note">
             Scheduled Maintenance • Service Continues on Alternate Mirrors
-        </div>
+        </footer>
     </div>
 </body>
 </html>

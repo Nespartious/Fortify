@@ -7,7 +7,7 @@ use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -603,7 +603,9 @@ impl HttpProxy {
                 // header_read_timeout: Max time to receive all request headers (30s for Tor latency)
                 // max_buf_size: Limit header size to prevent memory exhaustion (16KB)
                 // Jitter applied to prevent timing-based fingerprinting
+                // timer: Required for timeouts to work in hyper 1.x
                 let result = http1::Builder::new()
+                    .timer(TokioTimer::new())
                     .header_read_timeout(jittered_timeout(30))
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
@@ -997,12 +999,35 @@ async fn process_request(
         }
     }
 
-    // Task 6: If no valid session token but we have verification token, upgrade it
-    if verified_session_id.is_none() && verification_token_opt.is_some() {
+    // Task 6: If we have a verification token, ALWAYS try to upgrade it
+    // This takes priority over existing session tokens because it means the user just solved a CAPTCHA
+    // Critical for demoted users who still have valid session tokens but need to re-verify
+    // Store the demoted session ID BEFORE potentially overwriting verified_session_id
+    let demoted_session_id = verified_session_id.clone();
+    
+    if verification_token_opt.is_some() {
         let verification_token = verification_token_opt.clone().unwrap();
         let current_ua = user_agent.as_deref().unwrap_or("unknown");
 
-        tracing::info!("Found verification token, attempting upgrade");
+        tracing::info!("Found verification token, attempting upgrade (existing session: {:?})", demoted_session_id);
+
+        // Extract the original session ID from cookie (set by Gate for demoted users)
+        // This is the session that was demoted and needs its tier override cleared
+        let original_session_id = req
+            .headers()
+            .get("cookie")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|cookies| {
+                cookies
+                    .split(';')
+                    .find(|c| c.trim().starts_with("fortify_original_session="))
+                    .map(|c| {
+                        c.trim()
+                            .strip_prefix("fortify_original_session=")
+                            .unwrap()
+                            .to_string()
+                    })
+            });
 
         // Extract the rate-limited circuit_id from cookie
         // This is the exact circuit_id that was rate-limited before CAPTCHA verification
@@ -1037,6 +1062,50 @@ async fn process_request(
                     verified_session_id = Some(token.session_id.clone());
                     raw_token_for_forwarding = Some(session_token_str.clone());
                     upgraded_session_token = Some(session_token_str); // Will set cookie in response
+
+                    // CRITICAL: Clear tier override after successful CAPTCHA verification
+                    // This ensures demoted users who solved 2 captchas get promoted back to Verified
+                    // Without this, the old "Suspicious" override would persist and send them back to Gate
+                    admin_state.clear_tier_override(&token.session_id);
+                    tracing::info!(
+                        "Cleared tier override for session {} after CAPTCHA verification",
+                        token.session_id
+                    );
+
+                    // ALSO clear tier override for the ORIGINAL session if this was a demoted user
+                    // Gate sets fortify_original_session cookie with the session that was demoted
+                    // We must clear its override too, or requests with old session cookie will loop
+                    if let Some(ref orig_sid) = original_session_id {
+                        admin_state.clear_tier_override(orig_sid);
+                        tracing::info!(
+                            "Cleared tier override for ORIGINAL demoted session {} after CAPTCHA verification",
+                            orig_sid
+                        );
+                    }
+
+                    // ALSO clear tier override for the demoted_session_id if it exists
+                    // This is the session from the fortify_session cookie that was demoted
+                    // Critical: demoted users have valid session tokens, so this is different from stale_session_id
+                    if let Some(ref demoted_sid) = demoted_session_id {
+                        if Some(demoted_sid) != original_session_id.as_ref() && demoted_sid != &token.session_id {
+                            admin_state.clear_tier_override(demoted_sid);
+                            tracing::info!(
+                                "Cleared tier override for DEMOTED session {} after CAPTCHA verification",
+                                demoted_sid
+                            );
+                        }
+                    }
+
+                    // Also check stale_session_id for completeness
+                    if let Some(ref stale_sid) = stale_session_id {
+                        if Some(stale_sid) != original_session_id.as_ref() && Some(stale_sid) != demoted_session_id.as_ref() {
+                            admin_state.clear_tier_override(stale_sid);
+                            tracing::info!(
+                                "Cleared tier override for STALE session {} after CAPTCHA verification",
+                                stale_sid
+                            );
+                        }
+                    }
 
                     // Clear rate limit quota for the circuit that was rate-limited
                     // This prevents infinite CAPTCHA loops for legitimate users during attacks
@@ -1341,30 +1410,41 @@ async fn process_request(
             admin_state.update_session(session_info);
         }
 
-        // Proxy to Gate - preserve the original path so /captcha, /verify etc work
-        // If user is at root, send them to /Fortify landing page
-        let gate_path = if request_path == "/" || request_path.is_empty() {
-            "/Fortify".to_string()
-        } else {
-            request_path.clone()
-        };
         // Detect demoted users: they had an existing session that was demoted to threat pool
         // NEW visitors (is_new_visitor=true) should NOT be marked as demoted - they get 1 CAPTCHA
         // Demoted/stale users (is_new_visitor=false) get 2 CAPTCHAs to re-verify
         let is_demoted_user = !is_new_visitor;
 
-        match proxy_to_gate(req, &gate_address, &gate_path).await {
+        // Proxy to Gate - path logic:
+        // 1. Demoted users ALWAYS go to /Fortify first (to see "Hold Position" page)
+        // 2. Already in Gate flow (/Fortify/*) - preserve path for captcha/verify etc
+        // 3. Root path - go to /Fortify landing page
+        // 4. Other paths - preserve for after verification
+        let gate_path = if is_demoted_user && !request_path.starts_with("/Fortify") {
+            // Demoted users must see the "Hold Position" page first
+            tracing::info!("Demoted user redirected to /Fortify (was trying: {})", request_path);
+            "/Fortify".to_string()
+        } else if request_path == "/" || request_path.is_empty() {
+            "/Fortify".to_string()
+        } else {
+            request_path.clone()
+        };
+
+        match proxy_to_gate_with_demoted(req, &gate_address, &gate_path, is_demoted_user).await {
             Ok(mut resp) => {
                 // Inject session cookie for new visitors so they're tracked through Gate flow
                 if let Some(ref sid) = verified_session_id {
                     // Create an unsigned token just for tracking (not for auth)
                     // Gate will issue a proper signed token after captcha verification
+                    tracing::info!("Setting fortify_pending_session cookie for session: {}", sid);
                     resp.headers_mut().append(
                         "Set-Cookie",
                         format!("fortify_pending_session={}; Path=/; HttpOnly", sid)
                             .parse()
                             .unwrap(),
                     );
+                } else {
+                    tracing::warn!("No verified_session_id available to set cookie!");
                 }
 
                 // CRITICAL: Set fortify_demoted=1 cookie for demoted users
@@ -1733,6 +1813,99 @@ async fn proxy_to_gate(
         .map_err(|e| format!("Failed to build response: {}", e))
 }
 
+/// Proxy request to Gate service with demoted status header
+/// This variant adds an X-Fortify-Demoted header so Gate knows immediately
+/// that this is a demoted user (before cookies are set)
+async fn proxy_to_gate_with_demoted(
+    req: Request<Incoming>,
+    gate_address: &str,
+    gate_path: &str,
+    is_demoted: bool,
+) -> std::result::Result<Response<BoxBody>, String> {
+    // Timeout for Gate requests (30s - Gate should respond quickly)
+    const GATE_REQUEST_TIMEOUT_SECS: u64 = 30;
+    const GATE_CONNECT_TIMEOUT_SECS: u64 = 5;
+    
+    // Build full Gate URL preserving query string if present
+    let query = req
+        .uri()
+        .query()
+        .map(|q| format!("?{}", q))
+        .unwrap_or_default();
+    let gate_url = format!("{}{}{}", gate_address, gate_path, query);
+    tracing::debug!("Proxying to Gate: {} (demoted={})", gate_url, is_demoted);
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(jittered_timeout(GATE_CONNECT_TIMEOUT_SECS))
+        .timeout(jittered_timeout(GATE_REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let method = match req.method().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
+        "HEAD" => reqwest::Method::HEAD,
+        "OPTIONS" => reqwest::Method::OPTIONS,
+        "PATCH" => reqwest::Method::PATCH,
+        _ => reqwest::Method::GET,
+    };
+
+    let mut request_builder = client.request(method, &gate_url);
+
+    // Copy safe headers
+    for (name, value) in req.headers() {
+        let name_str = name.as_str().to_lowercase();
+        if name_str != "host"
+            && name_str != "connection"
+            && name_str != "keep-alive"
+            && name_str != "transfer-encoding"
+            && name_str != "upgrade"
+        {
+            if let Ok(v) = value.to_str() {
+                request_builder = request_builder.header(name.as_str(), v);
+            }
+        }
+    }
+
+    // CRITICAL: Add demoted status header so Gate knows immediately
+    if is_demoted {
+        request_builder = request_builder.header("X-Fortify-Demoted", "1");
+    }
+
+    let body_bytes = req
+        .collect()
+        .await
+        .map_err(|e| format!("Failed to read request body: {}", e))?
+        .to_bytes();
+
+    request_builder = request_builder.body(body_bytes.to_vec());
+
+    let response = request_builder
+        .send()
+        .await
+        .map_err(|e| format!("Gate request failed: {}", e))?;
+
+    let status = StatusCode::from_u16(response.status().as_u16())
+        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+    let mut builder = Response::builder().status(status);
+
+    for (name, value) in response.headers() {
+        builder = builder.header(name.as_str(), value.as_bytes());
+    }
+
+    let body_bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read gate response body: {}", e))?;
+
+    builder
+        .body(Full::new(Bytes::from(body_bytes.to_vec())))
+        .map_err(|e| format!("Failed to build response: {}", e))
+}
+
 /// Route request to backend node
 /// Returns the response and the node ID that handled the request
 async fn route_to_backend(
@@ -1884,113 +2057,11 @@ async fn route_to_backend(
 
 /// Serve a friendly page for killed/burned sessions explaining they can try again
 fn serve_killed_session_page() -> Response<BoxBody> {
-    let html = r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FORTIFY /// SESSION EXPIRED</title>
-    <style>
-        :root {
-            --bg-color: #0b0014;
-            --neon-pink: #d500f9;
-            --neon-cyan: #00e5ff;
-            --neon-orange: #ff9100;
-            --grid-color: rgba(213, 0, 249, 0.1);
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background-color: var(--bg-color);
-            background-image: 
-                linear-gradient(var(--grid-color) 1px, transparent 1px),
-                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-            background-size: 50px 50px;
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--neon-cyan);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .container {
-            max-width: 550px;
-            width: 100%;
-            text-align: center;
-            background: rgba(11, 0, 20, 0.9);
-            border: 2px solid var(--neon-orange);
-            box-shadow: 0 0 30px rgba(255, 145, 0, 0.3), inset 0 0 50px rgba(0,0,0,0.5);
-            padding: 40px 30px;
-            border-radius: 4px;
-        }
-        .icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-        }
-        h1 {
-            font-size: 1.8rem;
-            color: var(--neon-orange);
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
-        .message {
-            font-size: 1rem;
-            line-height: 1.6;
-            margin-bottom: 25px;
-            color: var(--neon-cyan);
-        }
-        .sub-message {
-            font-size: 0.85rem;
-            color: #888;
-            margin-bottom: 30px;
-            line-height: 1.5;
-        }
-        .proceed-btn {
-            display: inline-block;
-            background: transparent;
-            color: var(--neon-cyan);
-            border: 2px solid var(--neon-cyan);
-            padding: 15px 40px;
-            font-family: inherit;
-            font-size: 1rem;
-            text-decoration: none;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        .proceed-btn:hover {
-            background: var(--neon-cyan);
-            color: #000;
-            box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
-        }
-        .status-line {
-            margin-top: 25px;
-            font-size: 0.7rem;
-            color: #555;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="icon">⚡</div>
-        <h1>Session Recycled</h1>
-        <p class="message">
-            Your previous session has expired due to natural lifecycle completion.
-            This is a routine security measure to keep all visitors safe.
-        </p>
-        <p class="sub-message">
-            To continue browsing, simply complete a quick verification challenge.
-            We appreciate your understanding and cooperation.
-        </p>
-        <a href="/Fortify/Portcullis" class="proceed-btn">Verify &amp; Continue</a>
-        <div class="status-line">FORTIFY SHIELD • SESSION RENEWAL REQUIRED</div>
-    </div>
-</body>
-</html>"#;
+    use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
+    
+    let engine = TemplateEngine::new();
+    let branding = BrandingVars::default();
+    let html = engine.render_with_branding(TemplateType::SessionExpired, &branding, None);
 
     // Clear the old session cookie so they start fresh
     Response::builder()
@@ -2226,39 +2297,39 @@ fn serve_paused_mirror_page(_onion_address: &str) -> Response<BoxBody> {
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0a0a0f 100%);
+            background: linear-gradient(135deg, #141417 0%, #18181b 50%, #141417 100%);
             font-family: 'Segoe UI', system-ui, sans-serif;
-            color: #e0e0e0;
+            color: #e4e4e7;
             padding: 20px;
         }}
         .container {{
             max-width: 600px;
             text-align: center;
-            background: rgba(20, 20, 35, 0.9);
-            border: 1px solid rgba(255, 165, 0, 0.4);
+            background: rgba(24, 24, 27, 0.9);
+            border: 1px solid rgba(201, 162, 39, 0.4);
             border-radius: 12px;
             padding: 40px;
-            box-shadow: 0 0 40px rgba(255, 165, 0, 0.2);
+            box-shadow: 0 0 40px rgba(201, 162, 39, 0.2);
         }}
         .icon {{
             font-size: 64px;
             margin-bottom: 20px;
         }}
         h1 {{
-            color: #ffa500;
+            color: #c9a227;
             font-size: 2em;
             margin-bottom: 15px;
         }}
         p {{
-            color: #aaa;
+            color: #a1a1aa;
             line-height: 1.6;
             margin-bottom: 25px;
         }}
         .mirror-link {{
             display: inline-block;
-            background: rgba(0, 255, 136, 0.1);
-            border: 1px solid rgba(0, 255, 136, 0.5);
-            color: #00ff88;
+            background: rgba(201, 162, 39, 0.1);
+            border: 1px solid rgba(201, 162, 39, 0.5);
+            color: #c9a227;
             text-decoration: none;
             padding: 15px 30px;
             border-radius: 8px;
@@ -2268,16 +2339,16 @@ fn serve_paused_mirror_page(_onion_address: &str) -> Response<BoxBody> {
             transition: all 0.3s;
         }}
         .mirror-link:hover {{
-            background: rgba(0, 255, 136, 0.2);
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+            background: rgba(201, 162, 39, 0.2);
+            box-shadow: 0 0 20px rgba(201, 162, 39, 0.3);
         }}
         .footer {{
             margin-top: 30px;
-            color: #666;
+            color: #71717a;
             font-size: 0.85em;
         }}
         .shield {{
-            color: #7b2cbf;
+            color: #c9a227;
         }}
     </style>
 </head>

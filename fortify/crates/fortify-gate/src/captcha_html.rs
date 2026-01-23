@@ -4,212 +4,224 @@
 //! NO JAVASCRIPT - all interaction via form submissions.
 
 use crate::captcha_types::*;
+use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
+use std::collections::HashMap;
 
-/// Common CSS styles for captcha pages
+/// Common CSS styles for captcha pages - Citadel/Gold theme
 pub fn captcha_css() -> &'static str {
     r#"
     :root {
-        --bg-color: #0d0211;
-        --panel-bg: #150520;
-        --neon-pink: #d500f9;
-        --neon-cyan: #00e5ff;
-        --neon-green: #00e676;
-        --neon-orange: #ff9100;
-        --grid-color: rgba(213, 0, 249, 0.15);
+        /* Citadel/Gold Theme */
+        --bg-deep: #141417;
+        --bg-surface: #1e1e23;
+        --bg-elevated: #26262d;
+        --border-subtle: #3a3a42;
+        --brand-primary: #c9a227;
+        --brand-secondary: #a68b5b;
+        --text-primary: #f5f0e8;
+        --text-secondary: #a8a4a0;
+        --text-muted: #6b6862;
+        --status-warning: #e4bc5e;
+        --status-error: #e05252;
+        --accent-green: #6aa84f;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-        background-color: var(--bg-color);
-        background-image: 
-            linear-gradient(var(--grid-color) 1px, transparent 1px),
-            linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-        background-size: 50px 50px;
-        font-family: 'Courier New', Courier, monospace;
-        color: var(--neon-cyan);
+        background: var(--bg-deep);
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: var(--text-primary);
         min-height: 100vh;
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow-x: hidden;
+        padding: 24px;
     }
     .panel {
-        background: rgba(21, 5, 32, 0.95);
-        border: 2px solid var(--neon-cyan);
-        box-shadow: 0 0 20px rgba(0, 229, 255, 0.3), inset 0 0 30px rgba(0,0,0,0.8);
-        padding: 2.5rem 2rem;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        padding: 32px 28px;
         width: 100%;
         max-width: 520px;
         position: relative;
         border-radius: 4px;
     }
     .panel.threat {
-        border-color: var(--neon-orange);
-        box-shadow: 0 0 20px rgba(255, 145, 0, 0.3), inset 0 0 30px rgba(0,0,0,0.8);
+        border-color: var(--status-warning);
+        border-left: 3px solid var(--status-warning);
     }
     h1 {
         text-align: center;
         margin: 0 0 8px 0;
-        color: var(--neon-pink);
-        text-shadow: 2px 2px 0px rgba(255,0,255,0.4);
-        font-size: 2rem;
-        letter-spacing: 4px;
+        color: var(--brand-primary);
+        font-size: 1.4rem;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
-        font-weight: 900;
+        font-weight: 500;
     }
     .subtitle {
         text-align: center;
-        color: #fff;
-        margin-bottom: 25px;
-        font-size: 0.8rem;
-        letter-spacing: 2px;
-        opacity: 0.7;
-        border-bottom: 1px solid var(--neon-pink);
-        padding-bottom: 10px;
+        color: var(--text-muted);
+        margin-bottom: 24px;
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border-subtle);
     }
     .instruction {
         text-align: center;
-        color: var(--neon-cyan);
-        font-size: 1rem;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
         margin-bottom: 20px;
-        padding: 12px;
-        background: rgba(0, 229, 255, 0.1);
-        border: 1px solid var(--neon-cyan);
+        padding: 14px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-left: 3px solid var(--brand-primary);
+        border-radius: 0 4px 4px 0;
     }
     .instruction strong {
-        color: var(--neon-pink);
-        font-size: 1.2rem;
+        color: var(--brand-primary);
+        font-size: 1.1rem;
     }
     .captcha-container {
-        background: #000;
-        border: 1px solid var(--neon-cyan);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
         padding: 20px;
-        margin-bottom: 25px;
+        margin-bottom: 24px;
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
-        gap: 15px;
+        gap: 12px;
         min-height: 100px;
+        border-radius: 4px;
     }
     .option-btn {
-        background: rgba(21, 5, 32, 0.9);
-        border: 2px solid var(--neon-cyan);
-        color: var(--neon-cyan);
-        padding: 20px;
-        font-size: 2.5rem;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-primary);
+        padding: 18px;
+        font-size: 2rem;
         cursor: pointer;
         transition: all 0.2s;
-        min-width: 80px;
+        min-width: 70px;
         text-align: center;
+        border-radius: 3px;
     }
     .option-btn:hover {
-        background: var(--neon-cyan);
-        color: #000;
-        box-shadow: 0 0 15px var(--neon-cyan);
+        background: var(--brand-primary);
+        color: var(--bg-deep);
+        border-color: var(--brand-primary);
     }
     .option-btn.small {
-        padding: 15px 25px;
-        font-size: 1.2rem;
+        padding: 12px 20px;
+        font-size: 1.1rem;
     }
     .option-btn.text {
-        font-size: 1rem;
-        padding: 12px 20px;
+        font-size: 0.95rem;
+        padding: 10px 16px;
     }
     .text-input {
         width: 100%;
-        background: rgba(0, 0, 0, 0.6);
-        border: 1px solid var(--neon-cyan);
-        border-left: 5px solid var(--neon-cyan);
-        color: var(--neon-green);
-        padding: 15px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-left: 3px solid var(--brand-primary);
+        color: var(--text-primary);
+        padding: 14px;
         font-family: inherit;
-        font-size: 1.4rem;
+        font-size: 1.2rem;
         text-align: center;
         outline: none;
         margin-bottom: 20px;
         text-transform: uppercase;
         letter-spacing: 2px;
+        border-radius: 0 4px 4px 0;
     }
     .text-input:focus {
-        box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
-        background: rgba(0, 229, 255, 0.1);
+        border-color: var(--brand-primary);
+        background: color-mix(in srgb, var(--brand-primary) 5%, var(--bg-elevated));
     }
     .submit-btn {
         width: 100%;
-        background: var(--neon-cyan);
+        background: var(--brand-primary);
         border: none;
-        color: #000;
-        padding: 16px;
+        color: var(--bg-deep);
+        padding: 14px;
         font-family: inherit;
-        font-size: 1.1rem;
-        font-weight: 900;
+        font-size: 0.9rem;
+        font-weight: 600;
         cursor: pointer;
         text-transform: uppercase;
-        letter-spacing: 3px;
+        letter-spacing: 0.15em;
         transition: all 0.2s;
+        border-radius: 3px;
     }
     .submit-btn:hover {
-        background: var(--neon-pink);
-        color: #fff;
-        box-shadow: 0 0 20px var(--neon-pink);
+        filter: brightness(1.15);
+        box-shadow: 0 4px 16px color-mix(in srgb, var(--brand-primary) 25%, transparent);
     }
     .footer {
         margin-top: 20px;
         display: flex;
         justify-content: space-between;
         font-size: 0.65rem;
-        color: #555;
+        color: var(--text-muted);
         text-transform: uppercase;
+        letter-spacing: 0.1em;
     }
     .sequence-display {
         display: flex;
-        gap: 15px;
+        gap: 12px;
         justify-content: center;
         align-items: center;
         margin-bottom: 20px;
-        font-size: 2rem;
+        font-size: 1.8rem;
     }
     .sequence-item {
-        background: rgba(0, 229, 255, 0.1);
-        border: 1px solid var(--neon-cyan);
-        padding: 15px 20px;
-        min-width: 50px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        padding: 14px 18px;
+        min-width: 48px;
         text-align: center;
+        border-radius: 3px;
     }
     .sequence-item.question {
-        color: var(--neon-pink);
-        border-color: var(--neon-pink);
+        color: var(--brand-primary);
+        border-color: var(--brand-primary);
     }
     .silhouette {
-        font-size: 5rem;
+        font-size: 4rem;
         padding: 20px;
-        background: #000;
-        border: 2px solid var(--neon-cyan);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
         margin-bottom: 20px;
         text-align: center;
-        filter: grayscale(100%) brightness(0.3);
+        filter: grayscale(100%) brightness(0.4);
+        border-radius: 4px;
     }
     .arrow-grid {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 15px;
-        max-width: 300px;
+        gap: 12px;
+        max-width: 280px;
         margin: 0 auto;
     }
     .scrambled-word {
-        font-size: 2.5rem;
-        letter-spacing: 8px;
+        font-size: 2rem;
+        letter-spacing: 6px;
         text-align: center;
-        color: var(--neon-pink);
+        color: var(--brand-primary);
         margin-bottom: 20px;
-        padding: 15px;
-        background: rgba(213, 0, 249, 0.1);
-        border: 1px solid var(--neon-pink);
+        padding: 14px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--brand-secondary);
+        border-radius: 4px;
     }
     .hint {
         text-align: center;
-        font-size: 0.9rem;
-        color: var(--neon-orange);
-        margin-bottom: 15px;
+        font-size: 0.85rem;
+        color: var(--status-warning);
+        margin-bottom: 14px;
     }
     "#
 }
@@ -228,55 +240,20 @@ pub fn render_bmp_text_captcha(session_id: &str, captcha_id: &str, is_threat: bo
 pub fn render_bmp_text_captcha_with_message(
     session_id: &str,
     captcha_id: &str,
-    is_threat: bool,
-    subtitle: &str,
-    instruction: &str,
+    _is_threat: bool,
+    _subtitle: &str,
+    _instruction: &str,
 ) -> String {
-    let panel_class = if is_threat { "panel threat" } else { "panel" };
-
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
-    <style>{}</style>
-</head>
-<body>
-    <div class="{}">
-        <h1>FORTIFY</h1>
-        <div class="subtitle">{}</div>
-        
-        <div class="instruction">
-            {}
-        </div>
-        
-        <form method="POST" action="/gate/verify">
-            <div class="captcha-container" style="justify-content: center;">
-                <img src="/gate/captcha/{}" alt="Security Challenge" style="border: 1px solid #222;">
-            </div>
-            
-            <input type="text" name="captcha" class="text-input" placeholder="ENTER CODE" required autocomplete="off" autofocus>
-            <input type="hidden" name="session_id" value="{}">
-            <input type="hidden" name="captcha_type" value="bmptext">
-            
-            <button type="submit" class="submit-btn">AUTHENTICATE</button>
-        </form>
-        
-        <div class="footer">
-            <span>ONION-V3</span>
-            <span>NO-JS</span>
-        </div>
-    </div>
-</body>
-</html>"#,
-        captcha_css(),
-        panel_class,
-        subtitle,
-        instruction,
-        captcha_id,
-        session_id
-    )
+    // Use the new template engine for consistent styling
+    let engine = TemplateEngine::new();
+    let branding = BrandingVars::default();
+    
+    let mut extra_vars = HashMap::new();
+    extra_vars.insert("CAPTCHA_IMAGE_URL".to_string(), format!("/gate/captcha/{}", captcha_id));
+    extra_vars.insert("SESSION_ID".to_string(), session_id.to_string());
+    extra_vars.insert("CAPTCHA_TYPE".to_string(), "bmptext".to_string());
+    
+    engine.render_with_branding(TemplateType::Captcha, &branding, Some(&extra_vars))
 }
 
 /// Generate HTML for Emoji Selection captcha
@@ -290,7 +267,7 @@ pub fn render_emoji_captcha(
         challenge,
         is_threat,
         "▸ EMOJI VERIFICATION ◂",
-        &format!("Select all <strong>{}</strong>", challenge.target_category),
+        &format!("Click the <strong>{}</strong>", challenge.target_description),
     )
 }
 
@@ -839,8 +816,8 @@ pub fn timer_css(timeout_seconds: u64) -> String {
         margin-bottom: 15px;
     }}
     .timer-bar {{
-        background: rgba(0, 229, 255, 0.2);
-        border: 1px solid var(--neon-cyan);
+        background: rgba(201, 162, 39, 0.2);
+        border: 1px solid var(--brand-primary);
         height: 8px;
         width: 100%;
         overflow: hidden;
@@ -848,12 +825,12 @@ pub fn timer_css(timeout_seconds: u64) -> String {
     }}
     .timer-progress {{
         height: 100%;
-        background: var(--neon-cyan);
+        background: var(--brand-primary);
         width: 100%;
         animation: countdown {0}s linear forwards;
     }}
     .panel.threat .timer-progress {{
-        background: var(--neon-orange);
+        background: var(--warning);
     }}
     @keyframes countdown {{
         from {{ width: 100%; }}
@@ -861,11 +838,11 @@ pub fn timer_css(timeout_seconds: u64) -> String {
     }}
     .timer-text {{
         font-size: 0.75rem;
-        color: var(--neon-cyan);
+        color: var(--brand-primary);
         letter-spacing: 2px;
     }}
     .panel.threat .timer-text {{
-        color: var(--neon-orange);
+        color: var(--warning);
     }}
     .expired-overlay {{
         display: none;
@@ -874,7 +851,7 @@ pub fn timer_css(timeout_seconds: u64) -> String {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(13, 2, 17, 0.95);
+        background: rgba(20, 20, 23, 0.95);
         z-index: 1000;
         flex-direction: column;
         align-items: center;
@@ -895,9 +872,9 @@ pub fn timer_css(timeout_seconds: u64) -> String {
     .expired-content {{
         text-align: center;
         padding: 40px;
-        background: rgba(21, 5, 32, 0.95);
-        border: 2px solid var(--neon-pink);
-        box-shadow: 0 0 30px rgba(213, 0, 249, 0.4);
+        background: rgba(24, 24, 27, 0.95);
+        border: 2px solid var(--brand-primary);
+        box-shadow: 0 0 30px rgba(201, 162, 39, 0.4);
         max-width: 400px;
     }}
     .expired-icon {{
@@ -905,7 +882,7 @@ pub fn timer_css(timeout_seconds: u64) -> String {
         margin-bottom: 15px;
     }}
     .expired-title {{
-        color: var(--neon-pink);
+        color: var(--brand-primary);
         font-size: 1.5rem;
         letter-spacing: 3px;
         margin-bottom: 10px;
@@ -916,7 +893,7 @@ pub fn timer_css(timeout_seconds: u64) -> String {
         margin-bottom: 20px;
     }}
     .refresh-btn {{
-        background: var(--neon-cyan);
+        background: var(--brand-primary);
         border: none;
         color: #000;
         padding: 14px 40px;
@@ -931,9 +908,9 @@ pub fn timer_css(timeout_seconds: u64) -> String {
         transition: all 0.2s;
     }}
     .refresh-btn:hover {{
-        background: var(--neon-pink);
-        color: #fff;
-        box-shadow: 0 0 20px var(--neon-pink);
+        background: var(--brand-light);
+        color: #000;
+        box-shadow: 0 0 20px var(--brand-primary);
     }}
     "#,
         timeout_seconds
