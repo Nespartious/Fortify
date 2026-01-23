@@ -335,9 +335,11 @@ impl Default for AdminState {
 
 impl AdminState {
     pub fn new() -> Self {
-        let mut inner = AdminStateInner::default();
-        // Initialize per-type CAPTCHA settings with defaults
-        inner.captcha_type_settings = CaptchaTypeSettings::all_types();
+        // Initialize with per-type CAPTCHA settings
+        let inner = AdminStateInner {
+            captcha_type_settings: CaptchaTypeSettings::all_types(),
+            ..Default::default()
+        };
         Self {
             inner: Arc::new(RwLock::new(inner)),
         }
@@ -1118,14 +1120,30 @@ impl AdminState {
     }
 
     /// Update a specific CAPTCHA type's settings
-    pub fn update_captcha_type_setting(&self, type_name: &str, enabled: bool, option_count: usize, difficulty: u8, min_pool_size: usize) {
+    pub fn update_captcha_type_setting(
+        &self,
+        type_name: &str,
+        enabled: bool,
+        option_count: usize,
+        difficulty: u8,
+        min_pool_size: usize,
+    ) {
         let mut inner = safe_write(&self.inner);
-        if let Some(setting) = inner.captcha_type_settings.iter_mut().find(|s| s.type_name == type_name) {
+        if let Some(setting) = inner
+            .captcha_type_settings
+            .iter_mut()
+            .find(|s| s.type_name == type_name)
+        {
             setting.enabled = enabled;
             setting.option_count = option_count;
             setting.difficulty = difficulty.clamp(1, 3);
             setting.min_pool_size = min_pool_size;
-            tracing::info!("CAPTCHA type {} settings updated: enabled={}, difficulty={}", type_name, enabled, difficulty);
+            tracing::info!(
+                "CAPTCHA type {} settings updated: enabled={}, difficulty={}",
+                type_name,
+                enabled,
+                difficulty
+            );
         }
     }
 
@@ -1142,8 +1160,7 @@ impl AdminState {
             behavior: inner.behavior_config.clone(),
             captcha_type_settings: inner.captcha_type_settings.clone(),
         };
-        let json = serde_json::to_string_pretty(&export)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(&export).map_err(std::io::Error::other)?;
         std::fs::write(path, json)?;
         tracing::info!("Admin config saved to {:?}", path);
         Ok(())
@@ -1152,9 +1169,9 @@ impl AdminState {
     /// Load admin state from a JSON file
     pub fn load_from_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
         let json = std::fs::read_to_string(path)?;
-        let export: AdminConfigExport = serde_json::from_str(&json)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+        let export: AdminConfigExport =
+            serde_json::from_str(&json).map_err(std::io::Error::other)?;
+
         let mut inner = safe_write(&self.inner);
         inner.branding_config = export.branding;
         inner.captcha_pool_config = export.captcha_pool;
@@ -3218,9 +3235,17 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
     let mut captcha_type_forms = String::new();
     for type_setting in &captcha_type_settings {
         let enabled_checked = if type_setting.enabled { "checked" } else { "" };
-        let status_color = if type_setting.enabled { "var(--sage)" } else { "var(--crimson)" };
-        let status_text = if type_setting.enabled { "ENABLED" } else { "DISABLED" };
-        
+        let status_color = if type_setting.enabled {
+            "var(--sage)"
+        } else {
+            "var(--crimson)"
+        };
+        let status_text = if type_setting.enabled {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        };
+
         captcha_type_forms.push_str(&format!(
             r#"
             <form method="POST" action="{}/settings/captcha-type" style="border: 1px solid var(--border-subtle); padding: 15px; margin-bottom: 10px; border-radius: 8px;">
@@ -5016,12 +5041,12 @@ async fn handle_captcha_type_settings(
 
 async fn handle_config_save(state: Arc<AdminState>) -> Response<BoxBody> {
     let path = AdminState::default_config_path();
-    
+
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    
+
     match state.save_to_file(&path) {
         Ok(_) => {
             tracing::info!("Admin: Configuration saved to {:?}", path);
@@ -5030,7 +5055,7 @@ async fn handle_config_save(state: Arc<AdminState>) -> Response<BoxBody> {
             tracing::error!("Admin: Failed to save config: {}", e);
         }
     }
-    
+
     redirect(&format!("{}/settings", ADMIN_PATH))
 }
 
@@ -5043,7 +5068,7 @@ async fn handle_config_reload(state: Arc<AdminState>) -> Response<BoxBody> {
             tracing::error!("Admin: Failed to reload config: {}", e);
         }
     }
-    
+
     redirect(&format!("{}/settings", ADMIN_PATH))
 }
 

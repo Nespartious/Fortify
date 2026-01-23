@@ -23,19 +23,19 @@ const TOR_CONTROL_TIMEOUT_SECS: u64 = 15;
 fn connect_tor_control_with_timeout(addr: &SocketAddr) -> Result<TcpStream> {
     let stream = TcpStream::connect(addr)
         .map_err(|e| OrchestratorError::TorConnectionFailed(e.to_string()))?;
-    
+
     stream
         .set_nodelay(true)
         .map_err(|e| OrchestratorError::TorConfigError(e.to_string()))?;
-    
+
     let timeout = Some(jittered_timeout(TOR_CONTROL_TIMEOUT_SECS));
-    stream
-        .set_read_timeout(timeout)
-        .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to set read timeout: {}", e)))?;
-    stream
-        .set_write_timeout(timeout)
-        .map_err(|e| OrchestratorError::TorConfigError(format!("Failed to set write timeout: {}", e)))?;
-    
+    stream.set_read_timeout(timeout).map_err(|e| {
+        OrchestratorError::TorConfigError(format!("Failed to set read timeout: {}", e))
+    })?;
+    stream.set_write_timeout(timeout).map_err(|e| {
+        OrchestratorError::TorConfigError(format!("Failed to set write timeout: {}", e))
+    })?;
+
     Ok(stream)
 }
 
@@ -202,7 +202,9 @@ impl TorService {
 
         let mut stream = stream.ok_or_else(|| {
             tracing::error!("Failed to connect to Tor control port at {}", addr);
-            OrchestratorError::TorConnectionFailed("Failed to connect to Tor control port".to_string())
+            OrchestratorError::TorConnectionFailed(
+                "Failed to connect to Tor control port".to_string(),
+            )
         })?;
 
         tracing::debug!("Authenticating with Tor control port...");
@@ -339,16 +341,15 @@ impl TorService {
         })?;
 
         // Signal Tor to reload configuration (with retry and timeout)
-        let stream_result = (0..3).find_map(|attempt| {
-            match connect_tor_control_with_timeout(addr) {
+        let stream_result =
+            (0..3).find_map(|attempt| match connect_tor_control_with_timeout(addr) {
                 Ok(s) => Some(s),
                 Err(_) if attempt < 2 => {
                     std::thread::sleep(Duration::from_millis(100 * (attempt as u64 + 1)));
                     None
                 }
                 Err(_) => None,
-            }
-        });
+            });
 
         if let Some(mut stream) = stream_result {
             if self.authenticate(&mut stream, cookie_path).is_ok() {
@@ -433,7 +434,9 @@ impl TorService {
         }
 
         let mut stream = stream.ok_or_else(|| {
-            OrchestratorError::TorConnectionFailed("Failed to connect to Tor control port".to_string())
+            OrchestratorError::TorConnectionFailed(
+                "Failed to connect to Tor control port".to_string(),
+            )
         })?;
         self.authenticate(&mut stream, cookie_path)?;
 
@@ -606,40 +609,47 @@ impl TorService {
 
     fn run_command(&self, stream: &mut TcpStream, command: &str) -> Result<Vec<String>> {
         let cmd = format!("{}\r\n", command);
-        stream
-            .write_all(cmd.as_bytes())
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::TimedOut || e.kind() == std::io::ErrorKind::WouldBlock {
-                    tracing::warn!("Tor control write timed out after {}s", TOR_CONTROL_TIMEOUT_SECS);
-                    OrchestratorError::TorTimeout(TOR_CONTROL_TIMEOUT_SECS)
-                } else {
-                    OrchestratorError::TorConfigError(e.to_string())
-                }
-            })?;
-        stream
-            .flush()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::TimedOut || e.kind() == std::io::ErrorKind::WouldBlock {
-                    OrchestratorError::TorTimeout(TOR_CONTROL_TIMEOUT_SECS)
-                } else {
-                    OrchestratorError::TorConfigError(e.to_string())
-                }
-            })?;
+        stream.write_all(cmd.as_bytes()).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::TimedOut
+                || e.kind() == std::io::ErrorKind::WouldBlock
+            {
+                tracing::warn!(
+                    "Tor control write timed out after {}s",
+                    TOR_CONTROL_TIMEOUT_SECS
+                );
+                OrchestratorError::TorTimeout(TOR_CONTROL_TIMEOUT_SECS)
+            } else {
+                OrchestratorError::TorConfigError(e.to_string())
+            }
+        })?;
+        stream.flush().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::TimedOut
+                || e.kind() == std::io::ErrorKind::WouldBlock
+            {
+                OrchestratorError::TorTimeout(TOR_CONTROL_TIMEOUT_SECS)
+            } else {
+                OrchestratorError::TorConfigError(e.to_string())
+            }
+        })?;
 
         let mut reader = BufReader::new(stream);
         let mut lines = Vec::new();
         loop {
             let mut line = String::new();
-            let read = reader
-                .read_line(&mut line)
-                .map_err(|e| {
-                    if e.kind() == std::io::ErrorKind::TimedOut || e.kind() == std::io::ErrorKind::WouldBlock {
-                        tracing::warn!("Tor control read timed out after {}s for command: {}", TOR_CONTROL_TIMEOUT_SECS, command);
-                        OrchestratorError::TorTimeout(TOR_CONTROL_TIMEOUT_SECS)
-                    } else {
-                        OrchestratorError::TorConfigError(e.to_string())
-                    }
-                })?;
+            let read = reader.read_line(&mut line).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock
+                {
+                    tracing::warn!(
+                        "Tor control read timed out after {}s for command: {}",
+                        TOR_CONTROL_TIMEOUT_SECS,
+                        command
+                    );
+                    OrchestratorError::TorTimeout(TOR_CONTROL_TIMEOUT_SECS)
+                } else {
+                    OrchestratorError::TorConfigError(e.to_string())
+                }
+            })?;
             if read == 0 {
                 break;
             }

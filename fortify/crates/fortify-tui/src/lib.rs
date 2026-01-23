@@ -31,7 +31,7 @@ pub use mirror_health::{
     MirrorHealth, MirrorHealthChecker, MirrorHealthResult, MirrorHealthSummary, MirrorHealthTracker,
 };
 pub use status::{
-    MirrorStatus, NodeStatus, OrchestratorStatusResponse, StatusMessage, StatusPoller,
-    StatusPollerConfig, StatusPollerHandle, SystemStatus, start_status_polling,
+    start_status_polling, MirrorStatus, NodeStatus, OrchestratorStatusResponse, StatusMessage,
+    StatusPoller, StatusPollerConfig, StatusPollerHandle, SystemStatus,
 };
 pub use verification::{OnionVerifier, VerificationConfig, VerificationResult};

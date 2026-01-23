@@ -230,7 +230,11 @@ impl SecurityStatus {
             self.resolved_sessions = self.resolved_sessions.saturating_sub(5);
             // Faster decay for failed_captcha when not under attack
             // This fixes the bug where Attack status persists too long
-            let decay_rate = if self.level == SecurityLevel::Attack { 2 } else { 5 };
+            let decay_rate = if self.level == SecurityLevel::Attack {
+                2
+            } else {
+                5
+            };
             self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_sub(decay_rate);
         }
     }
@@ -240,19 +244,19 @@ impl SecurityStatus {
     pub fn tick(&mut self) {
         // Ensure buckets swap even during quiet periods
         self.maybe_swap_buckets();
-        
+
         // Additional per-second decay for faster recovery
         // Only decay if we haven't had a tick in the last second
         if self.last_tick.elapsed().as_secs() >= 1 {
             self.last_tick = std::time::Instant::now();
-            
+
             // Decay failed_captcha faster when not actively under attack
             // This prevents status from being "stuck" at Attack level
             if self.level != SecurityLevel::Attack {
                 self.failed_captcha_attempts = self.failed_captcha_attempts.saturating_sub(1);
             }
         }
-        
+
         // Recompute level with hysteresis
         self.compute_level();
     }
@@ -329,10 +333,10 @@ impl SecurityStatus {
     /// Get the hold time required before downgrading from current level
     fn level_hold_seconds(&self) -> u64 {
         match self.level {
-            SecurityLevel::Attack => 120,    // 2 minutes before downgrade from Attack
-            SecurityLevel::Warning => 60,    // 1 minute before downgrade from Warning
+            SecurityLevel::Attack => 120, // 2 minutes before downgrade from Attack
+            SecurityLevel::Warning => 60, // 1 minute before downgrade from Warning
             SecurityLevel::Suspicious => 30, // 30 seconds from Suspicious
-            _ => 10,                         // 10 seconds for lower levels
+            _ => 10,                      // 10 seconds for lower levels
         }
     }
 
@@ -342,14 +346,14 @@ impl SecurityStatus {
         self.maybe_swap_buckets();
 
         let candidate_level = self.calculate_candidate_level();
-        
+
         // Immediate upgrade: threats should escalate quickly
         if candidate_level > self.level {
             self.level = candidate_level;
             self.level_since = std::time::Instant::now();
             return;
         }
-        
+
         // Downgrade with hysteresis: require sustained improvement
         if candidate_level < self.level {
             let hold_time = self.level_hold_seconds();

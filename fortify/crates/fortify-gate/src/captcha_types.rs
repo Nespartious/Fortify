@@ -325,9 +325,8 @@ impl EmojiChallenge {
         let correct_position = rng.random_range(0..option_count);
 
         // Create a shuffled list of available category indices (excluding target)
-        let mut available_cats: Vec<usize> = (0..categories.len())
-            .filter(|&i| i != target_idx)
-            .collect();
+        let mut available_cats: Vec<usize> =
+            (0..categories.len()).filter(|&i| i != target_idx).collect();
         // Shuffle for randomness
         for i in (1..available_cats.len()).rev() {
             let j = rng.random_range(0..=i);
@@ -374,22 +373,21 @@ impl EmojiChallenge {
     fn generate_simple_fallback(option_count: usize) -> Self {
         let categories = get_emoji_categories();
         let mut rng = rand::rng();
-        
+
         // Use first N categories to ensure uniqueness
         let count = option_count.min(categories.len());
         let correct_position = rng.random_range(0..count);
-        
+
         let target = &categories[correct_position];
-        
+
         let mut options = Vec::with_capacity(count);
-        for i in 0..count {
-            let cat = &categories[i];
+        for (i, cat) in categories.iter().enumerate().take(count) {
             options.push(EmojiOption {
                 emoji: cat.emojis[0].to_string(),
                 index: i,
             });
         }
-        
+
         Self {
             target_category: target.name.to_string(),
             target_description: target.description.to_string(),
@@ -405,12 +403,12 @@ impl EmojiChallenge {
         if self.options.is_empty() {
             return false;
         }
-        
+
         // 2. Correct index must be valid
         if self.correct_index >= self.options.len() {
             return false;
         }
-        
+
         // 3. No duplicate emojis (each option must be unique)
         let mut seen = std::collections::HashSet::new();
         for opt in &self.options {
@@ -418,7 +416,7 @@ impl EmojiChallenge {
                 return false; // Duplicate found
             }
         }
-        
+
         true
     }
 
@@ -680,7 +678,7 @@ impl SequenceChallenge {
         // Ensure we always have enough wrong answers
         let correct_position = rng.random_range(0..option_count);
         let mut options: Vec<SequenceOption> = Vec::with_capacity(option_count);
-        
+
         // Extend wrong_answers if we don't have enough
         let mut wrongs = wrong_answers;
         while wrongs.len() < option_count - 1 {
@@ -735,11 +733,11 @@ impl SequenceChallenge {
         let start = rng.random_range(1..10);
         let sequence: Vec<String> = (0..3).map(|i| (start + i).to_string()).collect();
         let correct_answer = (start + 3).to_string();
-        
+
         let correct_position = rng.random_range(0..option_count);
         let mut options = Vec::with_capacity(option_count);
         let mut wrong_val = start + 4;
-        
+
         for i in 0..option_count {
             if i == correct_position {
                 options.push(SequenceOption {
@@ -754,7 +752,7 @@ impl SequenceChallenge {
                 wrong_val += 1;
             }
         }
-        
+
         Self {
             sequence_display: sequence,
             question_text: "What comes next?".to_string(),
@@ -770,19 +768,19 @@ impl SequenceChallenge {
         if self.options.is_empty() {
             return false;
         }
-        
+
         // 2. Correct index must be valid
         if self.correct_index >= self.options.len() {
             return false;
         }
-        
+
         // 3. All options must have valid display text
         for opt in &self.options {
             if opt.display.is_empty() || opt.display == "?" {
                 return false;
             }
         }
-        
+
         // 4. No duplicate options
         let mut seen = std::collections::HashSet::new();
         for opt in &self.options {
@@ -790,7 +788,7 @@ impl SequenceChallenge {
                 return false;
             }
         }
-        
+
         true
     }
 
@@ -1115,11 +1113,11 @@ impl SilhouetteChallenge {
     fn generate_simple_fallback(option_count: usize) -> Self {
         let categories = get_silhouette_categories();
         let mut rng = rand::rng();
-        
+
         let correct_position = rng.random_range(0..option_count.min(categories.len()));
         let correct_cat = &categories[correct_position];
         let symbol = correct_cat.symbols[0].to_string();
-        
+
         let options: Vec<SilhouetteOption> = (0..option_count.min(categories.len()))
             .map(|i| {
                 let cat = &categories[i];
@@ -1130,7 +1128,7 @@ impl SilhouetteChallenge {
                 }
             })
             .collect();
-        
+
         Self {
             silhouette_symbol: symbol,
             correct_category: correct_cat.name.to_string(),
@@ -1146,17 +1144,17 @@ impl SilhouetteChallenge {
         if self.options.is_empty() {
             return false;
         }
-        
+
         // 2. Correct index must be valid
         if self.correct_index >= self.options.len() {
             return false;
         }
-        
+
         // 3. Correct category must be in options at correct_index
         if self.options[self.correct_index].category_name != self.correct_category {
             return false;
         }
-        
+
         // 4. No duplicate categories
         let mut seen = std::collections::HashSet::new();
         for opt in &self.options {
@@ -1164,7 +1162,7 @@ impl SilhouetteChallenge {
                 return false;
             }
         }
-        
+
         true
     }
 
@@ -1286,7 +1284,11 @@ mod tests {
     #[test]
     fn test_sequence_challenge() {
         let challenge = SequenceChallenge::generate(4);
-        assert_eq!(challenge.options.len(), 4, "Sequence should always have requested options");
+        assert_eq!(
+            challenge.options.len(),
+            4,
+            "Sequence should always have requested options"
+        );
         assert!(challenge.validate(), "Sequence challenge should be valid");
         assert!(challenge.verify(&challenge.correct_index.to_string()));
     }

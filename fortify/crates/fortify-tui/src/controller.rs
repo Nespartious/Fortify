@@ -100,8 +100,9 @@ impl ControllerClient {
     /// Get controller health status
     pub async fn get_health(&self) -> Result<ControllerHealth, String> {
         let url = format!("{}/health", self.config.base_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -120,8 +121,9 @@ impl ControllerClient {
     /// Get all services
     pub async fn get_services(&self) -> Result<Vec<ServiceSnapshot>, String> {
         let url = format!("{}/services", self.config.base_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -140,7 +142,7 @@ impl ControllerClient {
     /// Get node services only
     pub async fn get_nodes(&self) -> Result<Vec<ServiceSnapshot>, String> {
         let url = format!("{}/nodes", self.config.base_url);
-        
+
         #[derive(Deserialize)]
         struct NodesResponse {
             nodes: Vec<ServiceSnapshot>,
@@ -148,7 +150,8 @@ impl ControllerClient {
             count: usize,
         }
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await

@@ -1398,12 +1398,19 @@ impl DeploymentManager {
     }
 
     /// Verify that onion addresses are reachable via Tor
-    pub async fn verify_onion_addresses(&self, addresses: &[String], socks_port: u16) -> Vec<crate::verification::VerificationResult> {
+    pub async fn verify_onion_addresses(
+        &self,
+        addresses: &[String],
+        socks_port: u16,
+    ) -> Vec<crate::verification::VerificationResult> {
         self.log_tx
             .send(LogEntry::from_source(
                 LogLevel::Info,
                 "verify",
-                &format!("Starting verification of {} onion address(es)...", addresses.len()),
+                &format!(
+                    "Starting verification of {} onion address(es)...",
+                    addresses.len()
+                ),
             ))
             .await
             .ok();
@@ -1412,26 +1419,32 @@ impl DeploymentManager {
 
         let config = VerificationConfig::with_socks_port(socks_port);
         let verifier = OnionVerifier::new(config);
-        
+
         let mut results = Vec::new();
         for (i, address) in addresses.iter().enumerate() {
             self.log_tx
                 .send(LogEntry::from_source(
                     LogLevel::Debug,
                     "verify",
-                    &format!("Verifying address {}/{}: {}", i + 1, addresses.len(), address),
+                    &format!(
+                        "Verifying address {}/{}: {}",
+                        i + 1,
+                        addresses.len(),
+                        address
+                    ),
                 ))
                 .await
                 .ok();
 
             let result = verifier.verify(address).await;
-            
+
             if result.reachable {
                 self.log_tx
                     .send(LogEntry::from_source(
                         LogLevel::Info,
                         "verify",
-                        &format!("✓ {} is reachable ({}ms)", 
+                        &format!(
+                            "✓ {} is reachable ({}ms)",
                             address,
                             result.response_time_ms.unwrap_or(0)
                         ),
@@ -1443,7 +1456,8 @@ impl DeploymentManager {
                     .send(LogEntry::from_source(
                         LogLevel::Warn,
                         "verify",
-                        &format!("✗ {} is NOT reachable: {}", 
+                        &format!(
+                            "✗ {} is NOT reachable: {}",
                             address,
                             result.error.as_deref().unwrap_or("Unknown error")
                         ),
@@ -1451,7 +1465,7 @@ impl DeploymentManager {
                     .await
                     .ok();
             }
-            
+
             results.push(result);
         }
 
@@ -1461,8 +1475,9 @@ impl DeploymentManager {
             .send(LogEntry::from_source(
                 LogLevel::Info,
                 "verify",
-                &format!("Verification complete: {}/{} addresses reachable", 
-                    reachable_count, 
+                &format!(
+                    "Verification complete: {}/{} addresses reachable",
+                    reachable_count,
                     addresses.len()
                 ),
             ))

@@ -186,7 +186,7 @@ impl TorManager {
                 setconf_parts.push(format!("HiddenServicePort=\"{}\"", port));
             }
             setconf_parts.push("HiddenServiceVersion=3".to_string());
-            
+
             // Add DoS defense options (protects against introduction point DoS)
             setconf_parts.push("HiddenServiceEnableIntroDoSDefense=1".to_string());
             setconf_parts.push("HiddenServiceMaxStreams=100".to_string());
@@ -214,7 +214,7 @@ impl TorManager {
             target_port
         ));
         setconf_parts.push("HiddenServiceVersion=3".to_string());
-        
+
         // Add DoS defense options (protects against introduction point DoS)
         setconf_parts.push("HiddenServiceEnableIntroDoSDefense=1".to_string());
         setconf_parts.push("HiddenServiceMaxStreams=100".to_string());
