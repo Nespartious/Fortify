@@ -272,6 +272,8 @@ pub struct BrandingVars {
     pub footer_branding: String,
     /// Custom CSS injection point content
     pub branding_injection: String,
+    /// Gate path for verification (e.g., "/Fortify/Portcullis" or "/gate")
+    pub gate_path: String,
 }
 
 impl Default for BrandingVars {
@@ -282,6 +284,7 @@ impl Default for BrandingVars {
             secondary_color: "#a68b5b".to_string(), // Muted gold
             footer_branding: String::new(),
             branding_injection: String::new(),
+            gate_path: "/Fortify/Portcullis".to_string(), // Default gate path
         }
     }
 }
@@ -301,6 +304,7 @@ impl BrandingVars {
             "FORTIFY_BRANDING_INJECTION_POINT".to_string(),
             self.branding_injection.clone(),
         );
+        map.insert("GATE_PATH".to_string(), self.gate_path.clone());
         map
     }
 }
@@ -434,12 +438,14 @@ mod tests {
             secondary_color: "#00ff00".to_string(),
             footer_branding: "Footer".to_string(),
             branding_injection: "/* custom */".to_string(),
+            gate_path: "/test/gate".to_string(),
         };
 
         let map = branding.to_hashmap();
         assert_eq!(map.get("SERVICE_NAME").unwrap(), "TestService");
         assert_eq!(map.get("PRIMARY_COLOR").unwrap(), "#ff0000");
         assert_eq!(map.get("FORTIFY_FOOTER_BRANDING").unwrap(), "Footer");
+        assert_eq!(map.get("GATE_PATH").unwrap(), "/test/gate");
     }
 
     #[test]
