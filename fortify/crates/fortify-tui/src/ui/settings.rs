@@ -2,7 +2,7 @@
 
 use ratatui::{prelude::*, widgets::*};
 
-use crate::app::{App, Focus, SettingsTab};
+use crate::app::{App, Focus, SettingsTab, View};
 use crate::config::TrafficTier;
 
 /// Draw settings screen
@@ -12,7 +12,14 @@ pub fn draw(
     area: Rect,
     current_tab: SettingsTab,
     field_index: usize,
+    read_only: bool,
 ) {
+    let title = if read_only {
+        " 👁 View Settings (Read-Only) "
+    } else {
+        " ⚙ Modify Settings "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(if app.focus == Focus::Settings {
@@ -20,7 +27,7 @@ pub fn draw(
         } else {
             Style::default().fg(Color::DarkGray)
         })
-        .title(" ⚙ Settings ");
+        .title(title);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -197,11 +204,39 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let attempts = app.config.captcha.max_attempts.to_string();
     let rotation_days = app.config.captcha.rotation_interval_days.to_string();
 
+    // New CAPTCHA type fields
+    let gate_type = app.config.captcha.gate_captcha_type.display_name();
+    let threat_enabled = if app.config.captcha.threat_captcha_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
+    let threat_type = app.config.captcha.threat_captcha_type.display_name();
+    let random_cycling = if app.config.captcha.random_cycling {
+        "Yes"
+    } else {
+        "No"
+    };
+    // Format cycling types as comma-separated list
+    let cycling_types_str: String = app
+        .config
+        .captcha
+        .cycling_types
+        .iter()
+        .map(|t| t.display_name())
+        .collect::<Vec<_>>()
+        .join(", ");
+
     let fields = [
         ("Enabled", enabled),
-        ("Pool Size", pool.as_str()),
-        ("Min Pool", min_pool.as_str()),
-        ("Max Pool", max_pool.as_str()),
+        ("Gate CAPTCHA Type ↵", gate_type),
+        ("Threat Type Enabled ↵", threat_enabled),
+        ("Threat CAPTCHA Type ↵", threat_type),
+        ("Random Cycling ↵", random_cycling),
+        ("Cycling Types", cycling_types_str.as_str()),
+        ("Pool Size ⚠️Restart", pool.as_str()),
+        ("Min Pool ⚠️Restart", min_pool.as_str()),
+        ("Max Pool ⚠️Restart", max_pool.as_str()),
         ("Difficulty (1-10)", diff.as_str()),
         ("Timeout (seconds)", timeout.as_str()),
         ("Max Attempts", attempts.as_str()),
@@ -426,24 +461,42 @@ fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selec
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
-    let dirty_indicator = if app.config.is_dirty() {
-        Span::styled(" [Modified] ", Style::default().fg(Color::Yellow))
+    // Check if we're in read-only mode
+    let is_read_only = matches!(app.view, View::ViewSettings { .. });
+
+    if is_read_only {
+        // Read-only mode: minimal controls
+        let hints = Line::from(vec![
+            Span::styled("[←→]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Tab "),
+            Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Scroll "),
+            Span::styled("[Esc]", Style::default().fg(Color::Cyan)),
+            Span::raw(" Done "),
+        ]);
+        let footer = Paragraph::new(hints).alignment(Alignment::Center);
+        frame.render_widget(footer, area);
     } else {
-        Span::raw("")
-    };
+        // Edit mode: full controls
+        let dirty_indicator = if app.config.is_dirty() {
+            Span::styled(" [Modified] ", Style::default().fg(Color::Yellow))
+        } else {
+            Span::raw("")
+        };
 
-    let hints = Line::from(vec![
-        Span::styled("[←→]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Tab "),
-        Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Select "),
-        Span::styled("[Enter]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Edit "),
-        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Back "),
-        dirty_indicator,
-    ]);
+        let hints = Line::from(vec![
+            Span::styled("[←→]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Tab "),
+            Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Select "),
+            Span::styled("[Enter]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Edit "),
+            Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Back "),
+            dirty_indicator,
+        ]);
 
-    let footer = Paragraph::new(hints).alignment(Alignment::Center);
-    frame.render_widget(footer, area);
+        let footer = Paragraph::new(hints).alignment(Alignment::Center);
+        frame.render_widget(footer, area);
+    }
 }

@@ -4,6 +4,68 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Available CAPTCHA types for verification challenges.
+/// Mirrors the types available in fortify-gate.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CaptchaType {
+    /// Traditional text-based BMP image captcha
+    #[default]
+    BmpText,
+    /// Select emoji matching description
+    Emoji,
+    /// Click arrow pointing in specified direction
+    Direction,
+    /// Complete the sequence/pattern
+    Sequence,
+    /// Unscramble letters to form a word
+    WordUnscramble,
+    /// Select correctly rotated image
+    ImageRotation,
+    /// Identify silhouette category
+    Silhouette,
+}
+
+impl CaptchaType {
+    /// Human-readable display name
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::BmpText => "Text Image",
+            Self::Emoji => "Emoji Selection",
+            Self::Direction => "Arrow Direction",
+            Self::Sequence => "Sequence Pattern",
+            Self::WordUnscramble => "Word Unscramble",
+            Self::ImageRotation => "Image Rotation",
+            Self::Silhouette => "Silhouette ID",
+        }
+    }
+
+    /// All available captcha types
+    pub fn all() -> &'static [CaptchaType] {
+        &[
+            Self::BmpText,
+            Self::Emoji,
+            Self::Direction,
+            Self::Sequence,
+            Self::WordUnscramble,
+            Self::ImageRotation,
+            Self::Silhouette,
+        ]
+    }
+
+    /// Cycle to next type (for UI selection)
+    pub fn next(&self) -> Self {
+        match self {
+            Self::BmpText => Self::Emoji,
+            Self::Emoji => Self::Direction,
+            Self::Direction => Self::Sequence,
+            Self::Sequence => Self::WordUnscramble,
+            Self::WordUnscramble => Self::ImageRotation,
+            Self::ImageRotation => Self::Silhouette,
+            Self::Silhouette => Self::BmpText,
+        }
+    }
+}
+
 /// Traffic tier for auto-scaling multiple settings based on expected daily users.
 /// Selecting a tier adjusts CAPTCHA pool sizes, rate limits, mirror counts, and thresholds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -322,6 +384,7 @@ pub struct BrandingConfig {
 
 /// CAPTCHA pool and behavior settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CaptchaConfig {
     /// Enable CAPTCHA challenges
     pub enabled: bool,
@@ -341,6 +404,18 @@ pub struct CaptchaConfig {
     pub rotation_percent: u8,
     /// Rotation interval in days
     pub rotation_interval_days: u32,
+
+    // === CAPTCHA Type Settings (NEW) ===
+    /// CAPTCHA type used at the Gate (initial verification)
+    pub gate_captcha_type: CaptchaType,
+    /// CAPTCHA type used for threat/demotion (re-verification)
+    pub threat_captcha_type: CaptchaType,
+    /// Whether to use separate threat captcha type (if false, use gate type)
+    pub threat_captcha_enabled: bool,
+    /// Randomly cycle between captcha types
+    pub random_cycling: bool,
+    /// Types to include in random cycling
+    pub cycling_types: Vec<CaptchaType>,
 }
 
 /// Threshold and limit settings for threat detection
@@ -519,6 +594,16 @@ impl Default for CaptchaConfig {
             max_attempts: 3,
             rotation_percent: 25,
             rotation_interval_days: 10,
+            // CAPTCHA Type defaults
+            gate_captcha_type: CaptchaType::BmpText,
+            threat_captcha_type: CaptchaType::Emoji,
+            threat_captcha_enabled: true,
+            random_cycling: false,
+            cycling_types: vec![
+                CaptchaType::BmpText,
+                CaptchaType::Emoji,
+                CaptchaType::Direction,
+            ],
         }
     }
 }
@@ -707,6 +792,33 @@ pub struct PendingChange {
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+impl PendingChange {
+    /// Check if this change requires a restart (cannot be hot-reloaded)
+    pub fn requires_restart(&self) -> bool {
+        matches!(
+            self.field.as_str(),
+            "Pool Size"
+                | "Min Pool"
+                | "Max Pool"
+                | "Min Mirrors"
+                | "Max Mirrors"
+                | "Standby Mirrors"
+                | "Backend Address"
+                | "SOCKS Port"
+                | "Control Port"
+                | "HTTP Bind"
+                | "Gate Bind"
+                | "Vanguards Enabled"
+                | "Vanguards Layers"
+                | "Data Directory"
+                | "Vanity Enabled"
+                | "Prefix"
+                | "Safety Net Enabled"
+                | "Safety Net Timeout"
+        )
+    }
+}
+
 /// Manages pending configuration changes
 #[derive(Debug, Default)]
 pub struct ChangeManager {
@@ -732,12 +844,39 @@ impl ChangeManager {
         !self.pending_changes.is_empty()
     }
 
+    /// Get changes that can be hot-reloaded
+    pub fn hot_reload_changes(&self) -> Vec<&PendingChange> {
+        self.pending_changes
+            .iter()
+            .filter(|c| !c.requires_restart())
+            .collect()
+    }
+
+    /// Get changes that require restart
+    pub fn restart_required_changes(&self) -> Vec<&PendingChange> {
+        self.pending_changes
+            .iter()
+            .filter(|c| c.requires_restart())
+            .collect()
+    }
+
+    /// Check if any pending changes require restart
+    pub fn has_restart_required(&self) -> bool {
+        self.pending_changes.iter().any(|c| c.requires_restart())
+    }
+
     pub fn store_for_restart(&mut self) {
         self.stored_for_restart.append(&mut self.pending_changes);
     }
 
     pub fn clear_pending(&mut self) {
         self.pending_changes.clear();
+    }
+
+    /// Clear all changes (pending and stored) - for discarding
+    pub fn clear(&mut self) {
+        self.pending_changes.clear();
+        self.stored_for_restart.clear();
     }
 
     pub fn apply_all(&mut self) {

@@ -30,13 +30,15 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match &app.view {
         View::Home => home::draw(frame, app, left_panel),
         View::DeployWizard { step } => wizard::draw(frame, app, left_panel, *step),
+        View::ViewSettings { tab, field_index } => {
+            settings::draw(frame, app, left_panel, *tab, *field_index, true)
+        }
         View::Settings { tab, field_index } => {
-            settings::draw(frame, app, left_panel, *tab, *field_index)
+            settings::draw(frame, app, left_panel, *tab, *field_index, false)
         }
         View::Running => running::draw(frame, app, left_panel),
         View::ResumeSelect => draw_resume_select(frame, app, left_panel),
         View::JoinNetwork => draw_join_network(frame, app, left_panel),
-        View::Status => draw_status(frame, app, left_panel),
     }
 
     // Draw right panel (logs) - always visible
@@ -122,6 +124,7 @@ fn draw_join_network(frame: &mut Frame, _app: &App, area: Rect) {
 }
 
 /// Draw system status screen
+#[allow(dead_code)]
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(" System Status ")

@@ -8,8 +8,8 @@ use std::io::Write;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::config::{ChangeManager, FortifyConfig};
-use crate::deployment::DeploymentManager;
+use crate::config::{CaptchaType, ChangeManager, FortifyConfig};
+use crate::deployment::{DeploymentManager, DeploymentState};
 use crate::logging::{LogBuffer, LogEntry, LogLevel};
 use crate::ui;
 
@@ -36,8 +36,8 @@ pub enum Focus {
 pub enum MenuItem {
     Deploy,
     JoinNetwork,
-    Settings,
-    Status,
+    ViewSettings,
+    ModifySettings,
     Destroy,
     Quit,
 }
@@ -47,8 +47,8 @@ impl MenuItem {
         &[
             MenuItem::Deploy,
             MenuItem::JoinNetwork,
-            MenuItem::Settings,
-            MenuItem::Status,
+            MenuItem::ViewSettings,
+            MenuItem::ModifySettings,
             MenuItem::Destroy,
             MenuItem::Quit,
         ]
@@ -58,8 +58,8 @@ impl MenuItem {
         match self {
             MenuItem::Deploy => "Deploy",
             MenuItem::JoinNetwork => "Join Community Network",
-            MenuItem::Settings => "Settings",
-            MenuItem::Status => "System Status",
+            MenuItem::ViewSettings => "View System Settings",
+            MenuItem::ModifySettings => "Modify System Settings",
             MenuItem::Destroy => "Destroy Instance",
             MenuItem::Quit => "Quit",
         }
@@ -69,8 +69,8 @@ impl MenuItem {
         match self {
             MenuItem::Deploy => 'D',
             MenuItem::JoinNetwork => 'J',
-            MenuItem::Settings => 'S',
-            MenuItem::Status => 'T',
+            MenuItem::ViewSettings => 'V',
+            MenuItem::ModifySettings => 'M',
             MenuItem::Destroy => 'X',
             MenuItem::Quit => 'Q',
         }
@@ -271,6 +271,7 @@ pub struct BackendHealthCheck {
 
 /// Application view/screen
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
 pub enum View {
     /// Main menu
     Home,
@@ -278,17 +279,20 @@ pub enum View {
     DeployWizard { step: usize },
     /// Resume selection
     ResumeSelect,
-    /// Settings configuration
+    /// View settings (read-only mode)
+    ViewSettings {
+        tab: SettingsTab,
+        field_index: usize,
+    },
+    /// Modify settings (edit mode)
     Settings {
         tab: SettingsTab,
         field_index: usize,
     },
-    /// Running/deployed view
+    /// Running/deployed view (Live TUI Monitor)
     Running,
     /// Join community network
     JoinNetwork,
-    /// System status
-    Status,
 }
 
 /// Dialog types
@@ -303,7 +307,10 @@ pub enum Dialog {
     },
     /// Apply changes now or store for later
     ApplyChanges {
-        changes: Vec<String>,
+        /// Changes that can be hot-reloaded
+        hot_reload: Vec<String>,
+        /// Changes that require restart
+        restart_required: Vec<String>,
     },
     /// Text input
     Input {
@@ -1589,6 +1596,9 @@ impl App {
         // Handle based on view and focus
         match (&self.view, self.focus) {
             (View::Home, Focus::Menu) => self.handle_menu_key(key).await,
+            (View::ViewSettings { .. }, Focus::Settings) => {
+                self.handle_view_settings_key(key).await
+            }
             (View::Settings { .. }, Focus::Settings) => self.handle_settings_key(key).await,
             (View::DeployWizard { .. }, _) => self.handle_wizard_key(key).await,
             (View::ResumeSelect, _) => self.handle_resume_key(key).await,
@@ -1678,20 +1688,19 @@ impl App {
             MenuItem::JoinNetwork => {
                 self.view = View::JoinNetwork;
             }
-            MenuItem::Settings => {
-                self.view = View::Settings {
-                    tab: SettingsTab::Branding,
+            MenuItem::ViewSettings => {
+                self.view = View::ViewSettings {
+                    tab: SettingsTab::TrafficTier,
                     field_index: 0,
                 };
                 self.focus = Focus::Settings;
             }
-            MenuItem::Status => {
-                // If deployment is running, show the Running view instead of Status
-                if self.deployment.is_running() {
-                    self.view = View::Running;
-                } else {
-                    self.view = View::Status;
-                }
+            MenuItem::ModifySettings => {
+                self.view = View::Settings {
+                    tab: SettingsTab::TrafficTier,
+                    field_index: 0,
+                };
+                self.focus = Focus::Settings;
             }
             MenuItem::Destroy => {
                 // First confirmation
@@ -1754,25 +1763,79 @@ impl App {
                     _ => {}
                 }
             }
-            Dialog::ApplyChanges { .. } => {
+            Dialog::ApplyChanges {
+                hot_reload,
+                restart_required,
+            } => {
+                // Clone lengths before any mutable borrows
+                let hot_reload_count = hot_reload.len();
+                let restart_required_count = restart_required.len();
+                let has_hot_reload = !hot_reload.is_empty();
+                let has_restart_required = !restart_required.is_empty();
+
                 match key.code {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
-                        // Apply now
-                        self.apply_changes_now().await?;
+                        // Apply hot-reload changes only
+                        if has_hot_reload {
+                            self.apply_changes_now().await?;
+                            if has_restart_required {
+                                // Store restart-required changes for later
+                                self.changes.store_for_restart();
+                                self.status_message = Some((
+                                    format!(
+                                        "Applied {} changes. {} require restart.",
+                                        hot_reload_count, restart_required_count
+                                    ),
+                                    std::time::Instant::now(),
+                                ));
+                            } else {
+                                self.status_message = Some((
+                                    "Changes applied successfully".into(),
+                                    std::time::Instant::now(),
+                                ));
+                            }
+                        }
                         self.dialog = Dialog::None;
-                        self.focus = Focus::Settings;
+                        // Return to Running view (Live TUI Monitor)
+                        self.view = View::Running;
+                        self.focus = Focus::Menu;
                     }
-                    KeyCode::Char('l') | KeyCode::Char('L') => {
-                        // Store for later
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        // Store changes that require restart
                         self.changes.store_for_restart();
-                        self.status_message = Some((
-                            "Changes stored for next restart".into(),
-                            std::time::Instant::now(),
-                        ));
+                        // Check if we're currently deployed
+                        let is_running =
+                            self.deployment.get_state().await == DeploymentState::Running;
+                        if is_running {
+                            // Log the restart initiation
+                            self.log_tx
+                                .send(crate::LogEntry::info(
+                                    "Stopping services to apply configuration changes...",
+                                ))
+                                .await
+                                .ok();
+                            // Stop and let user redeploy
+                            self.deployment.stop().await.ok();
+                            self.status_message = Some((
+                                "Services stopped. Redeploy to apply changes.".into(),
+                                std::time::Instant::now(),
+                            ));
+                            self.view = View::Home;
+                        } else {
+                            self.status_message = Some((
+                                "Changes stored. Deploy to apply.".into(),
+                                std::time::Instant::now(),
+                            ));
+                            self.view = View::Home;
+                        }
                         self.dialog = Dialog::None;
-                        self.focus = Focus::Settings;
+                        self.focus = Focus::Menu;
                     }
-                    KeyCode::Esc => {
+                    KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                        // Cancel - discard all pending changes
+                        self.changes.clear();
+                        self.status_message =
+                            Some(("Changes discarded".into(), std::time::Instant::now()));
                         self.dialog = Dialog::None;
                         self.focus = Focus::Settings;
                     }
@@ -2029,7 +2092,55 @@ impl App {
         Ok(())
     }
 
-    /// Handle settings panel keys
+    /// Handle view settings panel keys (read-only mode)
+    async fn handle_view_settings_key(&mut self, key: KeyEvent) -> Result<()> {
+        if let View::ViewSettings { tab, field_index } = &mut self.view {
+            match key.code {
+                KeyCode::Left | KeyCode::Char('h') => {
+                    // Previous tab
+                    let tabs = SettingsTab::all();
+                    let current = tabs.iter().position(|t| t == tab).unwrap_or(0);
+                    if current > 0 {
+                        *tab = tabs[current - 1];
+                        *field_index = 0;
+                    }
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    // Next tab
+                    let tabs = SettingsTab::all();
+                    let current = tabs.iter().position(|t| t == tab).unwrap_or(0);
+                    if current < tabs.len() - 1 {
+                        *tab = tabs[current + 1];
+                        *field_index = 0;
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if *field_index > 0 {
+                        *field_index -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    *field_index += 1; // Will be clamped in render
+                }
+                KeyCode::Tab => {
+                    self.focus = Focus::Logs;
+                }
+                KeyCode::Esc | KeyCode::Enter => {
+                    // Return to previous view
+                    if self.deployment.is_running() {
+                        self.view = View::Running;
+                    } else {
+                        self.view = View::Home;
+                    }
+                    self.focus = Focus::Menu;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle settings panel keys (edit mode)
     async fn handle_settings_key(&mut self, key: KeyEvent) -> Result<()> {
         if let View::Settings { tab, field_index } = &mut self.view {
             match key.code {
@@ -2068,13 +2179,23 @@ impl App {
                 KeyCode::Esc => {
                     // Check for unsaved changes
                     if self.config.is_dirty() && self.deployment.is_running() {
+                        // Separate hot-reload and restart-required changes
+                        let hot_reload: Vec<String> = self
+                            .changes
+                            .hot_reload_changes()
+                            .iter()
+                            .map(|c| format!("{}: {} → {}", c.field, c.old_value, c.new_value))
+                            .collect();
+                        let restart_required: Vec<String> = self
+                            .changes
+                            .restart_required_changes()
+                            .iter()
+                            .map(|c| format!("{}: {} → {}", c.field, c.old_value, c.new_value))
+                            .collect();
+
                         self.dialog = Dialog::ApplyChanges {
-                            changes: self
-                                .changes
-                                .pending_changes
-                                .iter()
-                                .map(|c| format!("{}: {} → {}", c.field, c.old_value, c.new_value))
-                                .collect(),
+                            hot_reload,
+                            restart_required,
                         };
                         self.focus = Focus::Dialog;
                     } else {
@@ -2270,9 +2391,18 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char('s') | KeyCode::Char('S') => {
+            KeyCode::Char('v') | KeyCode::Char('V') => {
+                // View settings (read-only)
+                self.view = View::ViewSettings {
+                    tab: SettingsTab::TrafficTier,
+                    field_index: 0,
+                };
+                self.focus = Focus::Settings;
+            }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                // Modify settings (edit mode)
                 self.view = View::Settings {
-                    tab: SettingsTab::Branding,
+                    tab: SettingsTab::TrafficTier,
                     field_index: 0,
                 };
                 self.focus = Focus::Settings;
@@ -2651,11 +2781,46 @@ impl App {
                 fields.get(index).cloned().unwrap_or(unknown)
             }
             SettingsTab::Captcha => {
-                let fields: [(String, String); 8] = [
+                // Format cycling types as comma-separated list
+                let cycling_types_str: String = self
+                    .config
+                    .captcha
+                    .cycling_types
+                    .iter()
+                    .map(|t| t.display_name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let fields: [(String, String); 13] = [
                     (
                         "Enabled".to_string(),
                         self.config.captcha.enabled.to_string(),
                     ),
+                    (
+                        "Gate CAPTCHA Type".to_string(),
+                        self.config
+                            .captcha
+                            .gate_captcha_type
+                            .display_name()
+                            .to_string(),
+                    ),
+                    (
+                        "Threat Type Enabled".to_string(),
+                        self.config.captcha.threat_captcha_enabled.to_string(),
+                    ),
+                    (
+                        "Threat CAPTCHA Type".to_string(),
+                        self.config
+                            .captcha
+                            .threat_captcha_type
+                            .display_name()
+                            .to_string(),
+                    ),
+                    (
+                        "Random Cycling".to_string(),
+                        self.config.captcha.random_cycling.to_string(),
+                    ),
+                    ("Cycling Types".to_string(), cycling_types_str),
                     (
                         "Pool Size".to_string(),
                         self.config.captcha.pool_size.to_string(),
@@ -2843,6 +3008,31 @@ impl App {
             "Primary Color" => self.config.branding.primary_color = value.to_string(),
             "Secondary Color" => self.config.branding.secondary_color = value.to_string(),
             "Enabled" => self.config.captcha.enabled = parse_yes_no(value, true),
+            // CAPTCHA Type settings - cycle on Enter
+            "Gate CAPTCHA Type" => {
+                self.config.captcha.gate_captcha_type =
+                    self.config.captcha.gate_captcha_type.next();
+            }
+            "Threat Type Enabled" => {
+                self.config.captcha.threat_captcha_enabled =
+                    !self.config.captcha.threat_captcha_enabled;
+            }
+            "Threat CAPTCHA Type" => {
+                self.config.captcha.threat_captcha_type =
+                    self.config.captcha.threat_captcha_type.next();
+            }
+            "Random Cycling" => {
+                self.config.captcha.random_cycling = !self.config.captcha.random_cycling;
+            }
+            "Cycling Types" => {
+                // TODO: Implement multi-select UI for cycling types
+                // For now, reset to defaults
+                self.config.captcha.cycling_types = vec![
+                    CaptchaType::BmpText,
+                    CaptchaType::Emoji,
+                    CaptchaType::Direction,
+                ];
+            }
             "Pool Size" => self.config.captcha.pool_size = value.parse().unwrap_or(500),
             "Min Pool" => self.config.captcha.min_pool_size = value.parse().unwrap_or(100),
             "Max Pool" => self.config.captcha.max_pool_size = value.parse().unwrap_or(1000),
