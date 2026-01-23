@@ -22,7 +22,6 @@ Key requirements:
 
 | Sprint | Document | Status | Priority |
 |--------|----------|--------|----------|
-| **02** | [Panic Audit](02-PANIC-AUDIT-SPRINT.md) | 🟡 In Progress | 🔴 HIGH |
 | **13** | [Combined CAPTCHA Landing](13-COMBINED-CAPTCHA-LANDING-SPRINT.md) | 📋 Planning | 🟡 MEDIUM |
 | **15** | [Branding & Config Propagation](15-BRANDING-CONFIG-PROPAGATION-SPRINT.md) | 🟡 In Progress | 🔴 HIGH |
 
@@ -32,6 +31,7 @@ Key requirements:
 
 | Sprint | Title | Merged PR |
 |--------|-------|-----------|
+| **02** | Panic Audit Phase 2 | PR #45 |
 | **03** | CI/CD Quality Workflows | PR #37 |
 | **04** | TUI Deployment Wizard | PR #36 |
 | **09** | Tech Stack Audit | PR #38 |
@@ -43,38 +43,6 @@ See [archive/](archive/) for completed sprint documentation.
 ---
 
 ## Active Sprint Details
-
-### Sprint 02: Panic Audit & Error Handling
-**File:** [02-PANIC-AUDIT-SPRINT.md](02-PANIC-AUDIT-SPRINT.md)  
-**Status:** 🟡 Phases 1 & 4 Complete  
-**Priority:** 🔴 CRITICAL (Beta Blocker)
-
-**Completed:**
-- ✅ Phase 1: Lock Safety (200 operations)
-- ✅ Phase 4: Fuzzing Infrastructure
-
-**Remaining:**
-- ⬜ Phase 2: Network Input Safety
-- ⬜ Phase 3: Token/Session Safety
-- ⬜ Enable `#![deny(clippy::unwrap_used)]`
-
----
-
-### Sprint 13: Combined CAPTCHA Landing Page
-**File:** [13-COMBINED-CAPTCHA-LANDING-SPRINT.md](13-COMBINED-CAPTCHA-LANDING-SPRINT.md)  
-**Status:** 📋 Planning  
-**Priority:** 🟡 MEDIUM (Performance Optimization)
-
-**Goal:** Eliminate 2-page hop for new users, serve combined landing+CAPTCHA page.
-
-**Phases:**
-- ⬜ Phase 1: Combined Template Design
-- ⬜ Phase 2: Pool Expansion & Pre-rendering
-- ⬜ Phase 3: HTTP Proxy Caching
-
-**Blocked By:** None (can start anytime)
-
----
 
 ### Sprint 15: Branding & Config Propagation
 **File:** [15-BRANDING-CONFIG-PROPAGATION-SPRINT.md](15-BRANDING-CONFIG-PROPAGATION-SPRINT.md)  
@@ -94,6 +62,22 @@ See [archive/](archive/) for completed sprint documentation.
 
 ---
 
+### Sprint 13: Combined CAPTCHA Landing Page
+**File:** [13-COMBINED-CAPTCHA-LANDING-SPRINT.md](13-COMBINED-CAPTCHA-LANDING-SPRINT.md)  
+**Status:** 📋 Planning  
+**Priority:** 🟡 MEDIUM (Performance Optimization)
+
+**Goal:** Eliminate 2-page hop for new users, serve combined landing+CAPTCHA page.
+
+**Phases:**
+- ⬜ Phase 1: Combined Template Design
+- ⬜ Phase 2: Pool Expansion & Pre-rendering
+- ⬜ Phase 3: HTTP Proxy Caching
+
+**Blocked By:** None (can start anytime)
+
+---
+
 ## Reference Documents
 
 | Document | Purpose |
@@ -105,9 +89,8 @@ See [archive/](archive/) for completed sprint documentation.
 
 ## Recommended Work Order
 
-1. **Sprint 02** (Panic Audit) - Complete remaining phases to harden security
-2. **Sprint 15** (Branding) - Fix config propagation to unblock user customization
-3. **Sprint 13** (CAPTCHA Landing) - Performance optimization after core is stable
+1. **Sprint 15** (Branding) - Fix config propagation to unblock user customization
+2. **Sprint 13** (CAPTCHA Landing) - Performance optimization after core is stable
 
 ---
 
@@ -118,6 +101,7 @@ Located in [archive/](archive/):
 | Sprint | Title | Completed |
 |--------|-------|-----------|
 | 01 | Timeout Strategy | Jan 2026 |
+| 02 | Panic Audit | Jan 2026 |
 | 03 | CI/CD Quality | Jan 2026 |
 | 04 | TUI Completion | Jan 2026 |
 | 05 | Security Status Bug | Jan 2026 |
