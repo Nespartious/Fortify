@@ -23,7 +23,6 @@ Key requirements:
 | Sprint | Document | Status | Priority |
 |--------|----------|--------|----------|
 | **13** | [Combined CAPTCHA Landing](13-COMBINED-CAPTCHA-LANDING-SPRINT.md) | 📋 Planning | 🟡 MEDIUM |
-| **15** | [Branding & Config Propagation](15-BRANDING-CONFIG-PROPAGATION-SPRINT.md) | 🟡 In Progress | 🔴 HIGH |
 
 ---
 
@@ -31,6 +30,7 @@ Key requirements:
 
 | Sprint | Title | Merged PR |
 |--------|-------|-----------|
+| **15** | Branding & Config Propagation | PR #46 |
 | **02** | Panic Audit Phase 2 | PR #45 |
 | **03** | CI/CD Quality Workflows | PR #37 |
 | **04** | TUI Deployment Wizard | PR #36 |
@@ -43,24 +43,6 @@ See [archive/](archive/) for completed sprint documentation.
 ---
 
 ## Active Sprint Details
-
-### Sprint 15: Branding & Config Propagation
-**File:** [15-BRANDING-CONFIG-PROPAGATION-SPRINT.md](15-BRANDING-CONFIG-PROPAGATION-SPRINT.md)  
-**Status:** 🟡 In Progress  
-**Priority:** 🔴 HIGH (Core Functionality)
-
-**Goal:** Fix configuration propagation so TUI settings reach Gate/HTTP runtime.
-
-**Completed:**
-- ✅ TrafficTier enum and UI selectors (Sprint 16)
-- ✅ Hot reload infrastructure (Sprint 17)
-
-**Remaining:**
-- ⬜ Fix `BrandingVars::default()` usages (8 locations)
-- ⬜ Wire config to Gate/HTTP components
-- ⬜ Test branding changes propagate to HTML
-
----
 
 ### Sprint 13: Combined CAPTCHA Landing Page
 **File:** [13-COMBINED-CAPTCHA-LANDING-SPRINT.md](13-COMBINED-CAPTCHA-LANDING-SPRINT.md)  
