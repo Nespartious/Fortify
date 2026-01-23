@@ -5,6 +5,19 @@
 
 ---
 
+## ⚠️ AI Agent Instructions
+
+**All AI agents working on this repository MUST follow the instructions in:**
+- **[/.github/copilot-instructions.md](../../../.github/copilot-instructions.md)**
+
+Key requirements:
+1. **One sprint = One branch = One PR**
+2. **Wait for ALL CI checks to pass** before considering work done
+3. **Fix failures and retry** until all checks pass
+4. **Provide summary report** with testing instructions at completion
+
+---
+
 ## Quick Status Overview
 
 | Sprint | Document | Status | Priority |
