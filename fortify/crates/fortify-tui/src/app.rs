@@ -36,8 +36,8 @@ pub enum Focus {
 pub enum MenuItem {
     Deploy,
     JoinNetwork,
-    Settings,
-    Status,
+    ViewSettings,
+    ModifySettings,
     Destroy,
     Quit,
 }
@@ -47,8 +47,8 @@ impl MenuItem {
         &[
             MenuItem::Deploy,
             MenuItem::JoinNetwork,
-            MenuItem::Settings,
-            MenuItem::Status,
+            MenuItem::ViewSettings,
+            MenuItem::ModifySettings,
             MenuItem::Destroy,
             MenuItem::Quit,
         ]
@@ -58,8 +58,8 @@ impl MenuItem {
         match self {
             MenuItem::Deploy => "Deploy",
             MenuItem::JoinNetwork => "Join Community Network",
-            MenuItem::Settings => "Settings",
-            MenuItem::Status => "System Status",
+            MenuItem::ViewSettings => "View System Settings",
+            MenuItem::ModifySettings => "Modify System Settings",
             MenuItem::Destroy => "Destroy Instance",
             MenuItem::Quit => "Quit",
         }
@@ -69,8 +69,8 @@ impl MenuItem {
         match self {
             MenuItem::Deploy => 'D',
             MenuItem::JoinNetwork => 'J',
-            MenuItem::Settings => 'S',
-            MenuItem::Status => 'T',
+            MenuItem::ViewSettings => 'V',
+            MenuItem::ModifySettings => 'M',
             MenuItem::Destroy => 'X',
             MenuItem::Quit => 'Q',
         }
@@ -278,17 +278,20 @@ pub enum View {
     DeployWizard { step: usize },
     /// Resume selection
     ResumeSelect,
-    /// Settings configuration
+    /// View settings (read-only mode)
+    ViewSettings {
+        tab: SettingsTab,
+        field_index: usize,
+    },
+    /// Modify settings (edit mode)
     Settings {
         tab: SettingsTab,
         field_index: usize,
     },
-    /// Running/deployed view
+    /// Running/deployed view (Live TUI Monitor)
     Running,
     /// Join community network
     JoinNetwork,
-    /// System status
-    Status,
 }
 
 /// Dialog types
@@ -1592,6 +1595,9 @@ impl App {
         // Handle based on view and focus
         match (&self.view, self.focus) {
             (View::Home, Focus::Menu) => self.handle_menu_key(key).await,
+            (View::ViewSettings { .. }, Focus::Settings) => {
+                self.handle_view_settings_key(key).await
+            }
             (View::Settings { .. }, Focus::Settings) => self.handle_settings_key(key).await,
             (View::DeployWizard { .. }, _) => self.handle_wizard_key(key).await,
             (View::ResumeSelect, _) => self.handle_resume_key(key).await,
@@ -1681,20 +1687,19 @@ impl App {
             MenuItem::JoinNetwork => {
                 self.view = View::JoinNetwork;
             }
-            MenuItem::Settings => {
-                self.view = View::Settings {
+            MenuItem::ViewSettings => {
+                self.view = View::ViewSettings {
                     tab: SettingsTab::TrafficTier,
                     field_index: 0,
                 };
                 self.focus = Focus::Settings;
             }
-            MenuItem::Status => {
-                // If deployment is running, show the Running view instead of Status
-                if self.deployment.is_running() {
-                    self.view = View::Running;
-                } else {
-                    self.view = View::Status;
-                }
+            MenuItem::ModifySettings => {
+                self.view = View::Settings {
+                    tab: SettingsTab::TrafficTier,
+                    field_index: 0,
+                };
+                self.focus = Focus::Settings;
             }
             MenuItem::Destroy => {
                 // First confirmation
@@ -2086,7 +2091,55 @@ impl App {
         Ok(())
     }
 
-    /// Handle settings panel keys
+    /// Handle view settings panel keys (read-only mode)
+    async fn handle_view_settings_key(&mut self, key: KeyEvent) -> Result<()> {
+        if let View::ViewSettings { tab, field_index } = &mut self.view {
+            match key.code {
+                KeyCode::Left | KeyCode::Char('h') => {
+                    // Previous tab
+                    let tabs = SettingsTab::all();
+                    let current = tabs.iter().position(|t| t == tab).unwrap_or(0);
+                    if current > 0 {
+                        *tab = tabs[current - 1];
+                        *field_index = 0;
+                    }
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    // Next tab
+                    let tabs = SettingsTab::all();
+                    let current = tabs.iter().position(|t| t == tab).unwrap_or(0);
+                    if current < tabs.len() - 1 {
+                        *tab = tabs[current + 1];
+                        *field_index = 0;
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if *field_index > 0 {
+                        *field_index -= 1;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    *field_index += 1; // Will be clamped in render
+                }
+                KeyCode::Tab => {
+                    self.focus = Focus::Logs;
+                }
+                KeyCode::Esc | KeyCode::Enter => {
+                    // Return to previous view
+                    if self.deployment.is_running() {
+                        self.view = View::Running;
+                    } else {
+                        self.view = View::Home;
+                    }
+                    self.focus = Focus::Menu;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle settings panel keys (edit mode)
     async fn handle_settings_key(&mut self, key: KeyEvent) -> Result<()> {
         if let View::Settings { tab, field_index } = &mut self.view {
             match key.code {
@@ -2337,7 +2390,16 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char('s') | KeyCode::Char('S') => {
+            KeyCode::Char('v') | KeyCode::Char('V') => {
+                // View settings (read-only)
+                self.view = View::ViewSettings {
+                    tab: SettingsTab::TrafficTier,
+                    field_index: 0,
+                };
+                self.focus = Focus::Settings;
+            }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                // Modify settings (edit mode)
                 self.view = View::Settings {
                     tab: SettingsTab::TrafficTier,
                     field_index: 0,

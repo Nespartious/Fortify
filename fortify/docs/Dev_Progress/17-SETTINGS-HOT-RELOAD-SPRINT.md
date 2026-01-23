@@ -170,34 +170,45 @@ These settings require service restart to take effect:
    - Traffic tier: micro/small/medium/large/enterprise
 
 ### Phase 4: Restart Prompt Dialog (4 hours)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-1. After saving with RESTART-required changes, show dialog:
-   ```
-   ┌─────────────────────────────────────────────────┐
-   │ ⚠ Changes Require Restart                      │
-   │                                                 │
-   │ The following changes need a restart:          │
-   │   • CAPTCHA Pool Size: 500 → 1000              │
-   │   • Min Mirrors: 2 → 3                         │
-   │                                                 │
-   │ [A] Apply & Restart Now                        │
-   │ [S] Stage for Next Restart                     │
-   │ [C] Cancel Changes                             │
-   └─────────────────────────────────────────────────┘
+1. ✅ Modified `Dialog::ApplyChanges` enum to separate hot-reload vs restart-required:
+   ```rust
+   Dialog::ApplyChanges {
+       hot_reload: Vec<String>,
+       restart_required: Vec<String>,
+   }
    ```
 
-2. Options:
-   - **Apply & Restart Now**: Save config, graceful restart services
-   - **Stage for Next Restart**: Save config, mark as pending, apply on next manual restart
-   - **Cancel Changes**: Discard RESTART-required changes, keep HOT_RELOAD changes
+2. ✅ Added `PendingChange::requires_restart()` method classifying 18+ settings:
+   - Pool sizes, mirrors, network settings, vanity, vanguards
+
+3. ✅ Added `ChangeManager` methods:
+   - `hot_reload_changes()` - filter to hot-reload only
+   - `restart_required_changes()` - filter to restart-required only
+   - `has_restart_required()` - check if any need restart
+   - `clear()` - discard all changes
+
+4. ✅ Updated dialog UI to show categorized changes:
+   - ✓ Green section for "Can apply immediately"
+   - ⚠ Yellow section for "Requires restart"
+
+5. ✅ Dialog options based on change types:
+   - `[A]` Apply hot-reload changes only
+   - `[R]` Restart to apply all changes
+   - `[C]` Cancel (discard all changes)
+
+6. ✅ Post-action navigation:
+   - Apply: Returns to `View::Running` (Live TUI Monitor)
+   - Restart: Stops services, returns to `View::Home` for redeploy
+   - Cancel: Stays in Settings
 
 ### Phase 5: Post-Save Navigation (2 hours)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete (merged into Phase 4)
 
-1. After successful save/apply:
+1. ✅ After successful apply:
    - Return to `View::Running` (deployment status)
-   - Show toast: "✓ Settings applied" or "⚠ Staged for restart"
+   - Show toast: "Changes applied successfully" or "Applied X changes. Y require restart."
    - Left panel: Status summary
    - Right panel: Live logs
 
@@ -274,7 +285,7 @@ These settings require service restart to take effect:
 - [ ] View System Settings (read-only mode)
 - [ ] Modify System Settings (edit mode)
 - [ ] Clear return path to Live TUI Monitor
-- [ ] Status button removed or clarified
+- [x] Status button removed or clarified
 
 ---
 
@@ -282,10 +293,10 @@ These settings require service restart to take effect:
 
 1. ✅ User can access Tier tab from Settings (it's the default)
 2. ✅ User can configure CAPTCHA types in TUI
-3. 🟡 Branding/rate limit changes apply without restart (infrastructure done, needs testing)
-4. ⬜ Pool size changes prompt for restart confirmation
-5. ⬜ After saving, user sees deployment status with logs
-6. ⬜ TUI navigation is strict with View/Modify separation
+3. ✅ Branding/rate limit changes apply without restart (via HTTP hot-reload)
+4. ✅ Pool size changes prompt for restart confirmation (categorized dialog)
+5. ✅ After saving, user sees deployment status with logs (returns to Running view)
+6. ✅ TUI navigation is strict with View/Modify separation
 
 ---
 
@@ -298,33 +309,58 @@ These settings require service restart to take effect:
 ---
 
 ## Phase 6: TUI UX Strictness (Proposed)
-**Status:** 📋 Awaiting User Decisions
+**Status:** � In Progress
 
-### Proposed Changes
+### User Decisions (Confirmed)
 
-**When deployed (service running):**
+1. **Option A: Two separate menu items**
+   - "View System Settings" (read-only)
+   - "Modify System Settings" (editable)
 
-| Current | Proposed |
-|---------|----------|
-| `MenuItem::Settings` → editable, confusing return | **View System Settings** (read-only) + **Modify System Settings** (edit mode) |
-| `MenuItem::Status` → unclear purpose | Remove or merge into Live TUI Monitor |
-| Settings ← → return unclear | **Done** button returns to Live TUI Monitor |
+2. **Merge Status into Live TUI Monitor** - Remove `MenuItem::Status`
+
+3. **Apply strictness always** - Not just when deployed
+
+### Implementation Plan
+
+**Menu Changes:**
+- Remove: `MenuItem::Status` 
+- Replace: `MenuItem::Settings` → `MenuItem::ViewSettings` + `MenuItem::ModifySettings`
 
 **View System Settings (read-only):**
-- All settings visible but not editable
-- Only button: **Done** → returns to Live TUI Monitor
+- All settings visible but greyed/non-editable
+- Navigation: Tab left/right, Up/down to scroll
+- Exit: **[Esc]** or **[Enter]** → returns to previous view
 
 **Modify System Settings (edit mode):**
-- All settings editable
-- Buttons: **Cancel** (discard changes) | **Submit** (apply/stage changes)
-- Submit → hot reload what's possible, prompt for restart-required changes
-- After submit/cancel → return to Live TUI Monitor
+- All settings editable (current behavior)
+- Exit without changes: **[Esc]** → "Discard changes?" confirmation
+- Save changes: **[Enter]** on Submit → Apply dialog → returns to Live TUI Monitor (if running) or Home
 
-### Questions for User
+**Navigation Flow:**
+```
+Home (pre-deploy)           Running (post-deploy)
+  ├── Deploy                  ├── Live TUI Monitor (status + logs)
+  ├── View Settings           ├── View Settings → [Esc] → Live TUI Monitor
+  ├── Modify Settings         ├── Modify Settings → Submit → Live TUI Monitor  
+  └── Quit                    └── Undeploy
+```
 
-1. Should both View and Modify appear as separate menu items when deployed?
-2. Should `MenuItem::Status` be removed entirely?
-3. Should this strict flow only apply when deployed, or always?
+### Files to Modify
+
+- `crates/fortify-tui/src/app.rs`:
+  - Add `MenuItem::ViewSettings`, `MenuItem::ModifySettings`
+  - Remove `MenuItem::Status`
+  - Add `View::ViewSettings` variant (read-only mode)
+  - Update menu rendering and handlers
+
+- `crates/fortify-tui/src/ui/menu.rs`:
+  - Update menu item labels
+
+- `crates/fortify-tui/src/ui/settings.rs`:
+  - ✅ Added read-only mode detection via View::ViewSettings
+  - ✅ Different footer for read-only (Done) vs edit (Edit/Back)
+  - ✅ Different title for read-only vs edit mode
 
 ---
 

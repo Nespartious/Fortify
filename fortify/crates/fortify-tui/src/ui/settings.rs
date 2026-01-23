@@ -2,7 +2,7 @@
 
 use ratatui::{prelude::*, widgets::*};
 
-use crate::app::{App, Focus, SettingsTab};
+use crate::app::{App, Focus, SettingsTab, View};
 use crate::config::TrafficTier;
 
 /// Draw settings screen
@@ -12,7 +12,14 @@ pub fn draw(
     area: Rect,
     current_tab: SettingsTab,
     field_index: usize,
+    read_only: bool,
 ) {
+    let title = if read_only {
+        " 👁 View Settings (Read-Only) "
+    } else {
+        " ⚙ Modify Settings "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(if app.focus == Focus::Settings {
@@ -20,7 +27,7 @@ pub fn draw(
         } else {
             Style::default().fg(Color::DarkGray)
         })
-        .title(" ⚙ Settings ");
+        .title(title);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -454,24 +461,42 @@ fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selec
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
-    let dirty_indicator = if app.config.is_dirty() {
-        Span::styled(" [Modified] ", Style::default().fg(Color::Yellow))
+    // Check if we're in read-only mode
+    let is_read_only = matches!(app.view, View::ViewSettings { .. });
+
+    if is_read_only {
+        // Read-only mode: minimal controls
+        let hints = Line::from(vec![
+            Span::styled("[←→]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Tab "),
+            Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Scroll "),
+            Span::styled("[Esc]", Style::default().fg(Color::Cyan)),
+            Span::raw(" Done "),
+        ]);
+        let footer = Paragraph::new(hints).alignment(Alignment::Center);
+        frame.render_widget(footer, area);
     } else {
-        Span::raw("")
-    };
+        // Edit mode: full controls
+        let dirty_indicator = if app.config.is_dirty() {
+            Span::styled(" [Modified] ", Style::default().fg(Color::Yellow))
+        } else {
+            Span::raw("")
+        };
 
-    let hints = Line::from(vec![
-        Span::styled("[←→]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Tab "),
-        Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Select "),
-        Span::styled("[Enter]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Edit "),
-        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Back "),
-        dirty_indicator,
-    ]);
+        let hints = Line::from(vec![
+            Span::styled("[←→]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Tab "),
+            Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Select "),
+            Span::styled("[Enter]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Edit "),
+            Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Back "),
+            dirty_indicator,
+        ]);
 
-    let footer = Paragraph::new(hints).alignment(Alignment::Center);
-    frame.render_widget(footer, area);
+        let footer = Paragraph::new(hints).alignment(Alignment::Center);
+        frame.render_widget(footer, area);
+    }
 }
