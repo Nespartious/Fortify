@@ -121,28 +121,6 @@ fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
 }
 
 fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
-    let logo_path = app
-        .config
-        .branding
-        .logo_path
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "(none)".to_string());
-
-    let custom_css = app
-        .config
-        .branding
-        .custom_css
-        .as_ref()
-        .map(|s| {
-            if s.len() > 30 {
-                format!("{}...", &s[..30])
-            } else {
-                s.clone()
-            }
-        })
-        .unwrap_or_else(|| "(none)".to_string());
-
     let fields = [
         ("Service Name", app.config.branding.service_name.as_str()),
         ("Description", app.config.branding.description.as_str()),
@@ -155,12 +133,6 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
             "Secondary Color",
             app.config.branding.secondary_color.as_str(),
         ),
-        (
-            "Tertiary Color",
-            app.config.branding.tertiary_color.as_str(),
-        ),
-        ("Logo Path", logo_path.as_str()),
-        ("Custom CSS", custom_css.as_str()),
     ];
 
     draw_field_list(frame, area, &fields, selected);
@@ -178,12 +150,6 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let diff = app.config.captcha.difficulty.to_string();
     let timeout = app.config.captcha.timeout_seconds.to_string();
     let attempts = app.config.captcha.max_attempts.to_string();
-    let audio = if app.config.captcha.audio_enabled {
-        "Yes"
-    } else {
-        "No"
-    };
-    let rotation_pct = app.config.captcha.rotation_percent.to_string();
     let rotation_days = app.config.captcha.rotation_interval_days.to_string();
 
     let fields = [
@@ -194,8 +160,6 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
         ("Difficulty (1-10)", diff.as_str()),
         ("Timeout (seconds)", timeout.as_str()),
         ("Max Attempts", attempts.as_str()),
-        ("Audio Enabled", audio),
-        ("Rotation %", rotation_pct.as_str()),
         ("Rotation Days", rotation_days.as_str()),
     ];
 

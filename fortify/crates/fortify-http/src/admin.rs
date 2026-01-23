@@ -213,22 +213,16 @@ pub struct BrandingConfig {
     pub primary_color: String,
     /// Secondary/accent color (hex format: #RRGGBB)
     pub secondary_color: String,
-    /// Tertiary/subtle accent color (hex format: #RRGGBB)
-    pub tertiary_color: String,
-    /// Custom CSS for gate pages (optional)
-    pub custom_css: Option<String>,
 }
 
 impl Default for BrandingConfig {
     fn default() -> Self {
         Self {
-            service_name: "Fortify".to_string(),
-            description: "Protected Gateway".to_string(),
-            welcome_message: "Complete verification to enter".to_string(),
+            service_name: "Protected Service".to_string(),
+            description: "A Fortify-protected onion service".to_string(),
+            welcome_message: "Please complete the verification to continue.".to_string(),
             primary_color: "#c9a227".to_string(),
             secondary_color: "#a68b5b".to_string(),
-            tertiary_color: "#8b7355".to_string(),
-            custom_css: None,
         }
     }
 }
@@ -3539,7 +3533,7 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
                 </div>
 
                 <h4 style="color: var(--amber); margin-bottom: 15px;">Color Scheme</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                     <div>
                         <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Primary Color</label>
                         <div style="display: flex; gap: 10px; align-items: center;">
@@ -3554,19 +3548,6 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
                             <input type="text" name="secondary_color" value="{}" maxlength="7" style="flex: 1; padding: 8px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace;">
                         </div>
                     </div>
-                    <div>
-                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Tertiary Color</label>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <input type="color" name="tertiary_color_picker" value="{}" style="width: 50px; height: 35px; border: none; cursor: pointer;">
-                            <input type="text" name="tertiary_color" value="{}" maxlength="7" style="flex: 1; padding: 8px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace;">
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: var(--gold-primary); margin-bottom: 5px; font-weight: bold;">Custom CSS (Advanced)</label>
-                    <textarea name="custom_css" rows="4" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace; font-size: 0.9em;" placeholder="/* Additional CSS rules */">{}</textarea>
-                    <small style="color: var(--text-muted);">Optional custom styles injected into Gate/CAPTCHA pages</small>
                 </div>
 
                 <button type="submit" class="btn btn-success">Save Branding Settings</button>
@@ -3808,9 +3789,6 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
         &branding_config.primary_color,
         &branding_config.secondary_color,
         &branding_config.secondary_color,
-        &branding_config.tertiary_color,
-        &branding_config.tertiary_color,
-        branding_config.custom_css.as_deref().unwrap_or(""),
         // Captcha config section
         ADMIN_PATH,
         render_captcha_type_options(captcha_config.gate_captcha_type),
@@ -4829,18 +4807,6 @@ async fn handle_branding_settings(
         if val.starts_with('#') && val.len() == 7 {
             config.secondary_color = val.clone();
         }
-    }
-    if let Some(val) = params.get("tertiary_color") {
-        if val.starts_with('#') && val.len() == 7 {
-            config.tertiary_color = val.clone();
-        }
-    }
-    if let Some(val) = params.get("custom_css") {
-        config.custom_css = if val.trim().is_empty() {
-            None
-        } else {
-            Some(val.clone())
-        };
     }
 
     state.update_branding_config(config.clone());

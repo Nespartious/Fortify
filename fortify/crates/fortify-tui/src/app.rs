@@ -2580,7 +2580,7 @@ impl App {
         let unknown: (String, String) = ("Unknown".to_string(), String::new());
         match tab {
             SettingsTab::Branding => {
-                let fields: [(String, String); 8] = [
+                let fields: [(String, String); 5] = [
                     (
                         "Service Name".to_string(),
                         self.config.branding.service_name.clone(),
@@ -2601,28 +2601,11 @@ impl App {
                         "Secondary Color".to_string(),
                         self.config.branding.secondary_color.clone(),
                     ),
-                    (
-                        "Tertiary Color".to_string(),
-                        self.config.branding.tertiary_color.clone(),
-                    ),
-                    (
-                        "Logo Path".to_string(),
-                        self.config
-                            .branding
-                            .logo_path
-                            .as_ref()
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_default(),
-                    ),
-                    (
-                        "Custom CSS".to_string(),
-                        self.config.branding.custom_css.clone().unwrap_or_default(),
-                    ),
                 ];
                 fields.get(index).cloned().unwrap_or(unknown)
             }
             SettingsTab::Captcha => {
-                let fields: [(String, String); 10] = [
+                let fields: [(String, String); 8] = [
                     (
                         "Enabled".to_string(),
                         self.config.captcha.enabled.to_string(),
@@ -2650,14 +2633,6 @@ impl App {
                     (
                         "Max Attempts".to_string(),
                         self.config.captcha.max_attempts.to_string(),
-                    ),
-                    (
-                        "Audio Enabled".to_string(),
-                        self.config.captcha.audio_enabled.to_string(),
-                    ),
-                    (
-                        "Rotation %".to_string(),
-                        self.config.captcha.rotation_percent.to_string(),
                     ),
                     (
                         "Rotation Days".to_string(),
@@ -2805,21 +2780,6 @@ impl App {
             "Welcome Message" => self.config.branding.welcome_message = value.to_string(),
             "Primary Color" => self.config.branding.primary_color = value.to_string(),
             "Secondary Color" => self.config.branding.secondary_color = value.to_string(),
-            "Tertiary Color" => self.config.branding.tertiary_color = value.to_string(),
-            "Logo Path" => {
-                self.config.branding.logo_path = if value.is_empty() {
-                    None
-                } else {
-                    Some(std::path::PathBuf::from(value))
-                }
-            }
-            "Custom CSS" => {
-                self.config.branding.custom_css = if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                }
-            }
             "Enabled" => self.config.captcha.enabled = parse_yes_no(value, true),
             "Pool Size" => self.config.captcha.pool_size = value.parse().unwrap_or(500),
             "Min Pool" => self.config.captcha.min_pool_size = value.parse().unwrap_or(100),
@@ -2831,8 +2791,6 @@ impl App {
                 self.config.captcha.timeout_seconds = value.parse().unwrap_or(120)
             }
             "Max Attempts" => self.config.captcha.max_attempts = value.parse().unwrap_or(3),
-            "Audio Enabled" => self.config.captcha.audio_enabled = parse_yes_no(value, false),
-            "Rotation %" => self.config.captcha.rotation_percent = value.parse().unwrap_or(25),
             "Rotation Days" => {
                 self.config.captcha.rotation_interval_days = value.parse().unwrap_or(10)
             }

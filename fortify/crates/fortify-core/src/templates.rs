@@ -268,8 +268,6 @@ pub struct BrandingVars {
     pub primary_color: String,
     /// Secondary brand color
     pub secondary_color: String,
-    /// Tertiary/accent color
-    pub tertiary_color: String,
     /// Footer branding text/HTML
     pub footer_branding: String,
     /// Custom CSS injection point content
@@ -279,10 +277,9 @@ pub struct BrandingVars {
 impl Default for BrandingVars {
     fn default() -> Self {
         Self {
-            service_name: "Fortify".to_string(),
+            service_name: "Protected Service".to_string(),
             primary_color: "#c9a227".to_string(),   // Gold
             secondary_color: "#a68b5b".to_string(), // Muted gold
-            tertiary_color: "#8b7355".to_string(),  // Bronze
             footer_branding: String::new(),
             branding_injection: String::new(),
         }
@@ -296,7 +293,6 @@ impl BrandingVars {
         map.insert("SERVICE_NAME".to_string(), self.service_name.clone());
         map.insert("PRIMARY_COLOR".to_string(), self.primary_color.clone());
         map.insert("SECONDARY_COLOR".to_string(), self.secondary_color.clone());
-        map.insert("TERTIARY_COLOR".to_string(), self.tertiary_color.clone());
         map.insert(
             "FORTIFY_FOOTER_BRANDING".to_string(),
             self.footer_branding.clone(),
@@ -436,7 +432,6 @@ mod tests {
             service_name: "TestService".to_string(),
             primary_color: "#ff0000".to_string(),
             secondary_color: "#00ff00".to_string(),
-            tertiary_color: "#0000ff".to_string(),
             footer_branding: "Footer".to_string(),
             branding_injection: "/* custom */".to_string(),
         };
