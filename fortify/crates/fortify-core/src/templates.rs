@@ -124,10 +124,12 @@ pub static TEMPLATE_INDEX: &str = include_str!("../../../assets/html/index.html"
 pub static TEMPLATE_VERIFIED: &str = include_str!("../../../assets/html/verified.html");
 
 /// Verification/CAPTCHA failed page template
-pub static TEMPLATE_VERIFICATION_FAILED: &str = include_str!("../../../assets/html/verification-failed.html");
+pub static TEMPLATE_VERIFICATION_FAILED: &str =
+    include_str!("../../../assets/html/verification-failed.html");
 
 /// Session expired/recycled page template
-pub static TEMPLATE_SESSION_EXPIRED: &str = include_str!("../../../assets/html/session-expired.html");
+pub static TEMPLATE_SESSION_EXPIRED: &str =
+    include_str!("../../../assets/html/session-expired.html");
 
 // ============================================================================
 // Template Engine
@@ -278,7 +280,7 @@ impl Default for BrandingVars {
     fn default() -> Self {
         Self {
             service_name: "Fortify".to_string(),
-            primary_color: "#c9a227".to_string(),  // Gold
+            primary_color: "#c9a227".to_string(),   // Gold
             secondary_color: "#a68b5b".to_string(), // Muted gold
             tertiary_color: "#8b7355".to_string(),  // Bronze
             footer_branding: String::new(),

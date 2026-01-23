@@ -21,7 +21,7 @@
 //! - No JavaScript is ever injected (Tor users expect JS-free pages)
 
 /// Configuration for HTML template branding
-/// 
+///
 /// This struct holds all branding values that can be injected into HTML templates.
 /// It is designed to be populated from the main BrandingConfig in fortify-tui.
 #[derive(Debug, Clone, Default)]
@@ -97,7 +97,10 @@ pub fn render_html_template(template: &str, branding: &TemplateBranding) -> Stri
         .replace("{{PRIMARY_COLOR}}", &branding.primary_color)
         .replace("{{SECONDARY_COLOR}}", &branding.secondary_color)
         .replace("{{TERTIARY_COLOR}}", &branding.tertiary_color)
-        .replace("{{WELCOME_MESSAGE}}", &html_escape(&branding.welcome_message))
+        .replace(
+            "{{WELCOME_MESSAGE}}",
+            &html_escape(&branding.welcome_message),
+        )
         .replace(
             "{{LOGO_BASE64}}",
             branding.logo_base64.as_deref().unwrap_or(""),
@@ -128,9 +131,7 @@ pub fn html_escape(s: &str) -> String {
 
 /// Validate that a string is a valid hex color (#RRGGBB format)
 pub fn is_valid_hex_color(color: &str) -> bool {
-    color.starts_with('#')
-        && color.len() == 7
-        && color[1..].chars().all(|c| c.is_ascii_hexdigit())
+    color.starts_with('#') && color.len() == 7 && color[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
@@ -236,11 +237,11 @@ mod tests {
     #[test]
     fn test_invalid_hex_colors() {
         assert!(!is_valid_hex_color(""));
-        assert!(!is_valid_hex_color("#FFF"));        // Too short
-        assert!(!is_valid_hex_color("#FFFFFFFF"));   // Too long
-        assert!(!is_valid_hex_color("FFFFFF"));      // Missing #
-        assert!(!is_valid_hex_color("#GGGGGG"));     // Invalid chars
-        assert!(!is_valid_hex_color("red"));         // Named color
+        assert!(!is_valid_hex_color("#FFF")); // Too short
+        assert!(!is_valid_hex_color("#FFFFFFFF")); // Too long
+        assert!(!is_valid_hex_color("FFFFFF")); // Missing #
+        assert!(!is_valid_hex_color("#GGGGGG")); // Invalid chars
+        assert!(!is_valid_hex_color("red")); // Named color
     }
 
     #[test]

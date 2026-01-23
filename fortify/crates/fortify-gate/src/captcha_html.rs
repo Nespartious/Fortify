@@ -247,12 +247,15 @@ pub fn render_bmp_text_captcha_with_message(
     // Use the new template engine for consistent styling
     let engine = TemplateEngine::new();
     let branding = BrandingVars::default();
-    
+
     let mut extra_vars = HashMap::new();
-    extra_vars.insert("CAPTCHA_IMAGE_URL".to_string(), format!("/gate/captcha/{}", captcha_id));
+    extra_vars.insert(
+        "CAPTCHA_IMAGE_URL".to_string(),
+        format!("/gate/captcha/{}", captcha_id),
+    );
     extra_vars.insert("SESSION_ID".to_string(), session_id.to_string());
     extra_vars.insert("CAPTCHA_TYPE".to_string(), "bmptext".to_string());
-    
+
     engine.render_with_branding(TemplateType::Captcha, &branding, Some(&extra_vars))
 }
 
@@ -267,7 +270,10 @@ pub fn render_emoji_captcha(
         challenge,
         is_threat,
         "▸ EMOJI VERIFICATION ◂",
-        &format!("Click the <strong>{}</strong>", challenge.target_description),
+        &format!(
+            "Click the <strong>{}</strong>",
+            challenge.target_description
+        ),
     )
 }
 

@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use fortify_core::{
-    jittered_timeout, safe_lock, safe_write, RequestMeta, SessionBehavior, SessionManager, SessionToken, TrustTier,
+    jittered_timeout, safe_lock, safe_write, RequestMeta, SessionBehavior, SessionManager,
+    SessionToken, TrustTier,
 };
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -313,7 +314,7 @@ impl BackendNode {
             tracing::warn!("Global connection limit reached (1000 total)");
             return false;
         }
-        
+
         // Then try per-node limit
         match self.connection_semaphore.try_acquire() {
             Ok(_permit) => {
@@ -321,7 +322,7 @@ impl BackendNode {
                 // We manually track via active_connections counter
                 std::mem::forget(global_permit.unwrap());
                 std::mem::forget(_permit);
-                
+
                 // Update counter for metrics display
                 let mut active = safe_lock(&self.active_connections);
                 *active += 1;
@@ -340,7 +341,7 @@ impl BackendNode {
         // Add permits back to both semaphores
         self.connection_semaphore.add_permits(1);
         GLOBAL_CONNECTION_SEMAPHORE.add_permits(1);
-        
+
         // Update counter for metrics
         let mut active = safe_lock(&self.active_connections);
         if *active > 0 {
@@ -386,7 +387,7 @@ impl Metrics {
     pub fn record_backend_error(&mut self) {
         self.backend_errors += 1;
     }
-    
+
     /// Record a 503 capacity shed response
     pub fn record_capacity_shed(&mut self) {
         self.capacity_shed += 1;
@@ -610,7 +611,7 @@ impl HttpProxy {
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
                     .await;
-                    
+
                 if let Err(err) = result {
                     tracing::error!("Error serving connection: {:?}", err);
                 }
@@ -1004,12 +1005,15 @@ async fn process_request(
     // Critical for demoted users who still have valid session tokens but need to re-verify
     // Store the demoted session ID BEFORE potentially overwriting verified_session_id
     let demoted_session_id = verified_session_id.clone();
-    
+
     if verification_token_opt.is_some() {
         let verification_token = verification_token_opt.clone().unwrap();
         let current_ua = user_agent.as_deref().unwrap_or("unknown");
 
-        tracing::info!("Found verification token, attempting upgrade (existing session: {:?})", demoted_session_id);
+        tracing::info!(
+            "Found verification token, attempting upgrade (existing session: {:?})",
+            demoted_session_id
+        );
 
         // Extract the original session ID from cookie (set by Gate for demoted users)
         // This is the session that was demoted and needs its tier override cleared
@@ -1087,7 +1091,9 @@ async fn process_request(
                     // This is the session from the fortify_session cookie that was demoted
                     // Critical: demoted users have valid session tokens, so this is different from stale_session_id
                     if let Some(ref demoted_sid) = demoted_session_id {
-                        if Some(demoted_sid) != original_session_id.as_ref() && demoted_sid != &token.session_id {
+                        if Some(demoted_sid) != original_session_id.as_ref()
+                            && demoted_sid != &token.session_id
+                        {
                             admin_state.clear_tier_override(demoted_sid);
                             tracing::info!(
                                 "Cleared tier override for DEMOTED session {} after CAPTCHA verification",
@@ -1098,7 +1104,9 @@ async fn process_request(
 
                     // Also check stale_session_id for completeness
                     if let Some(ref stale_sid) = stale_session_id {
-                        if Some(stale_sid) != original_session_id.as_ref() && Some(stale_sid) != demoted_session_id.as_ref() {
+                        if Some(stale_sid) != original_session_id.as_ref()
+                            && Some(stale_sid) != demoted_session_id.as_ref()
+                        {
                             admin_state.clear_tier_override(stale_sid);
                             tracing::info!(
                                 "Cleared tier override for STALE session {} after CAPTCHA verification",
@@ -1362,7 +1370,7 @@ async fn process_request(
         // This protects verified/trusted users during DDoS attacks
         let global_available = GLOBAL_CONNECTION_SEMAPHORE.available_permits();
         let capacity_threshold = 100; // Reserve 10% of 1000 permits for verified sessions
-        
+
         if global_available < capacity_threshold {
             tracing::warn!(
                 "503: Global capacity low ({} permits available), shedding threat-tier request",
@@ -1370,7 +1378,7 @@ async fn process_request(
             );
             return serve_busy_page();
         }
-        
+
         tracing::info!(
             "THREAT PATH: Proxying {} user to Gate for verification: {}",
             trust_tier.as_str(),
@@ -1422,7 +1430,10 @@ async fn process_request(
         // 4. Other paths - preserve for after verification
         let gate_path = if is_demoted_user && !request_path.starts_with("/Fortify") {
             // Demoted users must see the "Hold Position" page first
-            tracing::info!("Demoted user redirected to /Fortify (was trying: {})", request_path);
+            tracing::info!(
+                "Demoted user redirected to /Fortify (was trying: {})",
+                request_path
+            );
             "/Fortify".to_string()
         } else if request_path == "/" || request_path.is_empty() {
             "/Fortify".to_string()
@@ -1436,7 +1447,10 @@ async fn process_request(
                 if let Some(ref sid) = verified_session_id {
                     // Create an unsigned token just for tracking (not for auth)
                     // Gate will issue a proper signed token after captcha verification
-                    tracing::info!("Setting fortify_pending_session cookie for session: {}", sid);
+                    tracing::info!(
+                        "Setting fortify_pending_session cookie for session: {}",
+                        sid
+                    );
                     resp.headers_mut().append(
                         "Set-Cookie",
                         format!("fortify_pending_session={}; Path=/; HttpOnly", sid)
@@ -1502,7 +1516,7 @@ async fn process_request(
         Err(e) => {
             let mut m = safe_lock(&metrics);
             m.record_backend_error();
-            
+
             // Check if this is a capacity error - return 503 instead of 502
             if e.contains("No available backend nodes") || e.contains("capacity") {
                 tracing::warn!("503: All backend nodes at capacity");
@@ -1666,7 +1680,7 @@ async fn upgrade_verification_token(
     // Timeout for Gate token upgrade (10s - this should be fast)
     // Jitter applied to prevent timing-based fingerprinting
     const TOKEN_UPGRADE_TIMEOUT_SECS: u64 = 10;
-    
+
     // Use reqwest with explicit timeout for token upgrade
     let client = reqwest::Client::builder()
         .timeout(jittered_timeout(TOKEN_UPGRADE_TIMEOUT_SECS))
@@ -1732,7 +1746,7 @@ async fn proxy_to_gate(
     // Jitter applied to prevent timing-based fingerprinting
     const GATE_REQUEST_TIMEOUT_SECS: u64 = 30;
     const GATE_CONNECT_TIMEOUT_SECS: u64 = 5;
-    
+
     // Build full Gate URL preserving query string if present
     let query = req
         .uri()
@@ -1825,7 +1839,7 @@ async fn proxy_to_gate_with_demoted(
     // Timeout for Gate requests (30s - Gate should respond quickly)
     const GATE_REQUEST_TIMEOUT_SECS: u64 = 30;
     const GATE_CONNECT_TIMEOUT_SECS: u64 = 5;
-    
+
     // Build full Gate URL preserving query string if present
     let query = req
         .uri()
@@ -1953,7 +1967,7 @@ async fn route_to_backend(
     // Jitter applied to prevent timing-based fingerprinting
     const BACKEND_TIMEOUT_SECS: u64 = 60;
     const BACKEND_CONNECT_TIMEOUT_SECS: u64 = 10;
-    
+
     // Use reqwest for backend proxying with explicit timeouts
     let client = reqwest::Client::builder()
         .connect_timeout(jittered_timeout(BACKEND_CONNECT_TIMEOUT_SECS))
@@ -2058,7 +2072,7 @@ async fn route_to_backend(
 /// Serve a friendly page for killed/burned sessions explaining they can try again
 fn serve_killed_session_page() -> Response<BoxBody> {
     use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
-    
+
     let engine = TemplateEngine::new();
     let branding = BrandingVars::default();
     let html = engine.render_with_branding(TemplateType::SessionExpired, &branding, None);
@@ -2079,12 +2093,13 @@ fn serve_killed_session_page() -> Response<BoxBody> {
 /// Includes auto-refresh and Retry-After header for graceful degradation
 fn serve_busy_page() -> Response<BoxBody> {
     use rand::Rng;
-    
+
     // Add jitter to retry time (25-35 seconds) to prevent thundering herd
     let mut rng = rand::rng();
     let retry_seconds = rng.random_range(25..=35);
-    
-    let html = format!(r#"<!DOCTYPE html>
+
+    let html = format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2208,7 +2223,9 @@ fn serve_busy_page() -> Response<BoxBody> {
         </div>
     </div>
 </body>
-</html>"#, retry_seconds, retry_seconds);
+</html>"#,
+        retry_seconds, retry_seconds
+    );
 
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)

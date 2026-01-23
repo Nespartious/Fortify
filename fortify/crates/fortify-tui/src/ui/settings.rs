@@ -54,19 +54,20 @@ pub fn draw(
 fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
     let available_width = area.width as usize;
     let tabs = SettingsTab::all();
-    
+
     // Calculate full width needed for verbose tabs
-    let full_width: usize = tabs.iter()
+    let full_width: usize = tabs
+        .iter()
         .map(|t| t.label().len() + 5) // " Label │ "
         .sum();
-    
+
     // Use compact dot mode if tabs would overflow
     let use_compact = full_width > available_width.saturating_sub(4);
-    
+
     if use_compact {
         // Compact: ● ○ ○ ○ ○ ○  [Branding]
         let mut progress: Vec<Span> = Vec::new();
-        
+
         for tab in tabs.iter() {
             let is_current = *tab == current;
             let (symbol, color) = if is_current {
@@ -79,7 +80,7 @@ fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
                 Style::default().fg(color),
             ));
         }
-        
+
         // Add current tab name
         progress.push(Span::raw(" "));
         progress.push(Span::styled(
@@ -88,7 +89,7 @@ fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ));
-        
+
         let line = Line::from(progress);
         let para = Paragraph::new(line)
             .alignment(Alignment::Center)
@@ -133,7 +134,13 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
         .branding
         .custom_css
         .as_ref()
-        .map(|s| if s.len() > 30 { format!("{}...", &s[..30]) } else { s.clone() })
+        .map(|s| {
+            if s.len() > 30 {
+                format!("{}...", &s[..30])
+            } else {
+                s.clone()
+            }
+        })
         .unwrap_or_else(|| "(none)".to_string());
 
     let fields = [
@@ -144,8 +151,14 @@ fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
             app.config.branding.welcome_message.as_str(),
         ),
         ("Primary Color", app.config.branding.primary_color.as_str()),
-        ("Secondary Color", app.config.branding.secondary_color.as_str()),
-        ("Tertiary Color", app.config.branding.tertiary_color.as_str()),
+        (
+            "Secondary Color",
+            app.config.branding.secondary_color.as_str(),
+        ),
+        (
+            "Tertiary Color",
+            app.config.branding.tertiary_color.as_str(),
+        ),
         ("Logo Path", logo_path.as_str()),
         ("Custom CSS", custom_css.as_str()),
     ];

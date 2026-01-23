@@ -1223,13 +1223,13 @@ impl Default for CaptchaPregenConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            target_pool_size: 25_000,   // Target 25K pre-generated CAPTCHAs (with full HTML)
-            min_pool_size: 5_000,       // Refill when below 5K
-            max_pool_size: 50_000,      // Never exceed 50K
-            pause_cpu_threshold: 70.0,  // Pause pre-gen if CPU > 70%
-            batch_size: 100,            // Generate 100 at a time for efficiency
-            batch_delay_ms: 100,        // 100ms between batches
-            rotation_percent: 25,       // Replace 25% of pool
+            target_pool_size: 25_000, // Target 25K pre-generated CAPTCHAs (with full HTML)
+            min_pool_size: 5_000,     // Refill when below 5K
+            max_pool_size: 50_000,    // Never exceed 50K
+            pause_cpu_threshold: 70.0, // Pause pre-gen if CPU > 70%
+            batch_size: 100,          // Generate 100 at a time for efficiency
+            batch_delay_ms: 100,      // 100ms between batches
+            rotation_percent: 25,     // Replace 25% of pool
             rotation_interval_days: 10, // Every 10 days
         }
     }
@@ -1718,13 +1718,13 @@ CookieAuthentication 1
         std::fs::write(&torrc_path, torrc_content)?;
 
         // Build command with optional CPU affinity
-        let mut cmd = if self.config.cpu_affinity && daemon.cpu_core.is_some() {
-            let core = daemon.cpu_core.unwrap();
-            let mut c = std::process::Command::new("taskset");
-            c.arg("-c").arg(core.to_string()).arg("tor");
-            c
-        } else {
-            std::process::Command::new("tor")
+        let mut cmd = match (self.config.cpu_affinity, daemon.cpu_core) {
+            (true, Some(core)) => {
+                let mut c = std::process::Command::new("taskset");
+                c.arg("-c").arg(core.to_string()).arg("tor");
+                c
+            }
+            _ => std::process::Command::new("tor"),
         };
 
         cmd.arg("-f").arg(&torrc_path);

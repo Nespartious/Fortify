@@ -104,7 +104,7 @@ impl OrchestratorServer {
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
                     .await;
-                    
+
                 if let Err(e) = result {
                     tracing::debug!("Connection error: {}", e);
                 }

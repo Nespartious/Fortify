@@ -1,7 +1,7 @@
 # Dev_Progress Conflict Audit & Recommended Order
 
 **Generated:** 2025-01-23  
-**Last Updated:** 2025-01-24  
+**Last Updated:** 2026-01-23  
 **Purpose:** Identify overlapping/conflicting tasks across sprint documents and recommend a working order
 
 ---
@@ -14,15 +14,24 @@ After reviewing all sprint documents and completing work on January 23-24, 2026:
 - **Sprint 05** - Security Status Bug: Hysteresis and decay fixes (ARCHIVED)
 - **Sprint 06** - CAPTCHA Bug: Validation for all challenge types (ARCHIVED)
 - **Sprint 02** - Panic Audit: Phases 2-3 complete (no unsafe patterns found)
-- **Sprint 07** - Merged into Sprint 14 (ARCHIVED)
-- **Sprint 13 Phase 1B** - Merged into Sprint 14
+- **Sprint 07** - Merged into Sprint 15 (ARCHIVED)
+- **Sprint 08** - Variable Audit: Merged into Sprint 15
+- **Sprint 13 Phase 1B** - Merged into Sprint 15
 - **Sprint 14** - TUI & Control Panel Alignment: All 5 phases complete (ARCHIVED)
+- **Sprint 03** - CI Quality: Automatic workflow triggers (PR #37 merged)
+- **Sprint 04** - TUI Completion: Deployment wizard (PR #36 merged)
 
 ### Current State
-- **6 Active Sprints** in Dev_Progress/
-- **9 Archived Sprints** in Dev_Progress/archive/
-- **Conflicts resolved** - Branding work consolidated in Sprint 14
-- **Sprint 14** - Complete and archived
+- **5 Active Sprints** in Dev_Progress/
+- **10 Archived Sprints** in Dev_Progress/archive/
+- **Conflicts resolved** - Branding/Config work consolidated in Sprint 15
+- **Sprint 15** - Branding & Config Propagation: 🟡 IN PROGRESS
+
+### Next Priority
+- **Sprint 15** - [15-BRANDING-CONFIG-PROPAGATION-SPRINT.md](15-BRANDING-CONFIG-PROPAGATION-SPRINT.md)
+  - Fix branding propagation from TUI to Gate/HTTP
+  - Remove deprecated config fields (tertiary_color, custom_css, logo, audio)
+  - Ensure all templates use configurable values
 
 ---
 

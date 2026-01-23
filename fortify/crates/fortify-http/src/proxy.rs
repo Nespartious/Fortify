@@ -1,6 +1,6 @@
-use fortify_core::{jittered_timeout, safe_lock};
 use crate::{BackendNode, Metrics, ProxyError, Result};
 use bytes::Bytes;
+use fortify_core::{jittered_timeout, safe_lock};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::{Request, Response};
@@ -102,7 +102,7 @@ pub async fn proxy_request(
     let response = request_builder.send().await.map_err(|e| {
         node.release();
         safe_lock(&metrics).record_backend_error();
-        
+
         // Distinguish timeout errors for better observability
         if e.is_timeout() {
             tracing::warn!(
@@ -112,11 +112,7 @@ pub async fn proxy_request(
             );
             ProxyError::BackendTimeout(BACKEND_REQUEST_TIMEOUT_SECS)
         } else if e.is_connect() {
-            tracing::warn!(
-                "Failed to connect to backend {}: {}",
-                node.address,
-                e
-            );
+            tracing::warn!("Failed to connect to backend {}: {}", node.address, e);
             ProxyError::BackendUnavailable
         } else {
             tracing::warn!("Backend request error: {}", e);

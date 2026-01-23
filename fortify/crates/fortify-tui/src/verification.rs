@@ -125,10 +125,7 @@ impl OnionVerifier {
 
     /// Verify multiple addresses concurrently
     pub async fn verify_all(&self, addresses: &[String]) -> Vec<VerificationResult> {
-        let futures: Vec<_> = addresses
-            .iter()
-            .map(|addr| self.verify(addr))
-            .collect();
+        let futures: Vec<_> = addresses.iter().map(|addr| self.verify(addr)).collect();
 
         futures::future::join_all(futures).await
     }

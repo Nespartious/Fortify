@@ -1,5 +1,3 @@
-use fortify_core::safe_lock;
-use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
 use crate::captcha_html::{
     render_captcha_page_with_timer, render_captcha_page_with_timer_and_reason,
 };
@@ -7,6 +5,8 @@ use crate::captcha_types::CaptchaData;
 use crate::Gate;
 use crate::GateError;
 use bytes::Bytes;
+use fortify_core::safe_lock;
+use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -59,7 +59,7 @@ impl GateServer {
                     .max_buf_size(16 * 1024)
                     .serve_connection(io, service)
                     .await;
-                    
+
                 if let Err(err) = result {
                     tracing::error!("Error serving connection: {:?}", err);
                 }
@@ -85,9 +85,13 @@ async fn handle_request(
 
     // Check if user was demoted - either via cookie OR via header from HTTP proxy
     // The header is set by HTTP proxy for immediate detection (before cookie round-trip)
-    let was_demoted = cookies.contains("fortify_demoted=1") 
-        || req.headers().get("X-Fortify-Demoted").map(|v| v == "1").unwrap_or(false);
-    
+    let was_demoted = cookies.contains("fortify_demoted=1")
+        || req
+            .headers()
+            .get("X-Fortify-Demoted")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+
     if was_demoted {
         tracing::info!("Demoted user detected at Gate (cookie or header)");
     }
@@ -173,7 +177,7 @@ fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
     // Landing page for NEW users (first-time visitors)
     // Uses template engine with citadel/gold theme
     // NO JAVASCRIPT ALLOWED
-    
+
     let engine = TemplateEngine::new();
     let branding = BrandingVars::default();
     let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
@@ -194,17 +198,20 @@ fn serve_demoted_page(_gate: Arc<Gate>) -> Response<BoxBody> {
     // Demoted users see the "Hold Position" page with a friendly message
     // They click "Resume Access" to go to /Fortify/Portcullis for the 2-captcha challenge
     // This intermediate page reduces friction and explains what's happening
-    
+
     // Use template engine to render demoted.html with branding
     let engine = TemplateEngine::new();
     let branding = BrandingVars::default();
-    
+
     // Mirror list is currently not available from Gate context
     // Hide the section by providing an empty list with a message
     let mut extra_vars = std::collections::HashMap::new();
-    extra_vars.insert("MIRROR_LIST".to_string(), 
-        "<li><a href=\"/Fortify/Portcullis\">Click Resume Access above to continue</a></li>".to_string());
-    
+    extra_vars.insert(
+        "MIRROR_LIST".to_string(),
+        "<li><a href=\"/Fortify/Portcullis\">Click Resume Access above to continue</a></li>"
+            .to_string(),
+    );
+
     let html = engine.render_with_branding(TemplateType::Demoted, &branding, Some(&extra_vars));
 
     // Build response - do NOT clear demoted cookie here
@@ -253,18 +260,25 @@ fn serve_captcha_challenge(
 ) -> Response<BoxBody> {
     // Preserve existing session ID if available (demoted user re-verifying)
     // This keeps the same session ID so we can continue tracking them
-    let session_id = existing_session_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let session_id = existing_session_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     tracing::debug!(
         "serve_captcha_challenge entry: session={}, existing_id={:?}, is_demoted={}",
-        session_id, existing_session_id, is_demoted
+        session_id,
+        existing_session_id,
+        is_demoted
     );
 
     // Check if this is an existing session - handle various states
     if let Some(existing_state) = gate.get_verification_state(&session_id) {
         tracing::debug!(
             "Found existing session {}: is_threat={}, captchas_remaining={}, captcha_solved={}",
-            session_id, existing_state.is_threat, existing_state.captchas_remaining, existing_state.captcha_solved
+            session_id,
+            existing_state.is_threat,
+            existing_state.captchas_remaining,
+            existing_state.captcha_solved
         );
 
         // If session already completed all captchas, we need to create a fresh session
@@ -304,7 +318,7 @@ fn serve_captcha_challenge(
     // Demoted users (from cookie) should be treated as threat mode with 2 captchas
     // This ensures they don't bypass threat handling by navigating to /Fortify/Portcullis directly
     let is_threat_mode = is_demoted;
-    
+
     // Get captcha type from configuration
     // CRITICAL: For threat/demoted users, the FIRST captcha uses gate_captcha_type
     // The SECOND captcha (after AdditionalCaptchaRequired) uses threat_captcha_type
@@ -322,7 +336,11 @@ fn serve_captcha_challenge(
     let state = match gate.create_verification_with_type(
         session_id.clone(),
         captcha_type,
-        if is_threat_mode { crate::CaptchaDifficulty::Hard } else { crate::CaptchaDifficulty::Medium },
+        if is_threat_mode {
+            crate::CaptchaDifficulty::Hard
+        } else {
+            crate::CaptchaDifficulty::Medium
+        },
         is_threat_mode, // threat mode based on demoted status
     ) {
         Ok(s) => s,
@@ -355,7 +373,10 @@ fn serve_captcha_challenge(
         let engine = TemplateEngine::new();
         let branding = BrandingVars::default();
         let mut extra_vars = std::collections::HashMap::new();
-        extra_vars.insert("CAPTCHA_IMAGE_URL".to_string(), format!("/gate/captcha/{}", captcha_id));
+        extra_vars.insert(
+            "CAPTCHA_IMAGE_URL".to_string(),
+            format!("/gate/captcha/{}", captcha_id),
+        );
         extra_vars.insert("SESSION_ID".to_string(), session_id.to_string());
         extra_vars.insert("CAPTCHA_TYPE".to_string(), "bmptext".to_string());
         engine.render_with_branding(TemplateType::Captcha, &branding, Some(&extra_vars))
@@ -611,7 +632,8 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
             let branding = BrandingVars::default();
             let mut extra_vars = std::collections::HashMap::new();
             extra_vars.insert("REDIRECT_DELAY".to_string(), delay_secs.to_string());
-            let html = engine.render_with_branding(TemplateType::Verified, &branding, Some(&extra_vars));
+            let html =
+                engine.render_with_branding(TemplateType::Verified, &branding, Some(&extra_vars));
 
             // Set verification token cookie (60s expiry, single-use)
             // User must use this token on their next request to get a session token
@@ -646,10 +668,11 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
             // First captcha used gate_captcha_type, second uses threat_captcha_type
             let captcha_config = gate.get_captcha_config();
             let second_captcha_type = captcha_config.threat_captcha_type;
-            
+
             tracing::info!(
                 "Second captcha for threat session: type={:?} (first was {:?})",
-                second_captcha_type, captcha_config.gate_captcha_type
+                second_captcha_type,
+                captcha_config.gate_captcha_type
             );
 
             // Regenerate captcha with the threat type for second challenge
@@ -713,9 +736,19 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
             let mut extra_vars = std::collections::HashMap::new();
             extra_vars.insert("ATTEMPTS".to_string(), failed_attempts.to_string());
             extra_vars.insert("DELAY_SECONDS".to_string(), delay_seconds.to_string());
-            extra_vars.insert("DELAY_DISPLAY".to_string(), 
-                if delay_seconds > 0 { "block".to_string() } else { "none".to_string() });
-            let html = engine.render_with_branding(TemplateType::VerificationFailed, &branding, Some(&extra_vars));
+            extra_vars.insert(
+                "DELAY_DISPLAY".to_string(),
+                if delay_seconds > 0 {
+                    "block".to_string()
+                } else {
+                    "none".to_string()
+                },
+            );
+            let html = engine.render_with_branding(
+                TemplateType::VerificationFailed,
+                &branding,
+                Some(&extra_vars),
+            );
 
             Response::builder()
                 .status(StatusCode::FORBIDDEN)

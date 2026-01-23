@@ -2616,11 +2616,7 @@ impl App {
                     ),
                     (
                         "Custom CSS".to_string(),
-                        self.config
-                            .branding
-                            .custom_css
-                            .clone()
-                            .unwrap_or_default(),
+                        self.config.branding.custom_css.clone().unwrap_or_default(),
                     ),
                 ];
                 fields.get(index).cloned().unwrap_or(unknown)

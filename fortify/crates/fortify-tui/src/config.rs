@@ -195,9 +195,9 @@ impl Default for BrandingConfig {
             logo_base64: None,
             logo_max_width: 256,
             logo_max_height: 256,
-            primary_color: "#c9a227".to_string(),   // Gold - primary brand
+            primary_color: "#c9a227".to_string(), // Gold - primary brand
             secondary_color: "#a68b5b".to_string(), // Muted gold - accents
-            tertiary_color: "#2D3748".to_string(),  // Dark slate - subtle elements
+            tertiary_color: "#2D3748".to_string(), // Dark slate - subtle elements
             custom_css: None,
             welcome_message: "Please complete the verification to continue.".to_string(),
         }

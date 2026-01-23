@@ -436,17 +436,19 @@ impl Gate {
     ) -> Self {
         let pool_target = 200; // Pre-generate 200 CAPTCHAs
         let captcha_pool = Arc::new(Mutex::new(Vec::with_capacity(pool_target)));
-        
+
         // Pre-generate initial pool
         {
             let mut pool = captcha_pool.lock().unwrap();
             tracing::info!("Pre-generating {} CAPTCHAs for pool...", pool_target);
             for _ in 0..pool_target {
-                pool.push(CaptchaChallenge::generate_with_difficulty(CaptchaDifficulty::Medium));
+                pool.push(CaptchaChallenge::generate_with_difficulty(
+                    CaptchaDifficulty::Medium,
+                ));
             }
             tracing::info!("CAPTCHA pool initialized with {} challenges", pool.len());
         }
-        
+
         Self {
             bind_addr,
             max_concurrent,
@@ -461,7 +463,7 @@ impl Gate {
             captcha_pool_target: pool_target,
         }
     }
-    
+
     /// Take a pre-generated CAPTCHA from the pool, or generate on-demand if empty
     /// CRITICAL: Reset created_at to NOW when serving, since pool captchas may be stale
     fn take_captcha(&self, difficulty: CaptchaDifficulty) -> CaptchaChallenge {
@@ -473,28 +475,37 @@ impl Gate {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            tracing::debug!("Served CAPTCHA from pool (remaining: {}), reset timestamp", pool.len());
+            tracing::debug!(
+                "Served CAPTCHA from pool (remaining: {}), reset timestamp",
+                pool.len()
+            );
             captcha
         } else {
             tracing::warn!("CAPTCHA pool empty, generating on-demand");
             CaptchaChallenge::generate_with_difficulty(difficulty)
         }
     }
-    
+
     /// Refill the CAPTCHA pool (call during idle periods)
     pub fn refill_captcha_pool(&self) {
         let mut pool = safe_lock(&self.captcha_pool);
         let current = pool.len();
         let needed = self.captcha_pool_target.saturating_sub(current);
-        
+
         if needed > 0 {
-            tracing::debug!("Refilling CAPTCHA pool: {} -> {}", current, current + needed);
+            tracing::debug!(
+                "Refilling CAPTCHA pool: {} -> {}",
+                current,
+                current + needed
+            );
             for _ in 0..needed {
-                pool.push(CaptchaChallenge::generate_with_difficulty(CaptchaDifficulty::Medium));
+                pool.push(CaptchaChallenge::generate_with_difficulty(
+                    CaptchaDifficulty::Medium,
+                ));
             }
         }
     }
-    
+
     /// Get current CAPTCHA pool size
     pub fn captcha_pool_size(&self) -> usize {
         safe_lock(&self.captcha_pool).len()
@@ -587,7 +598,10 @@ impl Gate {
             CaptchaType::BmpText => {
                 // Use pre-generated CAPTCHA from pool when available
                 let challenge = self.take_captcha(difficulty);
-                tracing::debug!("Using CAPTCHA from pool, pool size now: {}", self.captcha_pool_size());
+                tracing::debug!(
+                    "Using CAPTCHA from pool, pool size now: {}",
+                    self.captcha_pool_size()
+                );
                 state.captcha_data = Some(CaptchaData::BmpText {
                     text: challenge.text.clone(),
                     image_data: challenge.image_data.clone(),
@@ -670,8 +684,11 @@ impl Gate {
         let state = match states.get_mut(session_id) {
             Some(s) => s,
             None => {
-                tracing::error!("CAPTCHA verify failed: session {} not found in states (have {} sessions)", 
-                    session_id, states.len());
+                tracing::error!(
+                    "CAPTCHA verify failed: session {} not found in states (have {} sessions)",
+                    session_id,
+                    states.len()
+                );
                 return Err(GateError::ChallengeNotFound);
             }
         };
@@ -711,7 +728,10 @@ impl Gate {
             // Get age for debugging
             let age_secs = if let Some(ref c) = state.captcha_challenge {
                 use std::time::{SystemTime, UNIX_EPOCH};
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
                 now.saturating_sub(c.created_at)
             } else {
                 0
@@ -745,7 +765,9 @@ impl Gate {
                 let result = c.verify(solution);
                 tracing::info!(
                     "CAPTCHA verification: session={}, type=Direction, submitted='{}', match={}",
-                    session_id, solution, result
+                    session_id,
+                    solution,
+                    result
                 );
                 result
             }
@@ -753,7 +775,9 @@ impl Gate {
                 let result = c.verify(solution);
                 tracing::info!(
                     "CAPTCHA verification: session={}, type=Sequence, submitted='{}', match={}",
-                    session_id, solution, result
+                    session_id,
+                    solution,
+                    result
                 );
                 result
             }
@@ -777,7 +801,9 @@ impl Gate {
                 let result = c.verify(solution);
                 tracing::info!(
                     "CAPTCHA verification: session={}, type=Silhouette, submitted='{}', match={}",
-                    session_id, solution, result
+                    session_id,
+                    solution,
+                    result
                 );
                 result
             }
@@ -803,7 +829,11 @@ impl Gate {
             tracing::warn!(
                 "CAPTCHA verify failed: session {} submitted invalid answer (attempts={})",
                 session_id,
-                state.captcha_challenge.as_ref().map(|c| c.failed_attempts).unwrap_or(0)
+                state
+                    .captcha_challenge
+                    .as_ref()
+                    .map(|c| c.failed_attempts)
+                    .unwrap_or(0)
             );
             return Err(GateError::InvalidCaptcha);
         }
