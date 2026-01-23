@@ -3962,11 +3962,31 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
         violations_breakdown,
         // Traffic tier config section
         ADMIN_PATH,
-        if state.get_traffic_tier() == TrafficTier::Micro { "selected" } else { "" },
-        if state.get_traffic_tier() == TrafficTier::Small { "selected" } else { "" },
-        if state.get_traffic_tier() == TrafficTier::Medium { "selected" } else { "" },
-        if state.get_traffic_tier() == TrafficTier::Large { "selected" } else { "" },
-        if state.get_traffic_tier() == TrafficTier::Enterprise { "selected" } else { "" },
+        if state.get_traffic_tier() == TrafficTier::Micro {
+            "selected"
+        } else {
+            ""
+        },
+        if state.get_traffic_tier() == TrafficTier::Small {
+            "selected"
+        } else {
+            ""
+        },
+        if state.get_traffic_tier() == TrafficTier::Medium {
+            "selected"
+        } else {
+            ""
+        },
+        if state.get_traffic_tier() == TrafficTier::Large {
+            "selected"
+        } else {
+            ""
+        },
+        if state.get_traffic_tier() == TrafficTier::Enterprise {
+            "selected"
+        } else {
+            ""
+        },
         // Branding config section
         ADMIN_PATH,
         html_escape(&branding_config.service_name),
