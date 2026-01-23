@@ -1,7 +1,19 @@
 name: CI
 
-# Manual trigger only - use GitHub Actions UI or gh workflow run
+# Automatic triggers on push and PR to main branches
 on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'fortify/**'
+      - 'Cargo.toml'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'fortify/**'
+      - 'Cargo.toml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
     inputs:
       run_all:
@@ -9,13 +21,6 @@ on:
         required: false
         default: true
         type: boolean
-
-# To re-enable automatic triggers, uncomment below:
-# on:
-#   push:
-#     branches: [main, develop]
-#   pull_request:
-#     branches: [main, develop]
 
 # Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 # To use self-hosted: Add a runner with labels [self-hosted, linux, fortify]

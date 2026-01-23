@@ -1,7 +1,21 @@
 name: Code Quality
 
-# Manual trigger only - use GitHub Actions UI or gh workflow run
+# Automatic triggers on push and PR to main, plus weekly schedule
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'fortify/**'
+      - 'Cargo.toml'
+      - '.github/workflows/code-quality.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fortify/**'
+      - 'Cargo.toml'
+      - '.github/workflows/code-quality.yml'
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
   workflow_dispatch:
     inputs:
       run_all:
@@ -9,15 +23,6 @@ on:
         required: false
         default: true
         type: boolean
-
-# To re-enable automatic triggers, uncomment below:
-# on:
-#   push:
-#     branches: [main]
-#   pull_request:
-#     branches: [main]
-#   schedule:
-#     - cron: '0 0 * * 0'
 
 # Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:
