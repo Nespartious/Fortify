@@ -7,9 +7,9 @@
 # Requires powerful dedicated server.
 #
 # System Requirements:
-#   CPU: 8+ cores
-#   RAM: 8-16GB
-#   Disk: 20GB SSD
+#   CPU: 4 cores minimum, 8 cores recommended
+#   RAM: 4GB minimum, 8GB recommended
+#   Disk: 5GB SSD minimum
 #
 # ============================================================================
 
@@ -21,22 +21,22 @@ export FORTIFY_TRAFFIC_TIER="large"
 # ============================================================================
 # CAPTCHA POOL SETTINGS (Large: High Capacity)
 # ============================================================================
-POOL_SIZE=5000          # Large pool for high traffic
-MIN_POOL_SIZE=1000      # 20% emergency threshold
-MAX_POOL_SIZE=10000     # 2x target for bursts
+POOL_SIZE=3000          # Reduced from 5K for Tor realism
+MIN_POOL_SIZE=1000      # 33% emergency threshold
+MAX_POOL_SIZE=6000      # 2x target for bursts
 
 # ============================================================================
 # RATE LIMITING (Large: Very Permissive)
 # ============================================================================
 RATE_LIMIT_RPM=300      # 300 requests per minute per circuit (5 RPS)
-DDOS_RPS_THRESHOLD=2000 # High DDoS threshold
+DDOS_RPS_THRESHOLD=1000 # Reduced from 2K for Tor realism
 
 # ============================================================================
-# MIRROR SETTINGS (Large: Enterprise-grade)
+# MIRROR SETTINGS (Large: Robust)
 # ============================================================================
-MIN_MIRRORS=5           # 5 active mirrors minimum
-MAX_MIRRORS=20          # Scale up to 20
-STANDBY_MIRRORS=5       # 5 standby mirrors
+MIN_MIRRORS=4           # 4 active mirrors minimum
+MAX_MIRRORS=12          # Reduced from 20 for Tor realism
+STANDBY_MIRRORS=4       # 4 standby mirrors
 
 # ============================================================================
 # BAN THRESHOLDS (Large: Lenient)

@@ -61,8 +61,8 @@ impl TrafficTier {
             TrafficTier::Micro => 50,
             TrafficTier::Small => 500,
             TrafficTier::Medium => 2_000,
-            TrafficTier::Large => 5_000,
-            TrafficTier::Enterprise => 10_000,
+            TrafficTier::Large => 3_000, // Reduced from 5K for Tor realism
+            TrafficTier::Enterprise => 5_000, // Reduced from 10K for Tor realism
         }
     }
 
@@ -83,8 +83,8 @@ impl TrafficTier {
             TrafficTier::Micro => 100,
             TrafficTier::Small => 1_000,
             TrafficTier::Medium => 5_000,
-            TrafficTier::Large => 10_000,
-            TrafficTier::Enterprise => 20_000,
+            TrafficTier::Large => 6_000, // Reduced from 10K for Tor realism
+            TrafficTier::Enterprise => 10_000, // Reduced from 20K for Tor realism
         }
     }
 
@@ -105,8 +105,8 @@ impl TrafficTier {
             TrafficTier::Micro => 20,
             TrafficTier::Small => 100,
             TrafficTier::Medium => 500,
-            TrafficTier::Large => 2_000,
-            TrafficTier::Enterprise => 10_000,
+            TrafficTier::Large => 1_000, // Reduced from 2K for Tor realism
+            TrafficTier::Enterprise => 3_000, // Reduced from 10K for Tor realism
         }
     }
 
@@ -127,8 +127,8 @@ impl TrafficTier {
             TrafficTier::Micro => 2,
             TrafficTier::Small => 5,
             TrafficTier::Medium => 10,
-            TrafficTier::Large => 20,
-            TrafficTier::Enterprise => 50,
+            TrafficTier::Large => 12, // Reduced from 20 for Tor realism
+            TrafficTier::Enterprise => 20, // Reduced from 50 for Tor realism
         }
     }
 
@@ -138,8 +138,8 @@ impl TrafficTier {
             TrafficTier::Micro => 1,
             TrafficTier::Small => 2,
             TrafficTier::Medium => 3,
-            TrafficTier::Large => 5,
-            TrafficTier::Enterprise => 10,
+            TrafficTier::Large => 4,      // Reduced from 5
+            TrafficTier::Enterprise => 6, // Reduced from 10
         }
     }
 
@@ -162,6 +162,90 @@ impl TrafficTier {
             TrafficTier::Medium => 15,
             TrafficTier::Large => 20,
             TrafficTier::Enterprise => 30,
+        }
+    }
+
+    // =========================================================================
+    // SYSTEM REQUIREMENTS
+    // =========================================================================
+
+    /// Returns minimum CPU cores for this tier
+    pub fn min_cpu_cores(&self) -> u8 {
+        match self {
+            TrafficTier::Micro => 1,
+            TrafficTier::Small => 2,
+            TrafficTier::Medium => 2,
+            TrafficTier::Large => 4,
+            TrafficTier::Enterprise => 4,
+        }
+    }
+
+    /// Returns recommended CPU cores for this tier
+    pub fn recommended_cpu_cores(&self) -> u8 {
+        match self {
+            TrafficTier::Micro => 2,
+            TrafficTier::Small => 4,
+            TrafficTier::Medium => 4,
+            TrafficTier::Large => 8,
+            TrafficTier::Enterprise => 8,
+        }
+    }
+
+    /// Returns minimum RAM in MB for this tier (includes ~1GB OS overhead for Ubuntu)
+    pub fn min_ram_mb(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 2048,      // 1GB OS + 1GB Fortify headroom
+            TrafficTier::Small => 2048,      // 1GB OS + 1GB Fortify
+            TrafficTier::Medium => 3072,     // 1GB OS + 2GB Fortify
+            TrafficTier::Large => 5120,      // 1GB OS + 4GB Fortify
+            TrafficTier::Enterprise => 8192, // 1GB OS + 7GB Fortify
+        }
+    }
+
+    /// Returns recommended RAM in MB for this tier (includes ~1GB OS overhead)
+    pub fn recommended_ram_mb(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 2048,       // Minimal
+            TrafficTier::Small => 3072,       // Comfortable
+            TrafficTier::Medium => 4096,      // Production
+            TrafficTier::Large => 8192,       // Heavy traffic
+            TrafficTier::Enterprise => 16384, // High capacity
+        }
+    }
+
+    /// Returns minimum disk in MB for this tier
+    pub fn min_disk_mb(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 1024,       // 1GB
+            TrafficTier::Small => 2048,       // 2GB
+            TrafficTier::Medium => 3072,      // 3GB
+            TrafficTier::Large => 6144,       // 6GB
+            TrafficTier::Enterprise => 10240, // 10GB
+        }
+    }
+
+    /// Returns formatted system requirements string
+    pub fn system_requirements(&self) -> String {
+        format!(
+            "CPU: {}+ cores ({}+ rec) | RAM: {}+ MB ({}+ rec) | Disk: {}+ MB",
+            self.min_cpu_cores(),
+            self.recommended_cpu_cores(),
+            self.min_ram_mb(),
+            self.recommended_ram_mb(),
+            self.min_disk_mb()
+        )
+    }
+
+    /// Returns the rate limit multiplier for this tier.
+    /// Used by GlobalRateLimiter to scale base limits.
+    /// Micro=0.5x, Small=1.0x, Medium=2.0x, Large=3.0x, Enterprise=4.0x
+    pub fn rate_limit_multiplier(&self) -> f32 {
+        match self {
+            TrafficTier::Micro => 0.5,
+            TrafficTier::Small => 1.0,
+            TrafficTier::Medium => 2.0,
+            TrafficTier::Large => 3.0,
+            TrafficTier::Enterprise => 4.0,
         }
     }
 }
