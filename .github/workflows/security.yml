@@ -1,7 +1,23 @@
 name: Security Audit
 
-# Manual trigger only - use GitHub Actions UI or gh workflow run
+# Automatic triggers on push and PR, plus daily schedule
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'fortify/**'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/security.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fortify/**'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/security.yml'
+  schedule:
+    - cron: '0 0 * * *'  # Daily security scan
   workflow_dispatch:
     inputs:
       run_all:
@@ -9,16 +25,6 @@ on:
         required: false
         default: true
         type: boolean
-  # Keep scheduled runs for security (optional - remove if not wanted)
-  schedule:
-    - cron: '0 0 * * *'
-
-# To re-enable automatic triggers, uncomment below:
-# on:
-#   push:
-#     branches: [main]
-#   pull_request:
-#     branches: [main]
 
 # Runner selection: Prefers self-hosted, falls back to GitHub-hosted
 env:
