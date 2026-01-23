@@ -196,7 +196,7 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let timeout = app.config.captcha.timeout_seconds.to_string();
     let attempts = app.config.captcha.max_attempts.to_string();
     let rotation_days = app.config.captcha.rotation_interval_days.to_string();
-    
+
     // New CAPTCHA type fields
     let gate_type = app.config.captcha.gate_captcha_type.display_name();
     let threat_enabled = if app.config.captcha.threat_captcha_enabled {

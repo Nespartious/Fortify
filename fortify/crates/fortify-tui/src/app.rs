@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::config::{CaptchaType, ChangeManager, FortifyConfig};
-use crate::deployment::DeploymentManager;
+use crate::deployment::{DeploymentManager, DeploymentState};
 use crate::logging::{LogBuffer, LogEntry, LogLevel};
 use crate::ui;
 
@@ -303,7 +303,10 @@ pub enum Dialog {
     },
     /// Apply changes now or store for later
     ApplyChanges {
-        changes: Vec<String>,
+        /// Changes that can be hot-reloaded
+        hot_reload: Vec<String>,
+        /// Changes that require restart
+        restart_required: Vec<String>,
     },
     /// Text input
     Input {
@@ -1754,25 +1757,79 @@ impl App {
                     _ => {}
                 }
             }
-            Dialog::ApplyChanges { .. } => {
+            Dialog::ApplyChanges {
+                hot_reload,
+                restart_required,
+            } => {
+                // Clone lengths before any mutable borrows
+                let hot_reload_count = hot_reload.len();
+                let restart_required_count = restart_required.len();
+                let has_hot_reload = !hot_reload.is_empty();
+                let has_restart_required = !restart_required.is_empty();
+
                 match key.code {
                     KeyCode::Char('a') | KeyCode::Char('A') => {
-                        // Apply now
-                        self.apply_changes_now().await?;
+                        // Apply hot-reload changes only
+                        if has_hot_reload {
+                            self.apply_changes_now().await?;
+                            if has_restart_required {
+                                // Store restart-required changes for later
+                                self.changes.store_for_restart();
+                                self.status_message = Some((
+                                    format!(
+                                        "Applied {} changes. {} require restart.",
+                                        hot_reload_count, restart_required_count
+                                    ),
+                                    std::time::Instant::now(),
+                                ));
+                            } else {
+                                self.status_message = Some((
+                                    "Changes applied successfully".into(),
+                                    std::time::Instant::now(),
+                                ));
+                            }
+                        }
                         self.dialog = Dialog::None;
-                        self.focus = Focus::Settings;
+                        // Return to Running view (Live TUI Monitor)
+                        self.view = View::Running;
+                        self.focus = Focus::Menu;
                     }
-                    KeyCode::Char('l') | KeyCode::Char('L') => {
-                        // Store for later
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        // Store changes that require restart
                         self.changes.store_for_restart();
-                        self.status_message = Some((
-                            "Changes stored for next restart".into(),
-                            std::time::Instant::now(),
-                        ));
+                        // Check if we're currently deployed
+                        let is_running =
+                            self.deployment.get_state().await == DeploymentState::Running;
+                        if is_running {
+                            // Log the restart initiation
+                            self.log_tx
+                                .send(crate::LogEntry::info(
+                                    "Stopping services to apply configuration changes...",
+                                ))
+                                .await
+                                .ok();
+                            // Stop and let user redeploy
+                            self.deployment.stop().await.ok();
+                            self.status_message = Some((
+                                "Services stopped. Redeploy to apply changes.".into(),
+                                std::time::Instant::now(),
+                            ));
+                            self.view = View::Home;
+                        } else {
+                            self.status_message = Some((
+                                "Changes stored. Deploy to apply.".into(),
+                                std::time::Instant::now(),
+                            ));
+                            self.view = View::Home;
+                        }
                         self.dialog = Dialog::None;
-                        self.focus = Focus::Settings;
+                        self.focus = Focus::Menu;
                     }
-                    KeyCode::Esc => {
+                    KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                        // Cancel - discard all pending changes
+                        self.changes.clear();
+                        self.status_message =
+                            Some(("Changes discarded".into(), std::time::Instant::now()));
                         self.dialog = Dialog::None;
                         self.focus = Focus::Settings;
                     }
@@ -2068,13 +2125,23 @@ impl App {
                 KeyCode::Esc => {
                     // Check for unsaved changes
                     if self.config.is_dirty() && self.deployment.is_running() {
+                        // Separate hot-reload and restart-required changes
+                        let hot_reload: Vec<String> = self
+                            .changes
+                            .hot_reload_changes()
+                            .iter()
+                            .map(|c| format!("{}: {} → {}", c.field, c.old_value, c.new_value))
+                            .collect();
+                        let restart_required: Vec<String> = self
+                            .changes
+                            .restart_required_changes()
+                            .iter()
+                            .map(|c| format!("{}: {} → {}", c.field, c.old_value, c.new_value))
+                            .collect();
+
                         self.dialog = Dialog::ApplyChanges {
-                            changes: self
-                                .changes
-                                .pending_changes
-                                .iter()
-                                .map(|c| format!("{}: {} → {}", c.field, c.old_value, c.new_value))
-                                .collect(),
+                            hot_reload,
+                            restart_required,
                         };
                         self.focus = Focus::Dialog;
                     } else {
@@ -2660,7 +2727,7 @@ impl App {
                     .map(|t| t.display_name())
                     .collect::<Vec<_>>()
                     .join(", ");
-                
+
                 let fields: [(String, String); 13] = [
                     (
                         "Enabled".to_string(),
@@ -2668,7 +2735,11 @@ impl App {
                     ),
                     (
                         "Gate CAPTCHA Type".to_string(),
-                        self.config.captcha.gate_captcha_type.display_name().to_string(),
+                        self.config
+                            .captcha
+                            .gate_captcha_type
+                            .display_name()
+                            .to_string(),
                     ),
                     (
                         "Threat Type Enabled".to_string(),
@@ -2676,16 +2747,17 @@ impl App {
                     ),
                     (
                         "Threat CAPTCHA Type".to_string(),
-                        self.config.captcha.threat_captcha_type.display_name().to_string(),
+                        self.config
+                            .captcha
+                            .threat_captcha_type
+                            .display_name()
+                            .to_string(),
                     ),
                     (
                         "Random Cycling".to_string(),
                         self.config.captcha.random_cycling.to_string(),
                     ),
-                    (
-                        "Cycling Types".to_string(),
-                        cycling_types_str,
-                    ),
+                    ("Cycling Types".to_string(), cycling_types_str),
                     (
                         "Pool Size".to_string(),
                         self.config.captcha.pool_size.to_string(),
@@ -2875,13 +2947,16 @@ impl App {
             "Enabled" => self.config.captcha.enabled = parse_yes_no(value, true),
             // CAPTCHA Type settings - cycle on Enter
             "Gate CAPTCHA Type" => {
-                self.config.captcha.gate_captcha_type = self.config.captcha.gate_captcha_type.next();
+                self.config.captcha.gate_captcha_type =
+                    self.config.captcha.gate_captcha_type.next();
             }
             "Threat Type Enabled" => {
-                self.config.captcha.threat_captcha_enabled = !self.config.captcha.threat_captcha_enabled;
+                self.config.captcha.threat_captcha_enabled =
+                    !self.config.captcha.threat_captcha_enabled;
             }
             "Threat CAPTCHA Type" => {
-                self.config.captcha.threat_captcha_type = self.config.captcha.threat_captcha_type.next();
+                self.config.captcha.threat_captcha_type =
+                    self.config.captcha.threat_captcha_type.next();
             }
             "Random Cycling" => {
                 self.config.captcha.random_cycling = !self.config.captcha.random_cycling;

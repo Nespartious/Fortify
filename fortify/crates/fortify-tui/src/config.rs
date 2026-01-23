@@ -404,9 +404,8 @@ pub struct CaptchaConfig {
     pub rotation_percent: u8,
     /// Rotation interval in days
     pub rotation_interval_days: u32,
-    
+
     // === CAPTCHA Type Settings (NEW) ===
-    
     /// CAPTCHA type used at the Gate (initial verification)
     pub gate_captcha_type: CaptchaType,
     /// CAPTCHA type used for threat/demotion (re-verification)
@@ -793,6 +792,33 @@ pub struct PendingChange {
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+impl PendingChange {
+    /// Check if this change requires a restart (cannot be hot-reloaded)
+    pub fn requires_restart(&self) -> bool {
+        matches!(
+            self.field.as_str(),
+            "Pool Size"
+                | "Min Pool"
+                | "Max Pool"
+                | "Min Mirrors"
+                | "Max Mirrors"
+                | "Standby Mirrors"
+                | "Backend Address"
+                | "SOCKS Port"
+                | "Control Port"
+                | "HTTP Bind"
+                | "Gate Bind"
+                | "Vanguards Enabled"
+                | "Vanguards Layers"
+                | "Data Directory"
+                | "Vanity Enabled"
+                | "Prefix"
+                | "Safety Net Enabled"
+                | "Safety Net Timeout"
+        )
+    }
+}
+
 /// Manages pending configuration changes
 #[derive(Debug, Default)]
 pub struct ChangeManager {
@@ -818,12 +844,39 @@ impl ChangeManager {
         !self.pending_changes.is_empty()
     }
 
+    /// Get changes that can be hot-reloaded
+    pub fn hot_reload_changes(&self) -> Vec<&PendingChange> {
+        self.pending_changes
+            .iter()
+            .filter(|c| !c.requires_restart())
+            .collect()
+    }
+
+    /// Get changes that require restart
+    pub fn restart_required_changes(&self) -> Vec<&PendingChange> {
+        self.pending_changes
+            .iter()
+            .filter(|c| c.requires_restart())
+            .collect()
+    }
+
+    /// Check if any pending changes require restart
+    pub fn has_restart_required(&self) -> bool {
+        self.pending_changes.iter().any(|c| c.requires_restart())
+    }
+
     pub fn store_for_restart(&mut self) {
         self.stored_for_restart.append(&mut self.pending_changes);
     }
 
     pub fn clear_pending(&mut self) {
         self.pending_changes.clear();
+    }
+
+    /// Clear all changes (pending and stored) - for discarding
+    pub fn clear(&mut self) {
+        self.pending_changes.clear();
+        self.stored_for_restart.clear();
     }
 
     pub fn apply_all(&mut self) {

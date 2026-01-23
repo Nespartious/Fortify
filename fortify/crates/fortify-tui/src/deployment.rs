@@ -1603,7 +1603,7 @@ impl DeploymentManager {
         // Try to push hot-reloadable settings to running services via HTTP API
         // The HTTP admin panel runs on the gate_bind address under /Fortify
         let admin_url = format!("http://{}/Fortify", config.network.gate_bind);
-        
+
         // Build HTTP client
         let client = match reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
@@ -1633,7 +1633,7 @@ impl DeploymentManager {
             urlencoding::encode(&config.branding.secondary_color),
             urlencoding::encode(&config.branding.welcome_message),
         );
-        
+
         match client
             .post(&branding_url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -1668,7 +1668,7 @@ impl DeploymentManager {
             TrafficTier::Enterprise => "enterprise",
         };
         let tier_form = format!("tier={}", tier_name);
-        
+
         match client
             .post(&tier_url)
             .header("Content-Type", "application/x-www-form-urlencoded")

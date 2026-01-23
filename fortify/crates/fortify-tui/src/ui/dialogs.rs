@@ -16,7 +16,19 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let dialog_width = base_width.min(area.width.saturating_sub(4));
     let dialog_height = match &app.dialog {
         Dialog::Confirm { .. } => 8,
-        Dialog::ApplyChanges { changes } => (8 + changes.len()).min(20) as u16,
+        Dialog::ApplyChanges {
+            hot_reload,
+            restart_required,
+        } => {
+            let total_changes = hot_reload.len() + restart_required.len();
+            // Extra space for section headers if both types present
+            let extra = if !hot_reload.is_empty() && !restart_required.is_empty() {
+                4
+            } else {
+                2
+            };
+            (10 + total_changes + extra).min(24) as u16
+        }
         Dialog::Input { .. } => 7,
         Dialog::Error { .. } => 8,
         Dialog::Info { .. } => 8,
@@ -43,8 +55,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Dialog::Confirm { title, message, .. } => {
             draw_confirm(frame, dialog_area, title, message);
         }
-        Dialog::ApplyChanges { changes } => {
-            draw_apply_changes(frame, dialog_area, changes);
+        Dialog::ApplyChanges {
+            hot_reload,
+            restart_required,
+        } => {
+            draw_apply_changes(frame, dialog_area, hot_reload, restart_required);
         }
         Dialog::Input { title, value, .. } => {
             draw_input(frame, dialog_area, title, value);
@@ -93,7 +108,12 @@ fn draw_confirm(frame: &mut Frame, area: Rect, title: &str, message: &str) {
     frame.render_widget(para, inner);
 }
 
-fn draw_apply_changes(frame: &mut Frame, area: Rect, changes: &[String]) {
+fn draw_apply_changes(
+    frame: &mut Frame,
+    area: Rect,
+    hot_reload: &[String],
+    restart_required: &[String],
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
@@ -103,39 +123,83 @@ fn draw_apply_changes(frame: &mut Frame, area: Rect, changes: &[String]) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let mut content = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "Configuration has been modified:",
-            Style::default().fg(Color::White),
-        )),
-        Line::from(""),
-    ];
+    let mut content = vec![Line::from("")];
 
-    // Add changes (limited)
-    for change in changes.iter().take(5) {
+    // Hot-reload changes (can be applied immediately)
+    if !hot_reload.is_empty() {
         content.push(Line::from(Span::styled(
-            format!("  • {}", change),
+            "✓ Can apply immediately:",
+            Style::default().fg(Color::Green),
+        )));
+        for change in hot_reload.iter().take(3) {
+            content.push(Line::from(Span::styled(
+                format!("  • {}", change),
+                Style::default().fg(Color::Green),
+            )));
+        }
+        if hot_reload.len() > 3 {
+            content.push(Line::from(Span::styled(
+                format!("  ... and {} more", hot_reload.len() - 3),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        content.push(Line::from(""));
+    }
+
+    // Restart-required changes
+    if !restart_required.is_empty() {
+        content.push(Line::from(Span::styled(
+            "⚠ Requires restart:",
             Style::default().fg(Color::Yellow),
         )));
+        for change in restart_required.iter().take(3) {
+            content.push(Line::from(Span::styled(
+                format!("  • {}", change),
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+        if restart_required.len() > 3 {
+            content.push(Line::from(Span::styled(
+                format!("  ... and {} more", restart_required.len() - 3),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        content.push(Line::from(""));
     }
 
-    if changes.len() > 5 {
-        content.push(Line::from(Span::styled(
-            format!("  ... and {} more", changes.len() - 5),
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
-
+    // Options depend on what types of changes we have
     content.push(Line::from(""));
-    content.push(Line::from(vec![
-        Span::styled("[A]", Style::default().fg(Color::Green)),
-        Span::raw(" Apply Now    "),
-        Span::styled("[L]", Style::default().fg(Color::Yellow)),
-        Span::raw(" Later    "),
-        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
-        Span::raw(" Cancel"),
-    ]));
+    if !hot_reload.is_empty() && !restart_required.is_empty() {
+        // Both types - offer all options
+        content.push(Line::from(vec![
+            Span::styled("[A]", Style::default().fg(Color::Green)),
+            Span::raw(" Apply hot-reload only"),
+        ]));
+        content.push(Line::from(vec![
+            Span::styled("[R]", Style::default().fg(Color::Yellow)),
+            Span::raw(" Restart to apply all"),
+        ]));
+        content.push(Line::from(vec![
+            Span::styled("[C]", Style::default().fg(Color::Red)),
+            Span::raw(" Cancel (discard changes)"),
+        ]));
+    } else if !hot_reload.is_empty() {
+        // Only hot-reload changes
+        content.push(Line::from(vec![
+            Span::styled("[A]", Style::default().fg(Color::Green)),
+            Span::raw(" Apply changes    "),
+            Span::styled("[C]", Style::default().fg(Color::Red)),
+            Span::raw(" Cancel"),
+        ]));
+    } else {
+        // Only restart-required changes
+        content.push(Line::from(vec![
+            Span::styled("[R]", Style::default().fg(Color::Yellow)),
+            Span::raw(" Restart to apply    "),
+            Span::styled("[C]", Style::default().fg(Color::Red)),
+            Span::raw(" Cancel"),
+        ]));
+    }
 
     let para = Paragraph::new(content).alignment(Alignment::Center);
     frame.render_widget(para, inner);
