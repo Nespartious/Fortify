@@ -423,6 +423,8 @@ pub struct Gate {
     captcha_pool: Arc<Mutex<Vec<CaptchaChallenge>>>,
     /// Target pool size for pre-generation
     captcha_pool_target: usize,
+    /// Branding configuration for HTML rendering
+    branding: Arc<fortify_core::templates::BrandingVars>,
 }
 
 impl Gate {
@@ -433,6 +435,27 @@ impl Gate {
         verification_timeout: u64,
         session_manager: Arc<SessionManager>,
         secret_key: Vec<u8>,
+    ) -> Self {
+        Self::with_branding(
+            bind_addr,
+            max_concurrent,
+            pow_difficulty,
+            verification_timeout,
+            session_manager,
+            secret_key,
+            fortify_core::templates::BrandingVars::default(),
+        )
+    }
+
+    /// Create a Gate with custom branding configuration
+    pub fn with_branding(
+        bind_addr: SocketAddr,
+        max_concurrent: usize,
+        pow_difficulty: u32,
+        verification_timeout: u64,
+        session_manager: Arc<SessionManager>,
+        secret_key: Vec<u8>,
+        branding: fortify_core::templates::BrandingVars,
     ) -> Self {
         let pool_target = 200; // Pre-generate 200 CAPTCHAs
         let captcha_pool = Arc::new(Mutex::new(Vec::with_capacity(pool_target)));
@@ -461,7 +484,13 @@ impl Gate {
             captcha_config: Arc::new(Mutex::new(CaptchaConfig::default())),
             captcha_pool,
             captcha_pool_target: pool_target,
+            branding: Arc::new(branding),
         }
+    }
+
+    /// Get the branding configuration
+    pub fn branding(&self) -> &fortify_core::templates::BrandingVars {
+        &self.branding
     }
 
     /// Take a pre-generated CAPTCHA from the pool, or generate on-demand if empty

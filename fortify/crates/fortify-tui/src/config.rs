@@ -37,23 +37,10 @@ pub struct BrandingConfig {
     pub service_name: String,
     /// Short description
     pub description: String,
-    /// Path to logo image (PNG/JPG, max 256x256)
-    pub logo_path: Option<PathBuf>,
-    /// Logo as base64 (loaded from path)
-    #[serde(skip)]
-    pub logo_base64: Option<String>,
-    /// Maximum logo width in pixels
-    pub logo_max_width: u32,
-    /// Maximum logo height in pixels
-    pub logo_max_height: u32,
     /// Primary brand color (hex format: #RRGGBB)
     pub primary_color: String,
     /// Secondary/accent color (hex format: #RRGGBB)
     pub secondary_color: String,
-    /// Tertiary/subtle accent color (hex format: #RRGGBB)
-    pub tertiary_color: String,
-    /// Custom CSS for gate pages
-    pub custom_css: Option<String>,
     /// Welcome message on CAPTCHA page
     pub welcome_message: String,
 }
@@ -75,8 +62,6 @@ pub struct CaptchaConfig {
     pub timeout_seconds: u64,
     /// Maximum solve attempts
     pub max_attempts: u32,
-    /// Enable audio CAPTCHA option
-    pub audio_enabled: bool,
     /// Rotate pool percentage
     pub rotation_percent: u8,
     /// Rotation interval in days
@@ -191,14 +176,8 @@ impl Default for BrandingConfig {
         Self {
             service_name: "Protected Service".to_string(),
             description: "A Fortify-protected onion service".to_string(),
-            logo_path: None,
-            logo_base64: None,
-            logo_max_width: 256,
-            logo_max_height: 256,
             primary_color: "#c9a227".to_string(), // Gold - primary brand
             secondary_color: "#a68b5b".to_string(), // Muted gold - accents
-            tertiary_color: "#2D3748".to_string(), // Dark slate - subtle elements
-            custom_css: None,
             welcome_message: "Please complete the verification to continue.".to_string(),
         }
     }
@@ -232,7 +211,6 @@ impl BrandingConfig {
         for (name, color) in [
             ("primary_color", &self.primary_color),
             ("secondary_color", &self.secondary_color),
-            ("tertiary_color", &self.tertiary_color),
         ] {
             if !Self::is_valid_hex_color(color) {
                 return Err(format!(
@@ -263,7 +241,6 @@ impl Default for CaptchaConfig {
             difficulty: 5,
             timeout_seconds: 120,
             max_attempts: 3,
-            audio_enabled: false,
             rotation_percent: 25,
             rotation_interval_days: 10,
         }
@@ -350,18 +327,6 @@ impl FortifyConfig {
         let mut config: FortifyConfig = toml::from_str(&content)?;
         config.config_path = Some(path.to_path_buf());
         config.dirty = false;
-
-        // Load logo if path specified
-        if let Some(ref logo_path) = config.branding.logo_path {
-            if logo_path.exists() {
-                if let Ok(data) = std::fs::read(logo_path) {
-                    config.branding.logo_base64 = Some(base64::Engine::encode(
-                        &base64::engine::general_purpose::STANDARD,
-                        &data,
-                    ));
-                }
-            }
-        }
 
         Ok(config)
     }

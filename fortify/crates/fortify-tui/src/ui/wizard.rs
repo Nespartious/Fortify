@@ -302,22 +302,6 @@ fn draw_step_branding(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(""),
-        Line::from(Span::styled(
-            "  Logo: Max 256x256 PNG/JPG",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(vec![
-            Span::raw("  Path: "),
-            Span::styled(
-                app.config
-                    .branding
-                    .logo_path
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "(none)".to_string()),
-                Style::default().fg(Color::White),
-            ),
-        ]),
         Line::from(""),
         Line::from(Span::styled(
             "  Press [S] to open Settings and configure these values",
