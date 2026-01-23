@@ -148,3 +148,36 @@ This is a Tor hidden service protection system. When making changes:
 - Handle all untrusted input safely (no unwrap on user input)
 - Maintain timeout protections on all network operations
 - Prefer safe lock helpers over raw mutex operations
+
+---
+
+## 🔴 CRITICAL: Tor Browser Compatibility
+
+Fortify is a **Tor/onion hidden service** protection system. ALL user-facing components must work with **Tor Browser on the SAFEST security setting**.
+
+### What "Safest" Disables
+- ❌ JavaScript (completely disabled)
+- ❌ SVG images
+- ❌ MathML
+- ❌ Some fonts
+- ❌ Media auto-play
+- ❌ WebGL, WebAudio
+- ❌ Most modern web APIs
+
+### Mandatory Requirements
+1. **No JavaScript** - All pages must be fully functional without JS
+2. **Pure HTML/CSS only** - No client-side scripting of any kind
+3. **No external resources** - All assets must be self-hosted (no CDNs)
+4. **No XMLHttpRequest/Fetch** - All interactions via form submissions
+5. **CSS-only interactivity** - Use `:target`, `:checked`, `:focus` for UI states
+6. **Standard image formats** - PNG, JPEG, GIF only (no SVG for content)
+7. **Progressive enhancement** - Core functionality works without any enhancements
+
+### HTML Templates Must
+- Use `<form>` with `method="POST"` for all user actions
+- Provide `<noscript>` alternatives (though JS should never be required)
+- Work with cookies disabled (use URL tokens if needed)
+- Be accessible without CSS (semantic HTML)
+
+### Testing Requirement
+Before merging any UI changes, test in Tor Browser with Security Level set to "Safest"
