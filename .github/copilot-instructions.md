@@ -97,7 +97,47 @@ Each sprint document in `docs/Dev_Progress/` must contain:
 4. Wait for ALL CI checks to pass
 5. Fix any failures and repeat
 6. Provide summary report to user
-7. Only merge when user approves
+7. **Ask user for permission to merge** once all checks pass
+8. Only merge when user approves
+
+### During Development
+- **Update the sprint document as you work** - Add useful information, progress notes, and implementation details
+- Keep the sprint document current with actual changes made
+
+### After Merging a PR
+1. **Archive the sprint document** - Move from `docs/Dev_Progress/` to `docs/Dev_Progress/archive/`
+2. **Update Fortify Documentation** - Reflect changes in `docs/Fortify Documentation/`
+3. **Update Dev Progress README** - Mark sprint as complete in `docs/Dev_Progress/README.md`
+
+---
+
+## 🔴 CRITICAL: Fortify Documentation Maintenance
+
+The `docs/Fortify Documentation/` directory is the **authoritative system-wide documentation**. It must:
+- Fully and clearly explain how Fortify works in plain English
+- Include practical examples where helpful
+- Be kept in sync with code changes
+
+### Documentation Structure
+```
+docs/Fortify Documentation/
+├── 01-Architecture/     # System design and component relationships
+├── 02-Core-Concepts/    # Trust tiers, sessions, CAPTCHA, etc.
+└── 08-API-Reference/    # API endpoints and usage
+```
+
+### When to Update Fortify Documentation
+- **After every merged PR** that changes system behavior
+- When adding new features or components
+- When modifying existing functionality
+- When fixing bugs that affect documented behavior
+
+### Documentation Standards
+- Use clear, simple English
+- Explain the "why" not just the "what"
+- Include code examples for technical concepts
+- Keep examples practical and runnable
+- Cross-reference related documents
 
 ---
 
