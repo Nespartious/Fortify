@@ -13,11 +13,80 @@
 
 Fix the configuration propagation pipeline so that branding and settings configured in the TUI or Control Panel actually reach the Gate/HTTP runtime components and are rendered in HTML templates.
 
+Additionally, implement **Traffic Tier Scaling** - a single selector that adjusts multiple performance settings based on expected daily traffic volume.
+
 ### Core Problem
 Currently, Gate and HTTP components use `BrandingVars::default()` (8 places) instead of reading user-configured values. This means:
 - Custom service names don't appear on pages
 - Custom colors don't apply
 - All templates show "Fortify" hardcoded defaults
+
+---
+
+## Traffic Tier Scaling (NEW FEATURE)
+
+### Concept
+A single "Daily Traffic Expectations" selector that auto-configures multiple performance settings at once. This simplifies deployment for operators who don't want to manually tune each parameter.
+
+### Traffic Tiers
+
+| Tier | Daily Users | Description |
+|------|-------------|-------------|
+| `Micro` | ~100 | Personal/test site |
+| `Small` | ~1,000 | Small community (**DEFAULT**) |
+| `Medium` | ~10,000 | Active community |
+| `Large` | ~100,000 | Popular service |
+| `Enterprise` | ~1,000,000+ | High-traffic platform |
+
+### Scaling Matrix
+
+Settings adjusted per tier:
+
+| Setting | Micro (100) | Small (1K) | Medium (10K) | Large (100K) | Enterprise (1M+) |
+|---------|-------------|------------|--------------|--------------|------------------|
+| **CAPTCHA Pool** | | | | | |
+| `pool_size` | 50 | 500 | 2,000 | 5,000 | 10,000 |
+| `min_pool_size` | 10 | 100 | 500 | 1,000 | 2,000 |
+| `max_pool_size` | 100 | 1,000 | 5,000 | 10,000 | 20,000 |
+| **Rate Limits** | | | | | |
+| `rate_limit_rpm` | 30 | 60 | 120 | 300 | 600 |
+| `ddos_rps_threshold` | 20 | 100 | 500 | 2,000 | 10,000 |
+| **Mirrors/Nodes** | | | | | |
+| `min_mirrors` | 1 | 2 | 3 | 5 | 10 |
+| `max_mirrors` | 2 | 5 | 10 | 20 | 50 |
+| `standby_mirrors` | 1 | 2 | 3 | 5 | 10 |
+| **Thresholds** | | | | | |
+| `temp_ban_minutes` | 60 | 30 | 15 | 10 | 5 |
+| `perm_ban_threshold` | 5 | 10 | 15 | 20 | 30 |
+
+### Implementation Locations
+
+1. **TUI** (`config.rs`): Add `TrafficTier` enum near branding settings
+2. **Control Panel** (`admin.rs`): Add dropdown selector on main settings page
+3. **Deploy Scripts**: Create tier-specific deploy scripts (deploy-small.sh, deploy-medium.sh, etc.)
+
+### Rationale for Values
+
+**CAPTCHA Pool Sizing:**
+- Formula: `pool_size ≈ daily_users / 10` (assuming 10% regeneration rate)
+- Min pool: 20% of target pool to prevent starvation
+- Max pool: 2x target to allow burst capacity
+
+**Rate Limits:**
+- Micro: 30 RPM = 0.5 RPS - strict for small sites
+- Small: 60 RPM = 1 RPS - balanced for communities
+- Medium: 120 RPM = 2 RPS - allows moderate activity
+- Large: 300 RPM = 5 RPS - high-activity users
+- Enterprise: 600 RPM = 10 RPS - power users
+
+**DDoS Thresholds:**
+- Based on expected legitimate traffic peaks
+- Micro: 20 RPS (100 users × 0.2 peak factor)
+- Enterprise: 10K RPS (1M users × 0.01 concurrent factor)
+
+**Mirror Scaling:**
+- Each mirror handles ~20K-50K daily users effectively
+- More mirrors = better DDoS absorption and geographic distribution
 
 ---
 
@@ -138,7 +207,7 @@ warn_threshold: 5
 ## Implementation Plan
 
 ### Phase 1: Remove Deprecated Fields
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 1. Remove from `BrandingConfig`:
    - `tertiary_color`
@@ -154,7 +223,58 @@ warn_threshold: 5
 
 5. Update Control Panel form to remove deprecated inputs
 
-### Phase 2: Config File Propagation
+### Phase 2/3: Gate Branding Support
+**Status:** ✅ Complete
+
+1. Add `branding: Arc<BrandingVars>` field to Gate struct
+2. Add `Gate::with_branding()` constructor for custom branding
+3. Add `Gate::branding()` getter method
+4. Update server.rs to use `gate.branding().clone()` for all page renders
+
+### Phase 4: Fix Hardcoded URLs
+**Status:** ✅ Complete
+
+1. Add `gate_path` field to `BrandingVars` with default `/Fortify/Portcullis`
+2. Add `GATE_PATH` to template hashmap for rendering
+3. Replace hardcoded URLs in 5 HTML templates:
+   - gate.html, demoted.html, error.html, verification-failed.html, session-expired.html
+
+### Phase 5: Sync Defaults
+**Status:** ✅ Complete
+
+Verified all defaults match between TUI, HTTP, and Core:
+- service_name: "Protected Service"
+- primary_color: "#c9a227"
+- secondary_color: "#a68b5b"
+
+### Phase 6: Traffic Tier Scaling
+**Status:** 🟡 In Progress
+
+1. Add `TrafficTier` enum to TUI config.rs:
+   ```rust
+   pub enum TrafficTier {
+       Micro,      // ~100 users/day
+       Small,      // ~1,000 users/day (DEFAULT)
+       Medium,     // ~10,000 users/day
+       Large,      // ~100,000 users/day
+       Enterprise, // ~1,000,000+ users/day
+   }
+   ```
+
+2. Add `TrafficTier` to `FortifyConfig` struct with method to apply tier settings
+
+3. Add dropdown selector to Control Panel (admin.rs)
+
+4. Create tier-specific deploy scripts:
+   - `deploy-micro.sh` - Personal/test deployments
+   - `deploy-small.sh` - Small communities (default)
+   - `deploy-medium.sh` - Active communities
+   - `deploy-large.sh` - Popular services
+   - `deploy-enterprise.sh` - High-traffic platforms
+
+5. Add tier selector to TUI near branding settings
+
+### Phase 2 (Future): Config File Propagation
 **Status:** ⬜ Not Started
 
 1. Create shared config file path: `~/.local/share/fortify/config/fortify.toml`
@@ -167,7 +287,7 @@ warn_threshold: 5
 
 5. HTTP reads branding from config file on startup
 
-### Phase 3: Replace Hardcoded Defaults
+### Phase 3 (Future): Replace Hardcoded Defaults
 **Status:** ⬜ Not Started
 
 Replace `BrandingVars::default()` with config-loaded values in:
@@ -177,8 +297,6 @@ Replace `BrandingVars::default()` with config-loaded values in:
 | `fortify-gate/src/server.rs` | multiple | 6 |
 | `fortify-gate/src/captcha_html.rs` | | 1 |
 | `fortify-http/src/lib.rs` | | 1 |
-
-### Phase 4: Fix Hardcoded URLs
 **Status:** ⬜ Not Started
 
 Replace hardcoded `/Fortify/Portcullis` with configurable path in:
