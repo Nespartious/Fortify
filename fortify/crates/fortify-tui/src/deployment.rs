@@ -11,6 +11,7 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 
 use crate::config::FortifyConfig;
 use crate::logging::{parse_log_line, LogEntry, LogLevel};
+use crate::verification::{OnionVerifier, VerificationConfig};
 
 /// Deployment state tracking (persisted to disk)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +228,8 @@ pub enum DeploymentState {
     Stopped,
     /// Starting up
     Starting,
+    /// Verifying onion addresses are reachable
+    Verifying,
     /// Running normally
     Running,
     /// Stopping
@@ -1392,6 +1395,81 @@ impl DeploymentManager {
             .ok();
 
         Ok(())
+    }
+
+    /// Verify that onion addresses are reachable via Tor
+    pub async fn verify_onion_addresses(&self, addresses: &[String], socks_port: u16) -> Vec<crate::verification::VerificationResult> {
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "verify",
+                &format!("Starting verification of {} onion address(es)...", addresses.len()),
+            ))
+            .await
+            .ok();
+
+        *self.state.lock().await = DeploymentState::Verifying;
+
+        let config = VerificationConfig::with_socks_port(socks_port);
+        let verifier = OnionVerifier::new(config);
+        
+        let mut results = Vec::new();
+        for (i, address) in addresses.iter().enumerate() {
+            self.log_tx
+                .send(LogEntry::from_source(
+                    LogLevel::Debug,
+                    "verify",
+                    &format!("Verifying address {}/{}: {}", i + 1, addresses.len(), address),
+                ))
+                .await
+                .ok();
+
+            let result = verifier.verify(address).await;
+            
+            if result.reachable {
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Info,
+                        "verify",
+                        &format!("✓ {} is reachable ({}ms)", 
+                            address,
+                            result.response_time_ms.unwrap_or(0)
+                        ),
+                    ))
+                    .await
+                    .ok();
+            } else {
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Warn,
+                        "verify",
+                        &format!("✗ {} is NOT reachable: {}", 
+                            address,
+                            result.error.as_deref().unwrap_or("Unknown error")
+                        ),
+                    ))
+                    .await
+                    .ok();
+            }
+            
+            results.push(result);
+        }
+
+        // Summarize results
+        let reachable_count = results.iter().filter(|r| r.reachable).count();
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "verify",
+                &format!("Verification complete: {}/{} addresses reachable", 
+                    reachable_count, 
+                    addresses.len()
+                ),
+            ))
+            .await
+            .ok();
+
+        results
     }
 
     /// Find binary in target directory or PATH
