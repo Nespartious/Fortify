@@ -3,9 +3,10 @@
 **Sprint ID:** BETA-002  
 **Priority:** 🔴 CRITICAL (Beta Blocker)  
 **Estimated Effort:** 3-5 days  
-**Status:** 🟡 In Progress (Phases 1 & 4 Complete)  
+**Status:** 🟡 In Progress (Phases 1, 2 & 4 Complete)  
 **Created:** January 22, 2026  
 **Phase 1 Completed:** January 22, 2026 - PR #25  
+**Phase 2 Completed:** January 23, 2026 - PR #TBD  
 **Phase 4 Completed:** January 23, 2026 - PR #TBD
 
 ---
@@ -22,10 +23,20 @@ Added safe lock helpers to `fortify-core` and replaced all lock/read/write unwra
 - **fortify-orchestrator**: 77 safe lock operations
 - **Total**: 200 lock operations now recover gracefully from poisoned locks
 
-### ⬜ Phase 2: Network Input (Not Started)
-- HTTP header parsing safety
-- Cookie parsing safety
-- Request body handling
+### ✅ Phase 2: Network Input (COMPLETE)
+**PR #TBD - January 23, 2026**
+
+Replaced unsafe patterns in HTTP/cookie parsing:
+- **Cookie parsing**: All `strip_prefix().unwrap()` → `unwrap_or_default()` (3 locations in lib.rs)
+- **Verification token**: `is_some().unwrap()` → `if let Some()` pattern
+- **Response builders**: All `.body().unwrap()` → `.expect("valid response")` (36 locations)
+- **Unwrap reduction**: 262 → 226 total unwraps (36 fixed)
+
+Files modified:
+- `crates/fortify-http/src/lib.rs` - 12 fixes
+- `crates/fortify-http/src/admin.rs` - 6 fixes
+- `crates/fortify-http/src/middleware.rs` - 1 fix
+- `crates/fortify-gate/src/server.rs` - 15 fixes
 
 ### ⬜ Phase 3: Token/Session (Not Started)
 - Token deserialization safety

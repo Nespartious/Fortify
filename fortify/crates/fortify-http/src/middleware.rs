@@ -95,7 +95,7 @@ fn error_response(status: StatusCode, message: &str) -> Response<BoxBody> {
         .status(status)
         .header("Content-Type", "text/plain")
         .body(Full::new(Bytes::from(message.to_string())))
-        .unwrap()
+        .expect("valid response")
 }
 
 #[cfg(test)]
