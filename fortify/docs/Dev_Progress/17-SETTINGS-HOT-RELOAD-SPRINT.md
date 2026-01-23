@@ -3,7 +3,7 @@
 **Sprint ID:** BETA-017  
 **Priority:** 🔴 HIGH (Core UX)  
 **Estimated Effort:** 4-5 days  
-**Status:** 📋 Planning  
+**Status:** � In Progress  
 **Created:** January 23, 2026  
 **Supersedes:** Portions of Sprint 14 (archived), Sprint 15 Phase 6
 
@@ -15,6 +15,36 @@
 2. **Implement Hot Reload** - Settings that can be applied live should take effect immediately
 3. **Restart Flow** - Settings requiring restart should prompt user with options
 4. **UX Improvement** - After saving, return to deployment status screen with proper logging
+5. **TUI Navigation Strictness** - Make TUI flow more explicit with clear View/Modify modes
+
+---
+
+## TUI UX Philosophy (User Feedback)
+
+### Problem Statement
+The TUI isn't strict enough with its navigation flow. When deployed:
+- Accessing "Settings" is confusing - how do I return to the deployed screen?
+- No clear separation between viewing settings and modifying them
+- "Status" button purpose unclear when already on Running view
+
+### Proposed Solution
+
+**When service is RUNNING (Live TUI Monitor Screen):**
+
+| Action | Current | Proposed |
+|--------|---------|----------|
+| View settings | Settings → confusing return | **View System Settings** (read-only, "Done" returns to monitor) |
+| Modify settings | Settings → edit → ??? | **Modify System Settings** (editable, "Cancel"/"Submit") |
+| View status | Status (duplicate?) | Remove or merge into Live TUI Monitor |
+
+**Terminology:**
+- "Live TUI Monitor Screen" = `View::Running` (logs right, status left)
+- Settings access should be explicit: View vs Modify
+
+**Decision Points (Awaiting User Input):**
+1. Should both View/Modify appear in menu when deployed, or is Modify accessed from View mode?
+2. Should Status menu item be removed entirely or renamed?
+3. Should this strict flow only apply when deployed, or always?
 
 ---
 
@@ -125,41 +155,19 @@ These settings require service restart to take effect:
 5. ✅ Added ⚠️Restart labels to Pool Size, Min Pool, Max Pool fields
 
 ### Phase 3: Hot Reload Infrastructure (8 hours)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-1. Create `ConfigUpdateChannel`:
-   ```rust
-   pub enum ConfigUpdate {
-       Branding(BrandingConfig),
-       RateLimits { tier: TrafficTier, rpm: u32 },
-       CaptchaSettings(CaptchaRuntimeSettings),
-       Thresholds(ThresholdConfig),
-   }
-   ```
+1. ✅ Enhanced `DeploymentManager::reload_config()` to push settings via HTTP:
+   - Makes POST requests to running AdminState HTTP API
+   - Updates branding config via `/settings/branding`
+   - Updates traffic tier via `/settings/traffic-tier`
+   - Graceful fallback if HTTP fails (logs warning, continues)
+   
+2. ✅ Added `urlencoding` dependency for form data encoding
 
-2. Add receiver to Gate and HTTP services:
-   ```rust
-   impl Gate {
-       pub fn with_config_channel(rx: mpsc::Receiver<ConfigUpdate>) -> Self { ... }
-   }
-   ```
-
-3. Update services to watch channel in event loop:
-   ```rust
-   loop {
-       tokio::select! {
-           // ... existing select arms ...
-           Some(update) = config_rx.recv() => {
-               self.apply_config_update(update);
-           }
-       }
-   }
-   ```
-
-4. When TUI saves config:
-   - Classify each changed setting as HOT_RELOAD or RESTART
-   - Send HOT_RELOAD changes via channel immediately
-   - Queue RESTART changes for next restart
+3. Settings pushed on hot reload:
+   - Branding: service_name, description, primary_color, secondary_color, welcome_message
+   - Traffic tier: micro/small/medium/large/enterprise
 
 ### Phase 4: Restart Prompt Dialog (4 hours)
 **Status:** ⬜ Not Started

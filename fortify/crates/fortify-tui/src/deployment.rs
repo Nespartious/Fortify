@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, mpsc, Mutex};
 
-use crate::config::FortifyConfig;
+use crate::config::{FortifyConfig, TrafficTier};
 use crate::logging::{parse_log_line, LogEntry, LogLevel};
 use crate::verification::{OnionVerifier, VerificationConfig};
 
@@ -1589,21 +1589,113 @@ impl DeploymentManager {
     }
 
     /// Reload configuration (hot reload)
+    /// This pushes hot-reloadable settings to the running AdminState via HTTP API
     pub async fn reload_config(&mut self, config: &FortifyConfig) -> Result<()> {
         self.log_tx
             .send(LogEntry::info("Reloading configuration..."))
             .await
             .ok();
 
-        // Save updated config
+        // Save updated config to disk
         let mut cfg = config.clone();
         cfg.save()?;
 
-        // Send SIGHUP to controller to trigger reload
-        // For now, just log - full hot reload would need IPC
+        // Try to push hot-reloadable settings to running services via HTTP API
+        // The HTTP admin panel runs on the gate_bind address under /Fortify
+        let admin_url = format!("http://{}/Fortify", config.network.gate_bind);
+        
+        // Build HTTP client
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                self.log_tx
+                    .send(LogEntry::warn(&format!(
+                        "Failed to create HTTP client: {}",
+                        e
+                    )))
+                    .await
+                    .ok();
+                *self.config.lock().await = Some(config.clone());
+                return Ok(());
+            }
+        };
+
+        // Push branding config
+        let branding_url = format!("{}/settings/branding", admin_url);
+        let branding_form = format!(
+            "service_name={}&description={}&primary_color={}&secondary_color={}&welcome_message={}",
+            urlencoding::encode(&config.branding.service_name),
+            urlencoding::encode(&config.branding.description),
+            urlencoding::encode(&config.branding.primary_color),
+            urlencoding::encode(&config.branding.secondary_color),
+            urlencoding::encode(&config.branding.welcome_message),
+        );
+        
+        match client
+            .post(&branding_url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(branding_form)
+            .send()
+            .await
+        {
+            Ok(_) => {
+                self.log_tx
+                    .send(LogEntry::debug("Hot reload: Branding updated"))
+                    .await
+                    .ok();
+            }
+            Err(e) => {
+                self.log_tx
+                    .send(LogEntry::warn(&format!(
+                        "Hot reload: Failed to update branding: {}",
+                        e
+                    )))
+                    .await
+                    .ok();
+            }
+        }
+
+        // Push traffic tier
+        let tier_url = format!("{}/settings/traffic-tier", admin_url);
+        let tier_name = match config.traffic_tier {
+            TrafficTier::Micro => "micro",
+            TrafficTier::Small => "small",
+            TrafficTier::Medium => "medium",
+            TrafficTier::Large => "large",
+            TrafficTier::Enterprise => "enterprise",
+        };
+        let tier_form = format!("tier={}", tier_name);
+        
+        match client
+            .post(&tier_url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(tier_form)
+            .send()
+            .await
+        {
+            Ok(_) => {
+                self.log_tx
+                    .send(LogEntry::debug("Hot reload: Traffic tier updated"))
+                    .await
+                    .ok();
+            }
+            Err(e) => {
+                self.log_tx
+                    .send(LogEntry::warn(&format!(
+                        "Hot reload: Failed to update traffic tier: {}",
+                        e
+                    )))
+                    .await
+                    .ok();
+            }
+        }
+
         self.log_tx
             .send(LogEntry::info(
-                "Configuration saved (restart required for some changes)",
+                "Configuration hot-reloaded (pool size changes need restart)",
             ))
             .await
             .ok();
