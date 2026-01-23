@@ -8,7 +8,7 @@ use std::io::Write;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::config::{ChangeManager, FortifyConfig};
+use crate::config::{CaptchaType, ChangeManager, FortifyConfig};
 use crate::deployment::DeploymentManager;
 use crate::logging::{LogBuffer, LogEntry, LogLevel};
 use crate::ui;
@@ -1680,7 +1680,7 @@ impl App {
             }
             MenuItem::Settings => {
                 self.view = View::Settings {
-                    tab: SettingsTab::Branding,
+                    tab: SettingsTab::TrafficTier,
                     field_index: 0,
                 };
                 self.focus = Focus::Settings;
@@ -2272,7 +2272,7 @@ impl App {
         match key.code {
             KeyCode::Char('s') | KeyCode::Char('S') => {
                 self.view = View::Settings {
-                    tab: SettingsTab::Branding,
+                    tab: SettingsTab::TrafficTier,
                     field_index: 0,
                 };
                 self.focus = Focus::Settings;
@@ -2651,10 +2651,40 @@ impl App {
                 fields.get(index).cloned().unwrap_or(unknown)
             }
             SettingsTab::Captcha => {
-                let fields: [(String, String); 8] = [
+                // Format cycling types as comma-separated list
+                let cycling_types_str: String = self
+                    .config
+                    .captcha
+                    .cycling_types
+                    .iter()
+                    .map(|t| t.display_name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                
+                let fields: [(String, String); 13] = [
                     (
                         "Enabled".to_string(),
                         self.config.captcha.enabled.to_string(),
+                    ),
+                    (
+                        "Gate CAPTCHA Type".to_string(),
+                        self.config.captcha.gate_captcha_type.display_name().to_string(),
+                    ),
+                    (
+                        "Threat Type Enabled".to_string(),
+                        self.config.captcha.threat_captcha_enabled.to_string(),
+                    ),
+                    (
+                        "Threat CAPTCHA Type".to_string(),
+                        self.config.captcha.threat_captcha_type.display_name().to_string(),
+                    ),
+                    (
+                        "Random Cycling".to_string(),
+                        self.config.captcha.random_cycling.to_string(),
+                    ),
+                    (
+                        "Cycling Types".to_string(),
+                        cycling_types_str,
                     ),
                     (
                         "Pool Size".to_string(),
@@ -2843,6 +2873,28 @@ impl App {
             "Primary Color" => self.config.branding.primary_color = value.to_string(),
             "Secondary Color" => self.config.branding.secondary_color = value.to_string(),
             "Enabled" => self.config.captcha.enabled = parse_yes_no(value, true),
+            // CAPTCHA Type settings - cycle on Enter
+            "Gate CAPTCHA Type" => {
+                self.config.captcha.gate_captcha_type = self.config.captcha.gate_captcha_type.next();
+            }
+            "Threat Type Enabled" => {
+                self.config.captcha.threat_captcha_enabled = !self.config.captcha.threat_captcha_enabled;
+            }
+            "Threat CAPTCHA Type" => {
+                self.config.captcha.threat_captcha_type = self.config.captcha.threat_captcha_type.next();
+            }
+            "Random Cycling" => {
+                self.config.captcha.random_cycling = !self.config.captcha.random_cycling;
+            }
+            "Cycling Types" => {
+                // TODO: Implement multi-select UI for cycling types
+                // For now, reset to defaults
+                self.config.captcha.cycling_types = vec![
+                    CaptchaType::BmpText,
+                    CaptchaType::Emoji,
+                    CaptchaType::Direction,
+                ];
+            }
             "Pool Size" => self.config.captcha.pool_size = value.parse().unwrap_or(500),
             "Min Pool" => self.config.captcha.min_pool_size = value.parse().unwrap_or(100),
             "Max Pool" => self.config.captcha.max_pool_size = value.parse().unwrap_or(1000),

@@ -196,12 +196,40 @@ fn draw_captcha(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
     let timeout = app.config.captcha.timeout_seconds.to_string();
     let attempts = app.config.captcha.max_attempts.to_string();
     let rotation_days = app.config.captcha.rotation_interval_days.to_string();
+    
+    // New CAPTCHA type fields
+    let gate_type = app.config.captcha.gate_captcha_type.display_name();
+    let threat_enabled = if app.config.captcha.threat_captcha_enabled {
+        "Yes"
+    } else {
+        "No"
+    };
+    let threat_type = app.config.captcha.threat_captcha_type.display_name();
+    let random_cycling = if app.config.captcha.random_cycling {
+        "Yes"
+    } else {
+        "No"
+    };
+    // Format cycling types as comma-separated list
+    let cycling_types_str: String = app
+        .config
+        .captcha
+        .cycling_types
+        .iter()
+        .map(|t| t.display_name())
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let fields = [
         ("Enabled", enabled),
-        ("Pool Size", pool.as_str()),
-        ("Min Pool", min_pool.as_str()),
-        ("Max Pool", max_pool.as_str()),
+        ("Gate CAPTCHA Type ↵", gate_type),
+        ("Threat Type Enabled ↵", threat_enabled),
+        ("Threat CAPTCHA Type ↵", threat_type),
+        ("Random Cycling ↵", random_cycling),
+        ("Cycling Types", cycling_types_str.as_str()),
+        ("Pool Size ⚠️Restart", pool.as_str()),
+        ("Min Pool ⚠️Restart", min_pool.as_str()),
+        ("Max Pool ⚠️Restart", max_pool.as_str()),
         ("Difficulty (1-10)", diff.as_str()),
         ("Timeout (seconds)", timeout.as_str()),
         ("Max Attempts", attempts.as_str()),
