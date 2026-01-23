@@ -3,9 +3,24 @@
 **Sprint ID:** BETA-015  
 **Priority:** 🔴 HIGH (Core Functionality)  
 **Estimated Effort:** 3-4 days  
-**Status:** 🟡 In Progress  
+**Status:** ✅ Complete (Core Phases 1-6)  
 **Created:** January 23, 2026  
+**Completed:** Current Date  
 **Supersedes:** 07-BRANDING-HTML-SPRINT.md (archived), 08-VARIABLE-AUDIT.md (merged)
+
+---
+
+## Completion Summary
+
+All core functionality has been implemented:
+
+- ✅ **Phase 1:** Deprecated fields removed (tertiary_color, custom_css, logo_*, audio_enabled)
+- ✅ **Phase 2/3:** Gate branding support with `Gate::with_branding()` and `gate.branding()`
+- ✅ **Phase 4:** Hardcoded URLs replaced with configurable `{{GATE_PATH}}`
+- ✅ **Phase 5:** Defaults synchronized across TUI, HTTP, and Core
+- ✅ **Phase 6:** Traffic Tier Scaling fully implemented (TUI, Control Panel, Deploy Scripts)
+
+**Deferred Work (Phase 7/8):** Config file propagation for standalone functions. Current implementation uses `BrandingVars::default()` for transient error pages, which is acceptable.
 
 ---
 
@@ -248,34 +263,26 @@ Verified all defaults match between TUI, HTTP, and Core:
 - secondary_color: "#a68b5b"
 
 ### Phase 6: Traffic Tier Scaling
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
-1. Add `TrafficTier` enum to TUI config.rs:
-   ```rust
-   pub enum TrafficTier {
-       Micro,      // ~100 users/day
-       Small,      // ~1,000 users/day (DEFAULT)
-       Medium,     // ~10,000 users/day
-       Large,      // ~100,000 users/day
-       Enterprise, // ~1,000,000+ users/day
-   }
-   ```
+All traffic tier functionality has been implemented:
 
-2. Add `TrafficTier` to `FortifyConfig` struct with method to apply tier settings
+1. ✅ `TrafficTier` enum in TUI `config.rs` with all 5 tiers
+2. ✅ `TrafficTier` in `FortifyConfig` with `apply_traffic_tier()` method
+3. ✅ `TrafficTier` enum in Control Panel (`admin.rs`) with scaling methods:
+   - `pool_size()`, `min_pool_size()`, `max_pool_size()`
+   - `rate_limit_rpm()`, `ddos_rps_threshold()`
+   - `min_mirrors()`, `max_mirrors()`, `standby_mirrors()`
+   - `temp_ban_minutes()`, `perm_ban_threshold()`
+4. ✅ Tier-specific deploy scripts in `Deploy-Scripts/`:
+   - `deploy-micro.sh`, `deploy-small.sh`, `deploy-medium.sh`
+   - `deploy-large.sh`, `deploy-enterprise.sh`
+5. ✅ TUI settings page with `SettingsTab::TrafficTier` and `draw_traffic_tier()`
 
-3. Add dropdown selector to Control Panel (admin.rs)
+### Phase 7 (Deferred): Config File Propagation
+**Status:** 🔵 Deferred (Future Enhancement)
 
-4. Create tier-specific deploy scripts:
-   - `deploy-micro.sh` - Personal/test deployments
-   - `deploy-small.sh` - Small communities (default)
-   - `deploy-medium.sh` - Active communities
-   - `deploy-large.sh` - Popular services
-   - `deploy-enterprise.sh` - High-traffic platforms
-
-5. Add tier selector to TUI near branding settings
-
-### Phase 2 (Future): Config File Propagation
-**Status:** ⬜ Not Started
+This phase is deferred as the current implementation is functional. Error pages and standalone functions use `BrandingVars::default()` which is acceptable for transient error states.
 
 1. Create shared config file path: `~/.local/share/fortify/config/fortify.toml`
 
@@ -287,8 +294,14 @@ Verified all defaults match between TUI, HTTP, and Core:
 
 5. HTTP reads branding from config file on startup
 
-### Phase 3 (Future): Replace Hardcoded Defaults
-**Status:** ⬜ Not Started
+### Phase 8 (Deferred): Replace Hardcoded Defaults
+**Status:** 🔵 Deferred (Future Enhancement)
+
+Remaining `BrandingVars::default()` usages are intentional for error/edge cases:
+- `styled_error_response()` in server.rs - transient error pages
+- `serve_killed_session_page()` in fortify-http - session cleanup pages
+- `render_bmp_text_captcha_with_message()` - legacy helper (main paths use `gate.branding()`)
+- `Gate::new()` - default constructor, `with_branding()` should be used in production
 
 Replace `BrandingVars::default()` with config-loaded values in:
 
