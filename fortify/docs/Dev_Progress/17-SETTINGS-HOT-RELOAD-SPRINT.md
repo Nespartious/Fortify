@@ -248,17 +248,16 @@ These settings require service restart to take effect:
 - [ ] All tabs still navigable with ←/→
 
 ### Phase 2
-- [ ] CAPTCHA tab shows Gate CAPTCHA Type field
-- [ ] CAPTCHA tab shows Threat CAPTCHA Enable toggle
-- [ ] CAPTCHA tab shows Threat CAPTCHA Type (when enabled)
-- [ ] CAPTCHA tab shows Random Cycling toggle
-- [ ] CAPTCHA tab shows Cycling Types checkboxes
+- [x] CAPTCHA tab shows Gate CAPTCHA Type field
+- [x] CAPTCHA tab shows Threat CAPTCHA Enable toggle
+- [x] CAPTCHA tab shows Threat CAPTCHA Type (when enabled)
+- [x] CAPTCHA tab shows Random Cycling toggle
+- [x] CAPTCHA tab shows Cycling Types (display only for now)
 
 ### Phase 3
 - [ ] Branding changes apply immediately without restart
 - [ ] Color changes visible on next page load
-- [ ] Rate limit changes take effect immediately
-- [ ] CAPTCHA type changes apply to next CAPTCHA served
+- [ ] Traffic tier changes take effect immediately
 
 ### Phase 4
 - [ ] Changing pool size triggers restart dialog
@@ -271,15 +270,22 @@ These settings require service restart to take effect:
 - [ ] Toast shows confirmation message
 - [ ] Status panel on left, logs on right
 
+### Phase 6 (TUI UX Strictness) - AWAITING DECISIONS
+- [ ] View System Settings (read-only mode)
+- [ ] Modify System Settings (edit mode)
+- [ ] Clear return path to Live TUI Monitor
+- [ ] Status button removed or clarified
+
 ---
 
 ## Success Criteria
 
 1. ✅ User can access Tier tab from Settings (it's the default)
 2. ✅ User can configure CAPTCHA types in TUI
-3. ✅ Branding/rate limit changes apply without restart
-4. ✅ Pool size changes prompt for restart confirmation
-5. ✅ After saving, user sees deployment status with logs
+3. 🟡 Branding/rate limit changes apply without restart (infrastructure done, needs testing)
+4. ⬜ Pool size changes prompt for restart confirmation
+5. ⬜ After saving, user sees deployment status with logs
+6. ⬜ TUI navigation is strict with View/Modify separation
 
 ---
 
@@ -291,27 +297,58 @@ These settings require service restart to take effect:
 
 ---
 
+## Phase 6: TUI UX Strictness (Proposed)
+**Status:** 📋 Awaiting User Decisions
+
+### Proposed Changes
+
+**When deployed (service running):**
+
+| Current | Proposed |
+|---------|----------|
+| `MenuItem::Settings` → editable, confusing return | **View System Settings** (read-only) + **Modify System Settings** (edit mode) |
+| `MenuItem::Status` → unclear purpose | Remove or merge into Live TUI Monitor |
+| Settings ← → return unclear | **Done** button returns to Live TUI Monitor |
+
+**View System Settings (read-only):**
+- All settings visible but not editable
+- Only button: **Done** → returns to Live TUI Monitor
+
+**Modify System Settings (edit mode):**
+- All settings editable
+- Buttons: **Cancel** (discard changes) | **Submit** (apply/stage changes)
+- Submit → hot reload what's possible, prompt for restart-required changes
+- After submit/cancel → return to Live TUI Monitor
+
+### Questions for User
+
+1. Should both View and Modify appear as separate menu items when deployed?
+2. Should `MenuItem::Status` be removed entirely?
+3. Should this strict flow only apply when deployed, or always?
+
+---
+
 ## Appendix: Full Settings Gap Analysis
 
 ### Missing in TUI Config (exist in Gate but not TUI)
 
-| Setting | Location in Gate | Priority |
-|---------|------------------|----------|
-| `gate_captcha_type` | `captcha_types.rs:89` | HIGH |
-| `threat_captcha_type` | `captcha_types.rs:91` | HIGH |
-| `threat_captcha_enabled` | `captcha_types.rs:93` | HIGH |
-| `random_cycling` | `captcha_types.rs:95` | MEDIUM |
-| `cycling_types` | `captcha_types.rs:97` | MEDIUM |
-| `type_configs` (per-type settings) | `captcha_types.rs:99` | LOW |
+| Setting | Location in Gate | Priority | Status |
+|---------|------------------|----------|--------|
+| `gate_captcha_type` | `captcha_types.rs:89` | HIGH | ✅ Added |
+| `threat_captcha_type` | `captcha_types.rs:91` | HIGH | ✅ Added |
+| `threat_captcha_enabled` | `captcha_types.rs:93` | HIGH | ✅ Added |
+| `random_cycling` | `captcha_types.rs:95` | MEDIUM | ✅ Added |
+| `cycling_types` | `captcha_types.rs:97` | MEDIUM | ✅ Added |
+| `type_configs` (per-type settings) | `captcha_types.rs:99` | LOW | ⬜ Future |
 
 ### Settings with ⚠️ Restart labels (already marked)
 
 | Setting | Tab | Current Label |
 |---------|-----|---------------|
 | CAPTCHA Pool | Tier | "⚠️Restart" |
-| Pool Size | CAPTCHA | Should add "⚠️Restart" |
-| Min Pool | CAPTCHA | Should add "⚠️Restart" |
-| Max Pool | CAPTCHA | Should add "⚠️Restart" |
+| Pool Size | CAPTCHA | ✅ "⚠️Restart" |
+| Min Pool | CAPTCHA | ✅ "⚠️Restart" |
+| Max Pool | CAPTCHA | ✅ "⚠️Restart" |
 
 ### Settings that need validation
 
