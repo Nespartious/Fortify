@@ -31,6 +31,7 @@ pub struct FortifyConfig {
 
 /// Branding configuration for the protected service
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BrandingConfig {
     /// Display name/title for the service
     pub service_name: String,

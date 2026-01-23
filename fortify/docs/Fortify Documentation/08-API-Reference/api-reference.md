@@ -555,6 +555,57 @@ Update behavioral configuration.
 
 ---
 
+#### GET /branding/config
+
+Get branding configuration.
+
+**Response:**
+```json
+{
+  "config": {
+    "service_name": "Fortify",
+    "description": "Secure Access Gateway",
+    "welcome_message": "Welcome to our service",
+    "primary_color": "#c9a227",
+    "secondary_color": "#a68b5b",
+    "tertiary_color": "#2D3748",
+    "custom_css": null
+  }
+}
+```
+
+---
+
+#### POST /settings/branding
+
+Update branding configuration via form POST.
+
+**Request:**
+```
+Content-Type: application/x-www-form-urlencoded
+
+service_name=Fortify&description=Secure+Access&primary_color=%23c9a227...
+```
+
+**Form Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `service_name` | string | No | Display name for the service |
+| `description` | string | No | Short service description |
+| `welcome_message` | string | No | Welcome message on landing page |
+| `primary_color` | string | No | Primary brand color (hex, e.g. #c9a227) |
+| `secondary_color` | string | No | Secondary brand color (hex) |
+| `tertiary_color` | string | No | Tertiary brand color (hex) |
+| `custom_css` | string | No | Custom CSS to inject into templates |
+
+**Response:**
+```
+HTTP/1.1 302 Found
+Location: /ctrl_8f7k3m9x2n4p1q6w5v0b8c/settings
+```
+
+---
+
 #### GET /captcha/config
 
 Get CAPTCHA configuration.
@@ -572,6 +623,125 @@ Get CAPTCHA configuration.
   }
 }
 ```
+
+---
+
+#### GET /captcha-pool/config
+
+Get CAPTCHA pool configuration.
+
+**Response:**
+```json
+{
+  "config": {
+    "pool_size": 500,
+    "min_pool_size": 100,
+    "max_pool_size": 1000,
+    "difficulty": 5,
+    "timeout_seconds": 120,
+    "max_attempts": 3,
+    "rotation_percent": 25,
+    "rotation_interval_days": 10
+  }
+}
+```
+
+---
+
+#### POST /settings/captcha-pool
+
+Update CAPTCHA pool configuration via form POST.
+
+**Request:**
+```
+Content-Type: application/x-www-form-urlencoded
+
+pool_size=500&min_pool_size=100&max_pool_size=1000&difficulty=5...
+```
+
+**Form Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pool_size` | int | No | Target pool size (default: 500) |
+| `min_pool_size` | int | No | Minimum pool before emergency generation (default: 100) |
+| `max_pool_size` | int | No | Maximum pool size (default: 1000) |
+| `difficulty` | int | No | CAPTCHA difficulty 1-10 (default: 5) |
+| `timeout_seconds` | int | No | Time limit to solve (default: 120) |
+| `max_attempts` | int | No | Maximum solve attempts (default: 3) |
+| `rotation_percent` | int | No | Pool refresh percentage (0-100) |
+| `rotation_interval_days` | int | No | Rotation interval in days |
+
+**Response:**
+```
+HTTP/1.1 302 Found
+Location: /ctrl_8f7k3m9x2n4p1q6w5v0b8c/settings
+```
+
+---
+
+#### POST /settings/captcha-type
+
+Update per-type CAPTCHA configuration via form POST.
+
+**Request:**
+```
+Content-Type: application/x-www-form-urlencoded
+
+type_name=Emoji&enabled=1&option_count=6&difficulty=2&min_pool_size=50
+```
+
+**Form Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type_name` | string | Yes | CAPTCHA type (BmpText, Emoji, Direction, Sequence, WordUnscramble, ImageRotation, Silhouette) |
+| `enabled` | bool | No | Whether this type is enabled (checkbox) |
+| `option_count` | int | No | Number of options for selection-based CAPTCHAs |
+| `difficulty` | int | No | Difficulty level 1-3 |
+| `min_pool_size` | int | No | Minimum pool size for this type |
+
+**Response:**
+```
+HTTP/1.1 302 Found
+Location: /ctrl_8f7k3m9x2n4p1q6w5v0b8c/settings
+```
+
+---
+
+#### POST /config/save
+
+Save current admin configuration to disk.
+
+**Request:** No body required.
+
+**Response:**
+```
+HTTP/1.1 302 Found
+Location: /ctrl_8f7k3m9x2n4p1q6w5v0b8c/settings
+```
+
+**Notes:**
+- Saves to `/etc/fortify/admin-state.json`
+- Creates parent directory if needed
+- Persists: branding, captcha pool, behavior config, per-type settings
+
+---
+
+#### POST /config/reload
+
+Reload admin configuration from disk.
+
+**Request:** No body required.
+
+**Response:**
+```
+HTTP/1.1 302 Found
+Location: /ctrl_8f7k3m9x2n4p1q6w5v0b8c/settings
+```
+
+**Notes:**
+- Loads from `/etc/fortify/admin-state.json`
+- Overwrites current runtime configuration
+- No restart required
 
 ---
 

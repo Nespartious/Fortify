@@ -60,6 +60,12 @@ struct AdminStateInner {
     behavior_config: BehaviorConfig,
     /// Captcha system configuration
     captcha_config: CaptchaConfig,
+    /// CAPTCHA pool configuration
+    captcha_pool_config: CaptchaPoolConfig,
+    /// Branding configuration
+    branding_config: BrandingConfig,
+    /// Per-type CAPTCHA settings
+    captcha_type_settings: Vec<CaptchaTypeSettings>,
     /// Per-session behavioral stats
     behavior_stats: HashMap<String, BehaviorStats>,
     /// Total traffic (bytes) through the system
@@ -194,6 +200,133 @@ pub struct MirrorInfo {
     pub total_requests: u64,
 }
 
+/// Branding configuration for the protected service
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrandingConfig {
+    /// Display name/title for the service
+    pub service_name: String,
+    /// Short description
+    pub description: String,
+    /// Welcome message on CAPTCHA page
+    pub welcome_message: String,
+    /// Primary brand color (hex format: #RRGGBB)
+    pub primary_color: String,
+    /// Secondary/accent color (hex format: #RRGGBB)
+    pub secondary_color: String,
+    /// Tertiary/subtle accent color (hex format: #RRGGBB)
+    pub tertiary_color: String,
+    /// Custom CSS for gate pages (optional)
+    pub custom_css: Option<String>,
+}
+
+impl Default for BrandingConfig {
+    fn default() -> Self {
+        Self {
+            service_name: "Fortify".to_string(),
+            description: "Protected Gateway".to_string(),
+            welcome_message: "Complete verification to enter".to_string(),
+            primary_color: "#c9a227".to_string(),
+            secondary_color: "#a68b5b".to_string(),
+            tertiary_color: "#8b7355".to_string(),
+            custom_css: None,
+        }
+    }
+}
+
+/// CAPTCHA pool configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptchaPoolConfig {
+    /// Target pool size
+    pub pool_size: usize,
+    /// Minimum pool before emergency generation
+    pub min_pool_size: usize,
+    /// Maximum pool size
+    pub max_pool_size: usize,
+    /// CAPTCHA difficulty (1-10)
+    pub difficulty: u8,
+    /// Time limit to solve in seconds
+    pub timeout_seconds: u64,
+    /// Maximum solve attempts
+    pub max_attempts: u32,
+    /// Rotate pool percentage
+    pub rotation_percent: u8,
+    /// Rotation interval in days
+    pub rotation_interval_days: u32,
+}
+
+impl Default for CaptchaPoolConfig {
+    fn default() -> Self {
+        Self {
+            pool_size: 500,
+            min_pool_size: 100,
+            max_pool_size: 1000,
+            difficulty: 5,
+            timeout_seconds: 120,
+            max_attempts: 3,
+            rotation_percent: 25,
+            rotation_interval_days: 10,
+        }
+    }
+}
+
+/// Per-type CAPTCHA configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptchaTypeSettings {
+    /// CAPTCHA type name (e.g., "BmpText", "Emoji")
+    pub type_name: String,
+    /// Whether this type is enabled
+    pub enabled: bool,
+    /// Number of options to display (for selection-based)
+    pub option_count: usize,
+    /// Difficulty level (1-3)
+    pub difficulty: u8,
+    /// Minimum pool size for this type
+    pub min_pool_size: usize,
+}
+
+impl CaptchaTypeSettings {
+    pub fn new(type_name: &str) -> Self {
+        let (option_count, difficulty) = match type_name {
+            "BmpText" => (0, 2),
+            "Emoji" => (6, 2),
+            "Direction" => (4, 1),
+            "Sequence" => (4, 2),
+            "WordUnscramble" => (0, 2),
+            "ImageRotation" => (4, 2),
+            "Silhouette" => (4, 2),
+            _ => (4, 2),
+        };
+        Self {
+            type_name: type_name.to_string(),
+            enabled: true,
+            option_count,
+            difficulty,
+            min_pool_size: 50,
+        }
+    }
+
+    pub fn all_types() -> Vec<Self> {
+        vec![
+            Self::new("BmpText"),
+            Self::new("Emoji"),
+            Self::new("Direction"),
+            Self::new("Sequence"),
+            Self::new("WordUnscramble"),
+            Self::new("ImageRotation"),
+            Self::new("Silhouette"),
+        ]
+    }
+}
+
+/// Exportable admin configuration for persistence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminConfigExport {
+    pub branding: BrandingConfig,
+    pub captcha_pool: CaptchaPoolConfig,
+    pub behavior: BehaviorConfig,
+    pub captcha_type_settings: Vec<CaptchaTypeSettings>,
+}
+
 impl Default for AdminState {
     fn default() -> Self {
         Self::new()
@@ -202,8 +335,11 @@ impl Default for AdminState {
 
 impl AdminState {
     pub fn new() -> Self {
+        let mut inner = AdminStateInner::default();
+        // Initialize per-type CAPTCHA settings with defaults
+        inner.captcha_type_settings = CaptchaTypeSettings::all_types();
         Self {
-            inner: Arc::new(RwLock::new(AdminStateInner::default())),
+            inner: Arc::new(RwLock::new(inner)),
         }
     }
 
@@ -937,6 +1073,113 @@ impl AdminState {
         tracing::info!("Captcha config updated");
     }
 
+    // =========================================================================
+    // BRANDING CONFIGURATION METHODS
+    // =========================================================================
+
+    /// Get current branding config
+    pub fn get_branding_config(&self) -> BrandingConfig {
+        let inner = safe_read(&self.inner);
+        inner.branding_config.clone()
+    }
+
+    /// Update branding config
+    pub fn update_branding_config(&self, config: BrandingConfig) {
+        let mut inner = safe_write(&self.inner);
+        inner.branding_config = config;
+        tracing::info!("Branding config updated");
+    }
+
+    // =========================================================================
+    // CAPTCHA POOL CONFIGURATION METHODS
+    // =========================================================================
+
+    /// Get current captcha pool config
+    pub fn get_captcha_pool_config(&self) -> CaptchaPoolConfig {
+        let inner = safe_read(&self.inner);
+        inner.captcha_pool_config.clone()
+    }
+
+    /// Update captcha pool config
+    pub fn update_captcha_pool_config(&self, config: CaptchaPoolConfig) {
+        let mut inner = safe_write(&self.inner);
+        inner.captcha_pool_config = config;
+        tracing::info!("Captcha pool config updated");
+    }
+
+    // =========================================================================
+    // PER-TYPE CAPTCHA CONFIGURATION METHODS
+    // =========================================================================
+
+    /// Get all per-type CAPTCHA settings
+    pub fn get_captcha_type_settings(&self) -> Vec<CaptchaTypeSettings> {
+        let inner = safe_read(&self.inner);
+        inner.captcha_type_settings.clone()
+    }
+
+    /// Update a specific CAPTCHA type's settings
+    pub fn update_captcha_type_setting(&self, type_name: &str, enabled: bool, option_count: usize, difficulty: u8, min_pool_size: usize) {
+        let mut inner = safe_write(&self.inner);
+        if let Some(setting) = inner.captcha_type_settings.iter_mut().find(|s| s.type_name == type_name) {
+            setting.enabled = enabled;
+            setting.option_count = option_count;
+            setting.difficulty = difficulty.clamp(1, 3);
+            setting.min_pool_size = min_pool_size;
+            tracing::info!("CAPTCHA type {} settings updated: enabled={}, difficulty={}", type_name, enabled, difficulty);
+        }
+    }
+
+    // =========================================================================
+    // CONFIGURATION PERSISTENCE METHODS
+    // =========================================================================
+
+    /// Save current admin state to a JSON file for persistence
+    pub fn save_to_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+        let inner = safe_read(&self.inner);
+        let export = AdminConfigExport {
+            branding: inner.branding_config.clone(),
+            captcha_pool: inner.captcha_pool_config.clone(),
+            behavior: inner.behavior_config.clone(),
+            captcha_type_settings: inner.captcha_type_settings.clone(),
+        };
+        let json = serde_json::to_string_pretty(&export)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        std::fs::write(path, json)?;
+        tracing::info!("Admin config saved to {:?}", path);
+        Ok(())
+    }
+
+    /// Load admin state from a JSON file
+    pub fn load_from_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+        let json = std::fs::read_to_string(path)?;
+        let export: AdminConfigExport = serde_json::from_str(&json)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        
+        let mut inner = safe_write(&self.inner);
+        inner.branding_config = export.branding;
+        inner.captcha_pool_config = export.captcha_pool;
+        inner.behavior_config = export.behavior;
+        inner.captcha_type_settings = export.captcha_type_settings;
+        tracing::info!("Admin config loaded from {:?}", path);
+        Ok(())
+    }
+
+    /// Reload configuration from the default path
+    pub fn reload_config(&self) -> Result<(), std::io::Error> {
+        let path = Self::default_config_path();
+        if path.exists() {
+            self.load_from_file(&path)
+        } else {
+            tracing::warn!("Config file not found at {:?}, using defaults", path);
+            Ok(())
+        }
+    }
+
+    /// Get default config file path
+    pub fn default_config_path() -> std::path::PathBuf {
+        std::path::PathBuf::from("/etc/fortify/admin-state.json")
+    }
+
     /// Toggle a specific behavioral feature
     pub fn toggle_behavior_feature(&self, feature: &str, enabled: bool) {
         let mut inner = safe_write(&self.inner);
@@ -1163,7 +1406,16 @@ pub async fn handle_admin_request(
         // Behavioral Analysis Settings
         (Method::GET, "/settings") => render_settings(&admin_state),
         (Method::POST, "/settings/behavior") => handle_behavior_settings(req, admin_state).await,
+        (Method::POST, "/settings/branding") => handle_branding_settings(req, admin_state).await,
         (Method::POST, "/settings/captcha") => handle_captcha_settings(req, admin_state).await,
+        (Method::POST, "/settings/captcha-pool") => {
+            handle_captcha_pool_settings(req, admin_state).await
+        }
+        (Method::POST, "/settings/captcha-type") => {
+            handle_captcha_type_settings(req, admin_state).await
+        }
+        (Method::POST, "/config/save") => handle_config_save(admin_state).await,
+        (Method::POST, "/config/reload") => handle_config_reload(admin_state).await,
 
         // Tutorial / Documentation
         (Method::GET, "/tutorial") => render_tutorial(),
@@ -2925,6 +3177,9 @@ fn render_mirrors(state: &AdminState) -> Response<BoxBody> {
 fn render_settings(state: &AdminState) -> Response<BoxBody> {
     let config = state.get_behavior_config();
     let captcha_config = state.get_captcha_config();
+    let captcha_pool_config = state.get_captcha_pool_config();
+    let branding_config = state.get_branding_config();
+    let captcha_type_settings = state.get_captcha_type_settings();
     let agg_stats = state.get_aggregate_behavior_stats();
 
     let checkbox = |name: &str, label: &str, enabled: bool| -> String {
@@ -2957,6 +3212,51 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
     }
     if violations_breakdown.is_empty() {
         violations_breakdown = r#"<tr><td colspan="2" style="color: var(--text-muted);">No violations detected yet</td></tr>"#.to_string();
+    }
+
+    // Build per-type CAPTCHA settings forms
+    let mut captcha_type_forms = String::new();
+    for type_setting in &captcha_type_settings {
+        let enabled_checked = if type_setting.enabled { "checked" } else { "" };
+        let status_color = if type_setting.enabled { "var(--sage)" } else { "var(--crimson)" };
+        let status_text = if type_setting.enabled { "ENABLED" } else { "DISABLED" };
+        
+        captcha_type_forms.push_str(&format!(
+            r#"
+            <form method="POST" action="{}/settings/captcha-type" style="border: 1px solid var(--border-subtle); padding: 15px; margin-bottom: 10px; border-radius: 8px;">
+                <input type="hidden" name="type_name" value="{}">
+                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                    <input type="checkbox" name="enabled" value="1" {} style="width: 20px; height: 20px; accent-color: var(--gold-primary);">
+                    <strong style="flex: 1; color: var(--text-primary);">{}</strong>
+                    <span style="color: {}; font-size: 0.85em;">{}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                    <div>
+                        <label style="display: block; color: var(--text-muted); font-size: 0.75em;">Options</label>
+                        <input type="number" name="option_count" value="{}" min="0" max="10" style="width: 100%; padding: 5px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--text-muted); font-size: 0.75em;">Difficulty (1-3)</label>
+                        <input type="number" name="difficulty" value="{}" min="1" max="3" style="width: 100%; padding: 5px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--text-muted); font-size: 0.75em;">Min Pool</label>
+                        <input type="number" name="min_pool_size" value="{}" min="0" max="500" style="width: 100%; padding: 5px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-success" style="margin-top: 10px; padding: 5px 15px; font-size: 0.85em;">Save</button>
+            </form>
+            "#,
+            ADMIN_PATH,
+            type_setting.type_name,
+            enabled_checked,
+            type_setting.type_name,
+            status_color,
+            status_text,
+            type_setting.option_count,
+            type_setting.difficulty,
+            type_setting.min_pool_size
+        ));
     }
 
     // Build attack path toggles - grouped by category
@@ -3186,6 +3486,68 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
             </p>
         </div>
 
+        <!-- BRANDING CONFIGURATION -->
+        <div class="card" style="border-color: var(--gold-primary); background: var(--bg-elevated);">
+            <h3>🏰 Branding Configuration</h3>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">
+                Customize the appearance of your Gate and CAPTCHA pages.
+            </p>
+
+            <form method="POST" action="{}/settings/branding">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px; font-weight: bold;">Service Name</label>
+                        <input type="text" name="service_name" value="{}" maxlength="100" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Displayed as the main title</small>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px; font-weight: bold;">Description</label>
+                        <input type="text" name="description" value="{}" maxlength="200" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Shown below the title</small>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: var(--gold-primary); margin-bottom: 5px; font-weight: bold;">Welcome Message</label>
+                    <textarea name="welcome_message" rows="2" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">{}</textarea>
+                    <small style="color: var(--text-muted);">Instructions shown on the CAPTCHA page</small>
+                </div>
+
+                <h4 style="color: var(--amber); margin-bottom: 15px;">Color Scheme</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Primary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" name="primary_color_picker" value="{}" style="width: 50px; height: 35px; border: none; cursor: pointer;">
+                            <input type="text" name="primary_color" value="{}" maxlength="7" style="flex: 1; padding: 8px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Secondary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" name="secondary_color_picker" value="{}" style="width: 50px; height: 35px; border: none; cursor: pointer;">
+                            <input type="text" name="secondary_color" value="{}" maxlength="7" style="flex: 1; padding: 8px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Tertiary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" name="tertiary_color_picker" value="{}" style="width: 50px; height: 35px; border: none; cursor: pointer;">
+                            <input type="text" name="tertiary_color" value="{}" maxlength="7" style="flex: 1; padding: 8px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace;">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: var(--gold-primary); margin-bottom: 5px; font-weight: bold;">Custom CSS (Advanced)</label>
+                    <textarea name="custom_css" rows="4" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-family: monospace; font-size: 0.9em;" placeholder="/* Additional CSS rules */">{}</textarea>
+                    <small style="color: var(--text-muted);">Optional custom styles injected into Gate/CAPTCHA pages</small>
+                </div>
+
+                <button type="submit" class="btn btn-success">Save Branding Settings</button>
+            </form>
+        </div>
+
         <!-- CAPTCHA CONFIGURATION -->
         <div class="card" style="border-color: var(--sage); background: var(--bg-elevated);">
             <h3>Captcha Configuration</h3>
@@ -3274,6 +3636,96 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
                 <button type="submit" class="btn btn-success">Save Captcha Settings</button>
             </form>
         </div>
+
+        <!-- CAPTCHA POOL CONFIGURATION -->
+        <div class="card" style="border-color: var(--amber); background: var(--bg-elevated);">
+            <h3>Captcha Pool Settings</h3>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">
+                Configure the CAPTCHA pool size, difficulty, and behavior settings.
+            </p>
+
+            <form method="POST" action="{}/settings/captcha-pool">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Target Pool Size</label>
+                        <input type="number" name="pool_size" value="{}" min="50" max="5000" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Target CAPTCHAs to maintain</small>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Min Pool Size</label>
+                        <input type="number" name="min_pool_size" value="{}" min="10" max="1000" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Emergency generation trigger</small>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Max Pool Size</label>
+                        <input type="number" name="max_pool_size" value="{}" min="100" max="10000" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Maximum pool capacity</small>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Difficulty (1-10)</label>
+                        <input type="number" name="difficulty" value="{}" min="1" max="10" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Visual complexity</small>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Timeout (seconds)</label>
+                        <input type="number" name="timeout_seconds" value="{}" min="30" max="600" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Time to solve CAPTCHA</small>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Max Attempts</label>
+                        <input type="number" name="max_attempts" value="{}" min="1" max="10" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Attempts before failure</small>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Rotation Percent</label>
+                        <input type="number" name="rotation_percent" value="{}" min="0" max="100" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">% of pool to refresh each cycle</small>
+                    </div>
+                    <div>
+                        <label style="display: block; color: var(--gold-primary); margin-bottom: 5px;">Rotation Interval (days)</label>
+                        <input type="number" name="rotation_interval_days" value="{}" min="1" max="90" style="width: 100%; padding: 10px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+                        <small style="color: var(--text-muted);">Days between pool rotations</small>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-success">Save Pool Settings</button>
+            </form>
+        </div>
+
+        <!-- PER-TYPE CAPTCHA CONFIGURATION -->
+        <div class="card" style="border-color: var(--amber); background: var(--bg-elevated);">
+            <h3>Per-Type CAPTCHA Settings</h3>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">
+                Configure individual CAPTCHA types - enable/disable, difficulty, and pool allocation.
+            </p>
+
+            {}
+        </div>
+
+        <!-- CONFIGURATION MANAGEMENT -->
+        <div class="card" style="border-color: var(--sage); background: var(--bg-elevated);">
+            <h3>Configuration Management</h3>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">
+                Save settings to disk or reload from the configuration file.
+            </p>
+            <div style="display: flex; gap: 15px;">
+                <form method="POST" action="{}/config/save" style="margin: 0;">
+                    <button type="submit" class="btn btn-success">💾 Save Config to Disk</button>
+                </form>
+                <form method="POST" action="{}/config/reload" style="margin: 0;">
+                    <button type="submit" class="btn" style="background: var(--amber); color: var(--bg-deep);">🔄 Reload Config from Disk</button>
+                </form>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.85em; margin-top: 15px;">
+                <strong>Precedence:</strong> TUI wizard → config file → runtime changes (Control Panel)
+            </p>
+        </div>
     "#,
         ADMIN_PATH,
         ADMIN_PATH,
@@ -3322,6 +3774,18 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
         agg_stats.total_violations,
         agg_stats.sessions_with_suspicious_ua,
         violations_breakdown,
+        // Branding config section
+        ADMIN_PATH,
+        html_escape(&branding_config.service_name),
+        html_escape(&branding_config.description),
+        html_escape(&branding_config.welcome_message),
+        &branding_config.primary_color,
+        &branding_config.primary_color,
+        &branding_config.secondary_color,
+        &branding_config.secondary_color,
+        &branding_config.tertiary_color,
+        &branding_config.tertiary_color,
+        branding_config.custom_css.as_deref().unwrap_or(""),
         // Captcha config section
         ADMIN_PATH,
         render_captcha_type_options(captcha_config.gate_captcha_type),
@@ -3399,6 +3863,21 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
         } else {
             ""
         },
+        // Captcha pool config section
+        ADMIN_PATH,
+        captcha_pool_config.pool_size,
+        captcha_pool_config.min_pool_size,
+        captcha_pool_config.max_pool_size,
+        captcha_pool_config.difficulty,
+        captcha_pool_config.timeout_seconds,
+        captcha_pool_config.max_attempts,
+        captcha_pool_config.rotation_percent,
+        captcha_pool_config.rotation_interval_days,
+        // Per-type CAPTCHA settings
+        captcha_type_forms,
+        // Config management buttons
+        ADMIN_PATH,
+        ADMIN_PATH,
     );
 
     html_page("Settings", &content)
@@ -4292,6 +4771,63 @@ fn parse_captcha_type(s: &str) -> CaptchaType {
     }
 }
 
+async fn handle_branding_settings(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
+        .map(|b| b.to_bytes())
+        .unwrap_or_default();
+    let params = parse_form_data(&body_bytes);
+
+    // Get current config and update with form values
+    let mut config = state.get_branding_config();
+
+    if let Some(val) = params.get("service_name") {
+        config.service_name = val.clone();
+    }
+    if let Some(val) = params.get("description") {
+        config.description = val.clone();
+    }
+    if let Some(val) = params.get("welcome_message") {
+        config.welcome_message = val.clone();
+    }
+    if let Some(val) = params.get("primary_color") {
+        // Validate hex color format
+        if val.starts_with('#') && val.len() == 7 {
+            config.primary_color = val.clone();
+        }
+    }
+    if let Some(val) = params.get("secondary_color") {
+        if val.starts_with('#') && val.len() == 7 {
+            config.secondary_color = val.clone();
+        }
+    }
+    if let Some(val) = params.get("tertiary_color") {
+        if val.starts_with('#') && val.len() == 7 {
+            config.tertiary_color = val.clone();
+        }
+    }
+    if let Some(val) = params.get("custom_css") {
+        config.custom_css = if val.trim().is_empty() {
+            None
+        } else {
+            Some(val.clone())
+        };
+    }
+
+    state.update_branding_config(config.clone());
+    tracing::info!(
+        "Admin: Branding settings updated - service_name={}, primary_color={}",
+        config.service_name,
+        config.primary_color
+    );
+
+    redirect(&format!("{}/settings", ADMIN_PATH))
+}
+
 async fn handle_captcha_settings(
     req: Request<Incoming>,
     state: Arc<AdminState>,
@@ -4362,6 +4898,152 @@ async fn handle_captcha_settings(
         Err(e) => tracing::warn!("Admin: Failed to sync captcha config to Gate: {}", e),
     }
 
+    redirect(&format!("{}/settings", ADMIN_PATH))
+}
+
+async fn handle_captcha_pool_settings(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
+        .map(|b| b.to_bytes())
+        .unwrap_or_default();
+    let params = parse_form_data(&body_bytes);
+
+    // Get current config and update with form values
+    let mut config = state.get_captcha_pool_config();
+
+    if let Some(val) = params.get("pool_size") {
+        if let Ok(v) = val.parse::<usize>() {
+            config.pool_size = v;
+        }
+    }
+    if let Some(val) = params.get("min_pool_size") {
+        if let Ok(v) = val.parse::<usize>() {
+            config.min_pool_size = v;
+        }
+    }
+    if let Some(val) = params.get("max_pool_size") {
+        if let Ok(v) = val.parse::<usize>() {
+            config.max_pool_size = v;
+        }
+    }
+    if let Some(val) = params.get("difficulty") {
+        if let Ok(v) = val.parse::<u8>() {
+            config.difficulty = v.clamp(1, 10);
+        }
+    }
+    if let Some(val) = params.get("timeout_seconds") {
+        if let Ok(v) = val.parse::<u64>() {
+            config.timeout_seconds = v;
+        }
+    }
+    if let Some(val) = params.get("max_attempts") {
+        if let Ok(v) = val.parse::<u32>() {
+            config.max_attempts = v;
+        }
+    }
+    if let Some(val) = params.get("rotation_percent") {
+        if let Ok(v) = val.parse::<u8>() {
+            config.rotation_percent = v.min(100);
+        }
+    }
+    if let Some(val) = params.get("rotation_interval_days") {
+        if let Ok(v) = val.parse::<u32>() {
+            config.rotation_interval_days = v;
+        }
+    }
+
+    state.update_captcha_pool_config(config.clone());
+    tracing::info!(
+        "Admin: CAPTCHA Pool settings updated - pool_size={}, difficulty={}, timeout={}s",
+        config.pool_size,
+        config.difficulty,
+        config.timeout_seconds
+    );
+
+    redirect(&format!("{}/settings", ADMIN_PATH))
+}
+
+async fn handle_captcha_type_settings(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
+        .map(|b| b.to_bytes())
+        .unwrap_or_default();
+    let params = parse_form_data(&body_bytes);
+
+    // Get type name from form
+    let type_name = match params.get("type_name") {
+        Some(name) => name.clone(),
+        None => {
+            tracing::warn!("Admin: CAPTCHA type settings missing type_name");
+            return redirect(&format!("{}/settings", ADMIN_PATH));
+        }
+    };
+
+    // Parse settings
+    let enabled = params.contains_key("enabled");
+    let option_count = params
+        .get("option_count")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(4);
+    let difficulty = params
+        .get("difficulty")
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(2);
+    let min_pool_size = params
+        .get("min_pool_size")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(50);
+
+    state.update_captcha_type_setting(&type_name, enabled, option_count, difficulty, min_pool_size);
+    tracing::info!(
+        "Admin: CAPTCHA type {} settings updated - enabled={}, difficulty={}, min_pool={}",
+        type_name,
+        enabled,
+        difficulty,
+        min_pool_size
+    );
+
+    redirect(&format!("{}/settings", ADMIN_PATH))
+}
+
+async fn handle_config_save(state: Arc<AdminState>) -> Response<BoxBody> {
+    let path = AdminState::default_config_path();
+    
+    // Ensure parent directory exists
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    
+    match state.save_to_file(&path) {
+        Ok(_) => {
+            tracing::info!("Admin: Configuration saved to {:?}", path);
+        }
+        Err(e) => {
+            tracing::error!("Admin: Failed to save config: {}", e);
+        }
+    }
+    
+    redirect(&format!("{}/settings", ADMIN_PATH))
+}
+
+async fn handle_config_reload(state: Arc<AdminState>) -> Response<BoxBody> {
+    match state.reload_config() {
+        Ok(_) => {
+            tracing::info!("Admin: Configuration reloaded");
+        }
+        Err(e) => {
+            tracing::error!("Admin: Failed to reload config: {}", e);
+        }
+    }
+    
     redirect(&format!("{}/settings", ADMIN_PATH))
 }
 

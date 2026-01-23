@@ -178,12 +178,14 @@
         </header>
         <form method="POST" action="/gate/verify">
             <div class="captcha-display">
-                <span class="captcha-placeholder">Loading challenge...</span>
+                <img src="{{CAPTCHA_IMAGE_URL}}" alt="Security Challenge">
             </div>
             <div class="input-group">
-                <label for="solution">Enter Verification Code</label>
-                <input type="text" id="solution" name="solution" placeholder="• • • • • •" required autofocus autocomplete="off">
+                <label for="captcha">Enter Verification Code</label>
+                <input type="text" id="captcha" name="captcha" placeholder="• • • • • •" required autofocus autocomplete="off">
             </div>
+            <input type="hidden" name="session_id" value="{{SESSION_ID}}">
+            <input type="hidden" name="captcha_type" value="{{CAPTCHA_TYPE}}">
             <button type="submit">Verify Access</button>
         </form>
         <footer class="footer-note">

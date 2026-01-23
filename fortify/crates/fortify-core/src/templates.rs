@@ -38,6 +38,12 @@ pub enum TemplateType {
     Busy,
     /// Main index/welcome page
     Index,
+    /// Verification success page
+    Verified,
+    /// Verification/CAPTCHA failed page
+    VerificationFailed,
+    /// Session expired/recycled page
+    SessionExpired,
 }
 
 impl TemplateType {
@@ -54,6 +60,9 @@ impl TemplateType {
             TemplateType::Retiring,
             TemplateType::Busy,
             TemplateType::Index,
+            TemplateType::Verified,
+            TemplateType::VerificationFailed,
+            TemplateType::SessionExpired,
         ]
     }
 
@@ -70,6 +79,9 @@ impl TemplateType {
             TemplateType::Retiring => "retiring.html",
             TemplateType::Busy => "busy.html",
             TemplateType::Index => "index.html",
+            TemplateType::Verified => "verified.html",
+            TemplateType::VerificationFailed => "verification-failed.html",
+            TemplateType::SessionExpired => "session-expired.html",
         }
     }
 }
@@ -107,6 +119,15 @@ pub static TEMPLATE_BUSY: &str = include_str!("../../../assets/html/busy.html");
 
 /// Main index page template
 pub static TEMPLATE_INDEX: &str = include_str!("../../../assets/html/index.html");
+
+/// Verification success page template
+pub static TEMPLATE_VERIFIED: &str = include_str!("../../../assets/html/verified.html");
+
+/// Verification/CAPTCHA failed page template
+pub static TEMPLATE_VERIFICATION_FAILED: &str = include_str!("../../../assets/html/verification-failed.html");
+
+/// Session expired/recycled page template
+pub static TEMPLATE_SESSION_EXPIRED: &str = include_str!("../../../assets/html/session-expired.html");
 
 // ============================================================================
 // Template Engine
@@ -163,6 +184,9 @@ impl TemplateEngine {
             TemplateType::Retiring => TEMPLATE_RETIRING,
             TemplateType::Busy => TEMPLATE_BUSY,
             TemplateType::Index => TEMPLATE_INDEX,
+            TemplateType::Verified => TEMPLATE_VERIFIED,
+            TemplateType::VerificationFailed => TEMPLATE_VERIFICATION_FAILED,
+            TemplateType::SessionExpired => TEMPLATE_SESSION_EXPIRED,
         }
     }
 
@@ -424,9 +448,12 @@ mod tests {
     #[test]
     fn test_template_type_all() {
         let all = TemplateType::all();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 13);
         assert!(all.contains(&TemplateType::Gate));
         assert!(all.contains(&TemplateType::Captcha));
+        assert!(all.contains(&TemplateType::VerificationFailed));
+        assert!(all.contains(&TemplateType::SessionExpired));
+        assert!(all.contains(&TemplateType::Verified));
     }
 
     #[test]

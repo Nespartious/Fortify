@@ -671,15 +671,15 @@ impl Node {
 <head>
     <title>Fortify Protected</title>
     <style>
-        body { background: linear-gradient(135deg, #0d0211 0%, #1a0527 50%, #0d0211 100%); color: #00e5ff; font-family: 'Courier New', monospace; min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
+        body { background: linear-gradient(135deg, #141417 0%, #18181b 50%, #141417 100%); color: #e4e4e7; font-family: 'Courier New', monospace; min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
         .container { text-align: center; max-width: 600px; padding: 40px; }
         .shield { font-size: 80px; margin-bottom: 20px; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        h1 { color: #d500f9; font-size: 2em; margin-bottom: 20px; }
-        .box { border: 2px solid #7b2cbf; padding: 30px; background: rgba(123, 44, 191, 0.1); border-radius: 8px; }
-        p { line-height: 1.8; color: #ccc; margin: 15px 0; }
-        .status { color: #00e676; font-weight: bold; }
-        .note { font-size: 0.9em; color: #888; margin-top: 30px; }
+        h1 { color: #c9a227; font-size: 2em; margin-bottom: 20px; }
+        .box { border: 2px solid #c9a227; padding: 30px; background: rgba(201, 162, 39, 0.1); border-radius: 8px; }
+        p { line-height: 1.8; color: #a1a1aa; margin: 15px 0; }
+        .status { color: #22c55e; font-weight: bold; }
+        .note { font-size: 0.9em; color: #71717a; margin-top: 30px; }
     </style>
 </head>
 <body>
@@ -721,12 +721,12 @@ impl Node {
     <meta http-equiv="refresh" content="2;url=/">
     <title>Redirecting...</title>
     <style>
-        body { background: #0d0211; color: #00e5ff; font-family: 'Courier New', monospace; text-align: center; padding: 50px; }
+        body { background: #141417; color: #e4e4e7; font-family: 'Courier New', monospace; text-align: center; padding: 50px; }
         .icon { font-size: 64px; margin-bottom: 20px; }
-        .box { border: 2px solid #7b2cbf; padding: 40px; margin: 20px auto; max-width: 600px; background: rgba(123, 44, 191, 0.1); border-radius: 8px; }
-        h1 { color: #d500f9; margin-bottom: 20px; }
-        p { line-height: 1.6; color: #ccc; }
-        a { color: #00e5ff; }
+        .box { border: 2px solid #c9a227; padding: 40px; margin: 20px auto; max-width: 600px; background: rgba(201, 162, 39, 0.1); border-radius: 8px; }
+        h1 { color: #c9a227; margin-bottom: 20px; }
+        p { line-height: 1.6; color: #a1a1aa; }
+        a { color: #c9a227; }
     </style>
 </head>
 <body>
