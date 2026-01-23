@@ -1755,7 +1755,7 @@ fn render_login_page(error: Option<&str>) -> Response<BoxBody> {
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 async fn handle_login(req: Request<Incoming>, state: Arc<AdminState>) -> Response<BoxBody> {
@@ -1787,7 +1787,7 @@ async fn handle_login(req: Request<Incoming>, state: Arc<AdminState>) -> Respons
                 ),
             )
             .body(Full::new(Bytes::new()))
-            .unwrap()
+            .expect("valid response")
     } else {
         tracing::warn!("❌ Failed admin login attempt from control panel");
         render_login_page(Some("Invalid password"))
@@ -1818,7 +1818,7 @@ async fn handle_logout(req: Request<Incoming>, state: Arc<AdminState>) -> Respon
             format!("fortify_admin_session=; Path={}; Max-Age=0", ADMIN_PATH),
         )
         .body(Full::new(Bytes::new()))
-        .unwrap()
+        .expect("valid response")
 }
 
 // ============================================================================
@@ -2226,7 +2226,7 @@ fn html_page(title: &str, content: &str) -> Response<BoxBody> {
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 fn render_dashboard(state: &AdminState) -> Response<BoxBody> {
@@ -5431,7 +5431,7 @@ fn redirect(location: &str) -> Response<BoxBody> {
         .status(StatusCode::SEE_OTHER)
         .header("Location", location)
         .body(Full::new(Bytes::new()))
-        .unwrap()
+        .expect("valid response")
 }
 
 fn not_found() -> Response<BoxBody> {
@@ -5439,7 +5439,7 @@ fn not_found() -> Response<BoxBody> {
         .status(StatusCode::NOT_FOUND)
         .header("Content-Type", "text/plain")
         .body(Full::new(Bytes::from("Not Found")))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Escape HTML special characters

@@ -722,7 +722,7 @@ async fn handle_proxy_request(
                 .map(|c| {
                     c.trim()
                         .strip_prefix("fortify_session=")
-                        .unwrap()
+                        .unwrap_or_default()
                         .to_string()
                 })
         });
@@ -810,7 +810,7 @@ async fn handle_proxy_request(
                     ),
                 )
                 .body(Full::new(Bytes::new()))
-                .unwrap());
+                .expect("valid response"));
         }
     } // end bypass_rate_limit check
 
@@ -932,7 +932,7 @@ async fn process_request(
                 return Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
                     .body(Full::new(Bytes::from("Gate service unavailable")))
-                    .unwrap();
+                    .expect("valid response");
             }
         }
     }
@@ -1030,8 +1030,7 @@ async fn process_request(
     // Store the demoted session ID BEFORE potentially overwriting verified_session_id
     let demoted_session_id = verified_session_id.clone();
 
-    if verification_token_opt.is_some() {
-        let verification_token = verification_token_opt.clone().unwrap();
+    if let Some(verification_token) = verification_token_opt.clone() {
         let current_ua = user_agent.as_deref().unwrap_or("unknown");
 
         tracing::info!(
@@ -1052,7 +1051,7 @@ async fn process_request(
                     .map(|c| {
                         c.trim()
                             .strip_prefix("fortify_original_session=")
-                            .unwrap()
+                            .unwrap_or_default()
                             .to_string()
                     })
             });
@@ -1070,7 +1069,7 @@ async fn process_request(
                     .map(|c| {
                         c.trim()
                             .strip_prefix("fortify_rate_limited_circuit=")
-                            .unwrap()
+                            .unwrap_or_default()
                             .to_string()
                     })
             });
@@ -1333,7 +1332,7 @@ async fn process_request(
                     .body(Full::new(Bytes::from(
                         "Session blacklisted - please verify again",
                     )))
-                    .unwrap();
+                    .expect("valid response");
             }
         }
 
@@ -1479,7 +1478,7 @@ async fn process_request(
                         "Set-Cookie",
                         format!("fortify_pending_session={}; Path=/; HttpOnly", sid)
                             .parse()
-                            .unwrap(),
+                            .expect("valid cookie header"),
                     );
                 } else {
                     tracing::warn!("No verified_session_id available to set cookie!");
@@ -1493,7 +1492,7 @@ async fn process_request(
                         "Set-Cookie",
                         "fortify_demoted=1; Path=/; HttpOnly; SameSite=Lax"
                             .parse()
-                            .unwrap(),
+                            .expect("valid cookie header"),
                     );
                 }
                 return resp;
@@ -1565,14 +1564,14 @@ async fn process_request(
                 session_token_str
             )
             .parse()
-            .unwrap(),
+            .expect("valid cookie header"),
         );
         // Clear the verification token cookie
         response.headers_mut().append(
             "Set-Cookie",
             "fortify_verification=; Path=/; Max-Age=0; HttpOnly"
                 .parse()
-                .unwrap(),
+                .expect("valid cookie header"),
         );
     }
 
@@ -2112,7 +2111,7 @@ fn serve_killed_session_page() -> Response<BoxBody> {
             "fortify_session=; Path=/; Max-Age=0; HttpOnly",
         )
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Serve a 503 Service Unavailable page when at capacity
@@ -2259,7 +2258,7 @@ fn serve_busy_page() -> Response<BoxBody> {
         .header("Retry-After", retry_seconds.to_string())
         .header("Cache-Control", "no-store")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Check if a mirror is paused by querying the orchestrator
@@ -2418,7 +2417,7 @@ fn serve_paused_mirror_page(_onion_address: &str) -> Response<BoxBody> {
         .status(StatusCode::SERVICE_UNAVAILABLE)
         .header("Content-Type", "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Generate error response
@@ -2427,7 +2426,7 @@ fn error_response(status: StatusCode, message: &str) -> Response<BoxBody> {
         .status(status)
         .header("Content-Type", "text/plain")
         .body(Full::new(Bytes::from(message.to_string())))
-        .unwrap()
+        .expect("valid response")
 }
 
 #[cfg(test)]

@@ -167,7 +167,7 @@ async fn handle_request(
                 "fortify_session=; Path=/; Max-Age=0; HttpOnly",
             )
             .body(Full::new(Bytes::new()))
-            .unwrap(),
+            .expect("valid response"),
     };
 
     Ok(response)
@@ -191,7 +191,7 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
             "fortify_session=; Path=/; Max-Age=0; HttpOnly",
         )
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
@@ -220,7 +220,7 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Render a page for the second captcha challenge (for demoted/threat sessions)
@@ -309,7 +309,7 @@ fn serve_captcha_challenge(
                     .status(StatusCode::OK)
                     .header("Content-Type", "text/html")
                     .body(Full::new(Bytes::from(html)))
-                    .unwrap();
+                    .expect("valid response");
             }
         }
         // For non-threat sessions with remaining captchas, fall through to refresh
@@ -386,7 +386,7 @@ fn serve_captcha_challenge(
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Handle verification token upgrade to session token
@@ -491,7 +491,7 @@ async fn handle_token_upgrade(req: Request<Incoming>, gate: Arc<Gate>) -> Respon
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
         .body(Full::new(Bytes::from(response_json.to_string())))
-        .unwrap()
+        .expect("valid response")
 }
 
 // Renamed for clarity in tool usage, originally serve_captcha in code
@@ -515,7 +515,7 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<BoxBody> {
                     .header("Content-Type", "image/bmp")
                     .header("Cache-Control", "no-store, no-cache, must-revalidate")
                     .body(Full::new(Bytes::from(image_data.clone())))
-                    .unwrap();
+                    .expect("valid response");
             }
         }
     }
@@ -529,7 +529,7 @@ async fn serve_captcha(path: &str, gate: Arc<Gate>) -> Response<BoxBody> {
                     .header("Content-Type", "image/bmp")
                     .header("Cache-Control", "no-store, no-cache, must-revalidate")
                     .body(Full::new(Bytes::from(challenge.image_data.clone())))
-                    .unwrap()
+                    .expect("valid response")
             } else {
                 not_found()
             }
@@ -660,7 +660,7 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
                     "fortify_demoted=; Path=/; Max-Age=0; HttpOnly",
                 )
                 .body(Full::new(Bytes::from(html)))
-                .unwrap()
+                .expect("valid response")
         }
         Err(GateError::AdditionalCaptchaRequired) => {
             // First captcha solved - need second captcha for threat session
@@ -723,7 +723,7 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/html")
                 .body(Full::new(Bytes::from(html)))
-                .unwrap()
+                .expect("valid response")
         }
         Err(_e) => {
             // Get failed attempts and calculate delay
@@ -754,7 +754,7 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
                 .status(StatusCode::FORBIDDEN)
                 .header("Content-Type", "text/html")
                 .body(Full::new(Bytes::from(html)))
-                .unwrap()
+                .expect("valid response")
         }
     }
 }
@@ -785,21 +785,21 @@ async fn handle_update_captcha_config(
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
         .body(Full::new(Bytes::from(r#"{"status":"ok"}"#)))
-        .unwrap()
+        .expect("valid response")
 }
 
 fn not_found() -> Response<BoxBody> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Full::new(Bytes::from("Not Found")))
-        .unwrap()
+        .expect("valid response")
 }
 
 fn error_response(status: StatusCode, msg: &str) -> Response<BoxBody> {
     Response::builder()
         .status(status)
         .body(Full::new(Bytes::from(msg.to_string())))
-        .unwrap()
+        .expect("valid response")
 }
 
 /// Styled error response using template engine for consistent citadel/gold theme
@@ -818,5 +818,5 @@ fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Resp
         .status(status)
         .header("Content-Type", "text/html")
         .body(Full::new(Bytes::from(html)))
-        .unwrap()
+        .expect("valid response")
 }
