@@ -54,8 +54,8 @@ impl TrafficTier {
             TrafficTier::Micro => 50,
             TrafficTier::Small => 500,
             TrafficTier::Medium => 2_000,
-            TrafficTier::Large => 5_000,
-            TrafficTier::Enterprise => 10_000,
+            TrafficTier::Large => 3_000, // Reduced from 5K for Tor realism
+            TrafficTier::Enterprise => 5_000, // Reduced from 10K for Tor realism
         }
     }
 
@@ -76,8 +76,8 @@ impl TrafficTier {
             TrafficTier::Micro => 100,
             TrafficTier::Small => 1_000,
             TrafficTier::Medium => 5_000,
-            TrafficTier::Large => 10_000,
-            TrafficTier::Enterprise => 20_000,
+            TrafficTier::Large => 6_000, // Reduced from 10K for Tor realism
+            TrafficTier::Enterprise => 10_000, // Reduced from 20K for Tor realism
         }
     }
 
@@ -98,8 +98,88 @@ impl TrafficTier {
             TrafficTier::Micro => 20,
             TrafficTier::Small => 100,
             TrafficTier::Medium => 500,
-            TrafficTier::Large => 2_000,
-            TrafficTier::Enterprise => 10_000,
+            TrafficTier::Large => 1_000, // Reduced from 2K for Tor realism
+            TrafficTier::Enterprise => 3_000, // Reduced from 10K for Tor realism
+        }
+    }
+
+    /// Returns minimum CPU cores for this tier
+    pub fn min_cpu_cores(&self) -> u8 {
+        match self {
+            TrafficTier::Micro => 1,
+            TrafficTier::Small => 2,
+            TrafficTier::Medium => 2,
+            TrafficTier::Large => 4,
+            TrafficTier::Enterprise => 4,
+        }
+    }
+
+    /// Returns recommended CPU cores for this tier
+    pub fn recommended_cpu_cores(&self) -> u8 {
+        match self {
+            TrafficTier::Micro => 2,
+            TrafficTier::Small => 4,
+            TrafficTier::Medium => 4,
+            TrafficTier::Large => 8,
+            TrafficTier::Enterprise => 8,
+        }
+    }
+
+    /// Returns minimum RAM in MB for this tier (includes ~1GB OS overhead for Ubuntu)
+    pub fn min_ram_mb(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 2048,      // 1GB OS + 1GB Fortify headroom
+            TrafficTier::Small => 2048,      // 1GB OS + 1GB Fortify
+            TrafficTier::Medium => 3072,     // 1GB OS + 2GB Fortify
+            TrafficTier::Large => 5120,      // 1GB OS + 4GB Fortify
+            TrafficTier::Enterprise => 8192, // 1GB OS + 7GB Fortify
+        }
+    }
+
+    /// Returns recommended RAM in MB for this tier (includes ~1GB OS overhead)
+    pub fn recommended_ram_mb(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 2048,       // Minimal
+            TrafficTier::Small => 3072,       // Comfortable
+            TrafficTier::Medium => 4096,      // Production
+            TrafficTier::Large => 8192,       // Heavy traffic
+            TrafficTier::Enterprise => 16384, // High capacity
+        }
+    }
+
+    /// Returns minimum disk in MB for this tier
+    pub fn min_disk_mb(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 1024,       // 1GB
+            TrafficTier::Small => 2048,       // 2GB
+            TrafficTier::Medium => 3072,      // 3GB
+            TrafficTier::Large => 6144,       // 6GB
+            TrafficTier::Enterprise => 10240, // 10GB
+        }
+    }
+
+    /// Returns formatted system requirements string
+    pub fn system_requirements(&self) -> String {
+        format!(
+            "CPU: {}+ cores ({}+ rec) | RAM: {}+ MB ({}+ rec) | Disk: {}+ MB",
+            self.min_cpu_cores(),
+            self.recommended_cpu_cores(),
+            self.min_ram_mb(),
+            self.recommended_ram_mb(),
+            self.min_disk_mb()
+        )
+    }
+
+    /// Returns the rate limit multiplier for this tier.
+    /// Used by GlobalRateLimiter to scale base limits.
+    /// Micro=0.5x, Small=1.0x, Medium=2.0x, Large=3.0x, Enterprise=4.0x
+    pub fn rate_limit_multiplier(&self) -> f32 {
+        match self {
+            TrafficTier::Micro => 0.5,
+            TrafficTier::Small => 1.0,
+            TrafficTier::Medium => 2.0,
+            TrafficTier::Large => 3.0,
+            TrafficTier::Enterprise => 4.0,
         }
     }
 }
@@ -3650,37 +3730,65 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
                     </select>
                 </div>
 
+                <!-- SYSTEM REQUIREMENTS TABLE -->
+                <div style="background: var(--bg-deep); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-subtle);">
+                    <h4 style="color: var(--crimson); margin-bottom: 10px;">⚙️ System Requirements by Tier:</h4>
+                    <p style="color: var(--text-muted); font-size: 0.8em; margin-bottom: 10px;">RAM includes ~1GB OS overhead for Ubuntu Server</p>
+                    <table style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border-subtle); color: var(--gold-primary);">
+                                <th style="text-align: left; padding: 8px;">Tier</th>
+                                <th style="text-align: center; padding: 8px;">CPU (min/rec)</th>
+                                <th style="text-align: center; padding: 8px;">RAM (min/rec)</th>
+                                <th style="text-align: center; padding: 8px;">Disk</th>
+                            </tr>
+                        </thead>
+                        <tbody style="color: var(--text-secondary);">
+                            <tr><td style="padding: 6px;">Micro</td><td style="text-align: center;">1 / 2 cores</td><td style="text-align: center;">2GB / 2GB</td><td style="text-align: center;">1GB</td></tr>
+                            <tr><td style="padding: 6px;">Small</td><td style="text-align: center;">2 / 4 cores</td><td style="text-align: center;">2GB / 3GB</td><td style="text-align: center;">2GB</td></tr>
+                            <tr><td style="padding: 6px;">Medium</td><td style="text-align: center;">2 / 4 cores</td><td style="text-align: center;">3GB / 4GB</td><td style="text-align: center;">3GB</td></tr>
+                            <tr><td style="padding: 6px;">Large</td><td style="text-align: center;">4 / 8 cores</td><td style="text-align: center;">5GB / 8GB</td><td style="text-align: center;">6GB</td></tr>
+                            <tr><td style="padding: 6px;">Enterprise</td><td style="text-align: center;">4 / 8 cores</td><td style="text-align: center;">8GB / 16GB</td><td style="text-align: center;">10GB</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <div style="background: var(--bg-deep); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                     <h4 style="color: var(--amber); margin-bottom: 10px;">Settings Affected:</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9em;">
                         <div style="color: var(--text-secondary);">
-                            <strong style="color: var(--gold-primary);">CAPTCHA Pool:</strong><br>
+                            <strong style="color: var(--gold-primary);">CAPTCHA Pool:</strong> <span style="color: var(--crimson); font-size: 0.8em;">⚠️ Restart</span><br>
                             • Target pool size<br>
                             • Min/Max pool bounds
                         </div>
                         <div style="color: var(--text-secondary);">
-                            <strong style="color: var(--gold-primary);">Rate Limits:</strong><br>
-                            • Requests per minute<br>
-                            • DDoS RPS threshold
+                            <strong style="color: var(--gold-primary);">Rate Limits:</strong> <span style="color: var(--sage); font-size: 0.8em;">✓ Hot Reload</span><br>
+                            • Requests per minute (scaled by tier)<br>
+                            • DDoS RPS threshold <span style="color: var(--amber); font-size: 0.75em;">(Coming Soon)</span>
                         </div>
                         <div style="color: var(--text-secondary);">
-                            <strong style="color: var(--gold-primary);">Mirrors:</strong><br>
+                            <strong style="color: var(--gold-primary);">Mirrors:</strong> <span style="color: var(--crimson); font-size: 0.8em;">⚠️ Restart</span><br>
                             • Min/Max active mirrors<br>
                             • Standby mirror count
                         </div>
                         <div style="color: var(--text-secondary);">
-                            <strong style="color: var(--gold-primary);">Bans:</strong><br>
+                            <strong style="color: var(--gold-primary);">Bans:</strong> <span style="color: var(--sage); font-size: 0.8em;">✓ Hot Reload</span><br>
                             • Temp ban duration<br>
                             • Perm ban threshold
                         </div>
                     </div>
+                    <p style="color: var(--text-muted); font-size: 0.8em; margin-top: 10px;">
+                        <span style="color: var(--sage);">✓ Hot Reload</span> = Takes effect immediately &nbsp;|&nbsp; 
+                        <span style="color: var(--crimson);">⚠️ Restart</span> = Requires service restart &nbsp;|&nbsp;
+                        <span style="color: var(--amber);">Coming Soon</span> = Feature not yet active
+                    </p>
                 </div>
 
                 <button type="submit" style="background: linear-gradient(135deg, var(--amber), var(--gold-dark)); color: var(--bg-primary); padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
                     Apply Traffic Tier
                 </button>
                 <small style="color: var(--text-muted); margin-left: 15px;">
-                    ⚠️ This will update multiple settings at once
+                    ⚠️ Some settings require a service restart to take effect
                 </small>
             </form>
         </div>

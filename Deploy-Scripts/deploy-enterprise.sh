@@ -4,13 +4,16 @@
 # ~1,000,000+ users/day - High-traffic platforms
 #
 # For high-traffic platforms requiring maximum capacity.
-# Requires high-end dedicated server(s) or cluster.
+# Requires dedicated server with significant resources.
 #
 # System Requirements:
-#   CPU: 16+ cores
-#   RAM: 32GB+
-#   Disk: 100GB+ SSD/NVMe
-#   Network: 1Gbps+
+#   CPU: 4 cores minimum, 8 cores recommended
+#   RAM: 8GB minimum, 16GB recommended
+#   Disk: 10GB SSD minimum
+#   Network: 100Mbps+ recommended
+#
+# NOTE: Enterprise is optimized for Tor network constraints.
+# Tor hidden services have natural throughput limits.
 #
 # ============================================================================
 
@@ -20,24 +23,24 @@ set -e
 export FORTIFY_TRAFFIC_TIER="enterprise"
 
 # ============================================================================
-# CAPTCHA POOL SETTINGS (Enterprise: Maximum)
+# CAPTCHA POOL SETTINGS (Enterprise: High Capacity)
 # ============================================================================
-POOL_SIZE=10000          # Maximum pool size
-MIN_POOL_SIZE=2000       # 20% emergency threshold
-MAX_POOL_SIZE=20000      # 2x target for extreme bursts
+POOL_SIZE=5000           # Reduced from 10K for Tor realism
+MIN_POOL_SIZE=2000       # 40% emergency threshold
+MAX_POOL_SIZE=10000      # 2x target for bursts
 
 # ============================================================================
 # RATE LIMITING (Enterprise: Maximum Permissive)
 # ============================================================================
 RATE_LIMIT_RPM=600       # 600 requests per minute per circuit (10 RPS)
-DDOS_RPS_THRESHOLD=10000 # Very high DDoS threshold
+DDOS_RPS_THRESHOLD=3000  # Reduced from 10K for Tor realism
 
 # ============================================================================
-# MIRROR SETTINGS (Enterprise: Maximum Scale)
+# MIRROR SETTINGS (Enterprise: High Scale)
 # ============================================================================
-MIN_MIRRORS=10           # 10 active mirrors minimum
-MAX_MIRRORS=50           # Scale up to 50 mirrors
-STANDBY_MIRRORS=10       # 10 standby mirrors
+MIN_MIRRORS=6            # 6 active mirrors minimum (reduced from 10)
+MAX_MIRRORS=20           # Scale up to 20 mirrors (reduced from 50)
+STANDBY_MIRRORS=6        # 6 standby mirrors (reduced from 10)
 
 # ============================================================================
 # BAN THRESHOLDS (Enterprise: Very Lenient)

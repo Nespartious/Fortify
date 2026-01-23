@@ -43,29 +43,34 @@ Traffic tiers automatically configure all settings based on your expected daily 
 
 ### Hardware Cheat Sheet
 
-| Tier | CPU Cores | RAM | Disk | Expected Load |
-|------|-----------|-----|------|---------------|
-| **Micro** | 1-2 cores | 512MB-1GB | 500MB | Minimal |
-| **Small** | 2-4 cores | 1-2GB | 1GB | Light |
-| **Medium** | 4 cores | 4GB | 5GB | Moderate |
-| **Large** | 8+ cores | 8-16GB | 20GB SSD | Heavy |
-| **Enterprise** | 16+ cores | 32GB+ | 100GB+ SSD | Maximum |
+RAM values include ~1GB OS overhead for Ubuntu Server:
+
+| Tier | CPU Cores | RAM (Total) | Disk | Expected Load |
+|------|-----------|-------------|------|---------------|
+| **Micro** | 1-2 cores | 2GB | 1GB | Minimal |
+| **Small** | 2-4 cores | 2-3GB | 2GB | Light |
+| **Medium** | 2-4 cores | 3-4GB | 3GB | Moderate |
+| **Large** | 4-8 cores | 5-8GB | 6GB SSD | Heavy |
+| **Enterprise** | 4-8 cores | 8-16GB | 10GB SSD | Maximum |
+
+> **Note:** Enterprise tier is optimized for Tor network constraints. Tor hidden services have natural throughput limits.
 
 ### Recommended VPS/Server Types
 
 | Tier | VPS Examples |
 |------|--------------|
-| Micro | Any $5/mo VPS, Raspberry Pi 4 |
-| Small | $10-20/mo VPS (2 vCPU) |
-| Medium | $40-60/mo VPS (4 vCPU) |
-| Large | Dedicated server or high-end VPS |
-| Enterprise | Multiple dedicated servers |
+| Micro | $10/mo VPS (1-2 vCPU, 2GB RAM) |
+| Small | $15-20/mo VPS (2 vCPU, 2-4GB RAM) |
+| Medium | $20-40/mo VPS (4 vCPU, 4GB RAM) |
+| Large | $40-80/mo VPS or dedicated (8 vCPU) |
+| Enterprise | Dedicated server ($80+/mo) |
 
 ### Minimum Requirements (Any Tier)
 
 - **OS**: Linux (Debian 12+, Ubuntu 22.04+, Fedora 38+)
 - **Tor**: Version 0.4.7+
 - **Network**: Stable internet connection
+- **RAM**: 2GB minimum (OS + Fortify)
 
 ---
 
@@ -94,8 +99,8 @@ The CAPTCHA pool maintains pre-generated challenges for instant delivery.
 | Micro | 50 | 10 | 100 |
 | Small | 500 | 100 | 1,000 |
 | Medium | 2,000 | 500 | 5,000 |
-| Large | 5,000 | 1,000 | 10,000 |
-| Enterprise | 10,000 | 2,000 | 20,000 |
+| Large | 3,000 | 1,000 | 6,000 |
+| Enterprise | 5,000 | 2,000 | 10,000 |
 
 ### Memory Impact
 
@@ -106,8 +111,8 @@ Each CAPTCHA uses approximately 50-100KB in memory:
 | 50 | ~5MB |
 | 500 | ~50MB |
 | 2,000 | ~200MB |
+| 3,000 | ~300MB |
 | 5,000 | ~500MB |
-| 10,000 | ~1GB |
 
 ---
 
@@ -129,8 +134,11 @@ Rate limits control how many requests a single Tor circuit can make.
 | Micro | 30 | 20 |
 | Small | 60 | 100 |
 | Medium | 120 | 500 |
-| Large | 300 | 2,000 |
-| Enterprise | 600 | 10,000 |
+| Large | 300 | 1,000 |
+| Enterprise | 600 | 3,000 |
+
+> **Note:** DDoS thresholds are optimized for Tor network constraints.
+> Tor hidden services have natural throughput limits.
 
 ### When to Adjust
 
@@ -160,14 +168,15 @@ Mirrors provide redundancy and load distribution for your onion service.
 | Micro | 1 | 2 | 1 |
 | Small | 2 | 5 | 2 |
 | Medium | 3 | 10 | 3 |
-| Large | 5 | 20 | 5 |
-| Enterprise | 10 | 50 | 10 |
+| Large | 4 | 12 | 4 |
+| Enterprise | 6 | 20 | 6 |
 
 ### Notes
 
 - More mirrors = better availability but more resource usage
 - Standby mirrors activate during failover
 - Each mirror requires its own Tor circuit
+- Values optimized for Tor network constraints (reduced from previous)
 
 ---
 

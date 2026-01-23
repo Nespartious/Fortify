@@ -3,6 +3,7 @@
 use ratatui::{prelude::*, widgets::*};
 
 use crate::app::{App, Focus, SettingsTab};
+use crate::config::TrafficTier;
 
 /// Draw settings screen
 pub fn draw(
@@ -39,6 +40,7 @@ pub fn draw(
 
     // Draw content based on tab
     match current_tab {
+        SettingsTab::TrafficTier => draw_traffic_tier(frame, app, layout[1], field_index),
         SettingsTab::Branding => draw_branding(frame, app, layout[1], field_index),
         SettingsTab::Captcha => draw_captcha(frame, app, layout[1], field_index),
         SettingsTab::Thresholds => draw_thresholds(frame, app, layout[1], field_index),
@@ -118,6 +120,49 @@ fn draw_tabs(frame: &mut Frame, current: SettingsTab, area: Rect) {
 
         frame.render_widget(tabs_widget, area);
     }
+}
+
+fn draw_traffic_tier(frame: &mut Frame, app: &App, area: Rect, selected: usize) {
+    let tier = app.config.traffic_tier;
+
+    // Format current tier display
+    let tier_name = match tier {
+        TrafficTier::Micro => "Micro (~100/day)",
+        TrafficTier::Small => "Small (~1,000/day)",
+        TrafficTier::Medium => "Medium (~10,000/day)",
+        TrafficTier::Large => "Large (~100,000/day)",
+        TrafficTier::Enterprise => "Enterprise (~1M+/day)",
+    };
+
+    // Format system requirements
+    let cpu_info = format!(
+        "{}/{} cores",
+        tier.min_cpu_cores(),
+        tier.recommended_cpu_cores()
+    );
+    let ram_info = format!(
+        "{}/{}GB",
+        tier.min_ram_mb() / 1024,
+        tier.recommended_ram_mb() / 1024
+    );
+    let disk_info = format!("{}GB", tier.min_disk_mb() / 1024);
+    let pool_info = tier.pool_size().to_string();
+    let rate_info = format!(
+        "{} RPM ({}x)",
+        tier.rate_limit_rpm(),
+        tier.rate_limit_multiplier()
+    );
+
+    let fields = [
+        ("Traffic Tier ↑↓", tier_name),
+        ("Rate Limit", rate_info.as_str()),
+        ("CAPTCHA Pool ⚠️Restart", pool_info.as_str()),
+        ("CPU (min/rec)", cpu_info.as_str()),
+        ("RAM (min/rec)", ram_info.as_str()),
+        ("Disk (min)", disk_info.as_str()),
+    ];
+
+    draw_field_list(frame, area, &fields, selected);
 }
 
 fn draw_branding(frame: &mut Frame, app: &App, area: Rect, selected: usize) {

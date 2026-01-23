@@ -87,6 +87,7 @@ impl MenuItem {
 /// Settings tabs
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
+    TrafficTier,
     Branding,
     Captcha,
     Thresholds,
@@ -98,6 +99,7 @@ pub enum SettingsTab {
 impl SettingsTab {
     pub fn all() -> &'static [SettingsTab] {
         &[
+            SettingsTab::TrafficTier,
             SettingsTab::Branding,
             SettingsTab::Captcha,
             SettingsTab::Thresholds,
@@ -109,6 +111,7 @@ impl SettingsTab {
 
     pub fn label(&self) -> &'static str {
         match self {
+            SettingsTab::TrafficTier => "Tier",
             SettingsTab::Branding => "Branding",
             SettingsTab::Captcha => "CAPTCHA",
             SettingsTab::Thresholds => "Thresholds",
@@ -2579,6 +2582,49 @@ impl App {
     fn get_field_info(&self, tab: SettingsTab, index: usize) -> (String, String) {
         let unknown: (String, String) = ("Unknown".to_string(), String::new());
         match tab {
+            SettingsTab::TrafficTier => {
+                let tier = self.config.traffic_tier;
+                let tier_name = match tier {
+                    crate::config::TrafficTier::Micro => "Micro (~100/day)",
+                    crate::config::TrafficTier::Small => "Small (~1,000/day)",
+                    crate::config::TrafficTier::Medium => "Medium (~10,000/day)",
+                    crate::config::TrafficTier::Large => "Large (~100,000/day)",
+                    crate::config::TrafficTier::Enterprise => "Enterprise (~1M+/day)",
+                };
+                let fields: [(String, String); 6] = [
+                    ("Traffic Tier".to_string(), tier_name.to_string()),
+                    (
+                        "Rate Limit".to_string(),
+                        format!(
+                            "{} RPM ({}x)",
+                            tier.rate_limit_rpm(),
+                            tier.rate_limit_multiplier()
+                        ),
+                    ),
+                    ("CAPTCHA Pool".to_string(), tier.pool_size().to_string()),
+                    (
+                        "CPU (min/rec)".to_string(),
+                        format!(
+                            "{}/{} cores",
+                            tier.min_cpu_cores(),
+                            tier.recommended_cpu_cores()
+                        ),
+                    ),
+                    (
+                        "RAM (min/rec)".to_string(),
+                        format!(
+                            "{}GB/{}GB",
+                            tier.min_ram_mb() / 1024,
+                            tier.recommended_ram_mb() / 1024
+                        ),
+                    ),
+                    (
+                        "Disk (min)".to_string(),
+                        format!("{}GB", tier.min_disk_mb() / 1024),
+                    ),
+                ];
+                fields.get(index).cloned().unwrap_or(unknown)
+            }
             SettingsTab::Branding => {
                 let fields: [(String, String); 5] = [
                     (
@@ -2775,6 +2821,22 @@ impl App {
         let old_value = self.get_field_value(field);
 
         match field {
+            // Traffic Tier - cycles through tiers on Enter
+            "Traffic Tier" => {
+                use crate::config::TrafficTier;
+                self.config.traffic_tier = match self.config.traffic_tier {
+                    TrafficTier::Micro => TrafficTier::Small,
+                    TrafficTier::Small => TrafficTier::Medium,
+                    TrafficTier::Medium => TrafficTier::Large,
+                    TrafficTier::Large => TrafficTier::Enterprise,
+                    TrafficTier::Enterprise => TrafficTier::Micro,
+                };
+                // Auto-update related CAPTCHA pool settings
+                let tier = self.config.traffic_tier;
+                self.config.captcha.pool_size = tier.pool_size();
+                self.config.captcha.min_pool_size = tier.min_pool_size();
+                self.config.captcha.max_pool_size = tier.max_pool_size();
+            }
             "Service Name" => self.config.branding.service_name = value.to_string(),
             "Description" => self.config.branding.description = value.to_string(),
             "Welcome Message" => self.config.branding.welcome_message = value.to_string(),

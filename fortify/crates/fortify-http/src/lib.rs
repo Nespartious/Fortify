@@ -42,26 +42,50 @@ struct GlobalRateLimiter {
     active_circuits: Arc<Mutex<HashMap<Instant, Vec<String>>>>,
     /// Time window for rate limiting
     window: Duration,
+    /// Shared admin state for reading traffic tier config
+    admin_state: Option<Arc<AdminState>>,
 }
 
 impl GlobalRateLimiter {
-    fn new(window_secs: u64) -> Self {
+    fn new(window_secs: u64, admin_state: Option<Arc<AdminState>>) -> Self {
         Self {
             requests: Arc::new(Mutex::new(HashMap::new())),
             active_circuits: Arc::new(Mutex::new(HashMap::new())),
             window: Duration::from_secs(window_secs),
+            admin_state,
         }
     }
 
     /// Get rate limit for a given trust tier (PER CIRCUIT)
-    /// Unknown/Suspicious: 10/10s per circuit, Verified: 100/10s, Trusted: 300/10s
-    /// This prevents one attacking circuit from consuming the entire quota
+    /// Base limits are scaled by the current TrafficTier multiplier:
+    /// Micro=0.5x, Small=1.0x, Medium=2.0x, Large=3.0x, Enterprise=4.0x
+    ///
+    /// Base values (at Small tier / 1.0x):
+    ///   - Unknown/Suspicious/Burned: 10/10s per circuit (always strict)
+    ///   - Verified: 100/10s per circuit
+    ///   - Trusted: 300/10s per circuit
     fn get_limit_for_tier(&self, tier: TrustTier) -> usize {
-        match tier {
-            TrustTier::Trusted => 300,  // Proven good actors (per circuit)
-            TrustTier::Verified => 100, // Passed CAPTCHA (per circuit)
-            TrustTier::Unknown | TrustTier::Suspicious | TrustTier::Burned => 10, // Strict per-circuit limit
-        }
+        // Get multiplier from traffic tier config (default to 1.0x if no admin state)
+        let multiplier = self
+            .admin_state
+            .as_ref()
+            .map(|state| state.get_traffic_tier().rate_limit_multiplier())
+            .unwrap_or(1.0);
+
+        // Base limits (per 10s window) - these are scaled by traffic tier
+        // Unknown tier is NOT scaled - always strict for security
+        let base_limit = match tier {
+            TrustTier::Trusted => 300,  // Proven good actors
+            TrustTier::Verified => 100, // Passed CAPTCHA
+            TrustTier::Unknown | TrustTier::Suspicious | TrustTier::Burned => {
+                return 10; // Always strict, not scaled
+            }
+        };
+
+        // Scale by traffic tier multiplier
+        let scaled = (base_limit as f32 * multiplier) as usize;
+        // Ensure minimum of 1
+        scaled.max(1)
     }
 
     /// Check if circuit is within rate limit and record request
@@ -501,11 +525,11 @@ impl HttpProxy {
             threat_nodes,
             metrics: Arc::new(Mutex::new(Metrics::default())),
             active_requests: Arc::new(Mutex::new(0)),
-            admin_state,
+            admin_state: admin_state.clone(),
             behavior_sessions: Arc::new(RwLock::new(HashMap::new())),
             gate_address,
             activity_tracker: Arc::new(Mutex::new(SessionActivityTracker::new())),
-            rate_limiter: Arc::new(GlobalRateLimiter::new(10)), // 10 second window
+            rate_limiter: Arc::new(GlobalRateLimiter::new(10, Some(admin_state))), // 10 second window
             blacklist_check: None,
         }
     }
@@ -537,11 +561,11 @@ impl HttpProxy {
             threat_nodes,
             metrics: Arc::new(Mutex::new(Metrics::default())),
             active_requests: Arc::new(Mutex::new(0)),
-            admin_state,
+            admin_state: admin_state.clone(),
             behavior_sessions: Arc::new(RwLock::new(HashMap::new())),
             gate_address: "http://127.0.0.1:8081".to_string(),
             activity_tracker: Arc::new(Mutex::new(SessionActivityTracker::new())),
-            rate_limiter: Arc::new(GlobalRateLimiter::new(10)), // 10 second window
+            rate_limiter: Arc::new(GlobalRateLimiter::new(10, Some(admin_state))), // 10 second window
             blacklist_check: None,
         }
     }

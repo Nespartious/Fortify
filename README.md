@@ -18,6 +18,17 @@
 
 ---
 
+### 💰 Support Development
+
+If Fortify helps protect your service, consider supporting development:
+
+**Monero (XMR):**
+```
+8BWceRPePNGBJditiULcsHao4jShvuQeQ9tisu7sU2efHnMqJqeQdcnXM9h3qYsGUx53jP5mV7zpdWGgWFCKhWzPDtysEu1
+```
+
+---
+
 ### 🔒 Security Verification
 
 <details>
@@ -217,8 +228,8 @@ NODE_MODE="threat" ./target/release/fortify-node
 - **Tor:** Latest stable version
 - **OS:** Linux (tested on Ubuntu 22.04/24.04)
 - **CPU:** 4 cores recommended (2 cores minimum)
-- **RAM:** 2GB minimum (4GB recommended for production)
-- **Disk:** 1GB for binaries + logs
+- **RAM:** 4GB minimum (includes ~1GB OS overhead for Ubuntu Server)
+- **Disk:** 2GB for binaries + logs + OS
 
 ---
 
@@ -440,15 +451,17 @@ NODE_MODE="threat" ./target/release/fortify-node
 
 **Traffic Tiers:**
 
-Fortify auto-scales based on your expected traffic:
+Fortify auto-scales based on your expected traffic. RAM includes ~1GB OS overhead for Ubuntu Server:
 
-| Tier | Daily Users | CPU | RAM |
-|------|-------------|-----|-----|
-| Micro | ~100 | 1-2 cores | 512MB |
-| Small | ~1,000 | 2-4 cores | 1-2GB |
-| Medium | ~10,000 | 4 cores | 4GB |
-| Large | ~100,000 | 8+ cores | 8-16GB |
-| Enterprise | ~1M+ | 16+ cores | 32GB+ |
+| Tier | Daily Users | CPU | RAM (Total) | Disk |
+|------|-------------|-----|-------------|------|
+| Micro | ~100 | 1-2 cores | 2GB | 1GB |
+| Small | ~1,000 | 2-4 cores | 2-3GB | 2GB |
+| Medium | ~10,000 | 2-4 cores | 3-4GB | 3GB |
+| Large | ~100,000 | 4-8 cores | 5-8GB | 6GB |
+| Enterprise | ~1M+ | 4-8 cores | 8-16GB | 10GB+ |
+
+> **Note:** Enterprise tier is optimized for Tor network constraints. Tor hidden services have natural throughput limits.
 
 ---
 
@@ -520,6 +533,7 @@ cargo doc --no-deps --open
 - Mirror discovery bar and retirement system
 - Auto-scaling based on resource usage
 - Session behavioral analysis enhancements
+- **Hot-reload with session juggling** (stagger changes across nodes to maintain uptime)
 - Cleanup automation
 
 ### Phase 5: Cluster System (0%)
@@ -528,12 +542,13 @@ cargo doc --no-deps --open
 - Cross-cluster session sharing
 - Cluster-wide health monitoring
 
-### Phase 6: Deployment TUI (40%)
+### Phase 6: Deployment TUI (50%)
 - ✅ Core framework and configuration system
 - ✅ Deployment wizard (7 steps)
 - ✅ Live log streaming
+- ✅ Traffic tier auto-scaling
 - ⏳ Controller integration
-- ⏳ Testing and deployment
+- ⏳ Full settings hot-reload
 
 ### Phase 7: Community Network (0%)
 - P2P mirror discovery
