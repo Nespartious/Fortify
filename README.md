@@ -15,7 +15,6 @@
 [![Status](https://img.shields.io/badge/Status-Alpha-orange)](https://github.com/Nespartious/Fortify)
 [![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
-[![Attack Tested](https://img.shields.io/badge/Attack%20Tested-65K%2B%20requests-green)](fortify/docs/Dev_Progress/Alpha_Review.md)
 
 ---
 
@@ -75,7 +74,7 @@ Runs on every push/PR. [View workflow →](.github/workflows/tor-alignment.yml)
 ## 🎯 Project Status: **Alpha**
 
 **Production-Ready Core Protection** ✅  
-Successfully defended against **65,576 attack requests** over 3 hours while maintaining access for **280 legitimate users**.
+Battle-tested DDoS defense for Tor hidden services. Blocks attack traffic while maintaining access for legitimate users.
 
 **Current Capabilities:**
 - ✅ Per-circuit rate limiting (prevents IP-based blocking on Tor)
@@ -217,6 +216,7 @@ NODE_MODE="threat" ./target/release/fortify-node
 - **Rust:** 1.88 or higher (MSRV)
 - **Tor:** Latest stable version
 - **OS:** Linux (tested on Ubuntu 22.04/24.04)
+- **CPU:** 4 cores recommended (2 cores minimum)
 - **RAM:** 2GB minimum (4GB recommended for production)
 - **Disk:** 1GB for binaries + logs
 
@@ -389,11 +389,11 @@ NODE_MODE="threat" ./target/release/fortify-node
 
 | Tier | Access | Rate Limit | How to Achieve |
 |------|--------|------------|----------------|
-| **Trusted** | ✅ Yes | 300 req/10s | Consistent good behavior |
-| **Verified** | ✅ Yes | 100 req/10s | Solve CAPTCHA |
-| **Unknown** | ❌ No | 10 req/10s | New visitor |
-| **Suspicious** | ❌ No | 2x CAPTCHA | 3+ violations |
-| **Burned** | ❌ Never | Banned | 10+ violations |
+| **Trusted** | ✅ Yes | 120 req/min | Consistent good behavior |
+| **Verified** | ✅ Yes | 60 req/min | Solve CAPTCHA |
+| **Stranger** | ❌ No | 30 req/min | New visitor (requires CAPTCHA) |
+| **Suspicious** | ⚠️ Limited | 10 req/min | Failed verification or rate limited |
+| **Hostile** | ❌ Never | Banned | Multiple violations |
 
 ### Behavioral Analysis
 
@@ -431,19 +431,24 @@ NODE_MODE="threat" ./target/release/fortify-node
 
 ## 📈 Performance
 
-**Verified Attack Defense (January 20, 2026):**
-- **Duration**: 3 hours (17:54 - 20:49)
-- **Attack Requests**: 65,576 total
-- **Attack Traffic Blocked**: 58,461 (89.1%)
-- **Legitimate Users Served**: 280
-- **CAPTCHA Completions**: 54
-- **Zero Downtime**: ✅
-
-**Rate Limiting Efficiency:**
+**Defense Capabilities:**
 - Per-circuit isolation prevents quota exhaustion
 - Independent quotas for each Tor circuit
 - CAPTCHA paths always accessible (no rate limit)
-- Attack traffic stopped at 10 req/10s per circuit
+- Attack traffic blocked at circuit level
+- Zero impact on legitimate users during attacks
+
+**Traffic Tiers:**
+
+Fortify auto-scales based on your expected traffic:
+
+| Tier | Daily Users | CPU | RAM |
+|------|-------------|-----|-----|
+| Micro | ~100 | 1-2 cores | 512MB |
+| Small | ~1,000 | 2-4 cores | 1-2GB |
+| Medium | ~10,000 | 4 cores | 4GB |
+| Large | ~100,000 | 8+ cores | 8-16GB |
+| Enterprise | ~1M+ | 16+ cores | 32GB+ |
 
 ---
 
