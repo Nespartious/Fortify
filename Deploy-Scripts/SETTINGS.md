@@ -238,22 +238,40 @@ Configure the CAPTCHA challenge behavior.
 
 ## Backend Configuration
 
-Configure connection to your protected service.
+Configure connection to your protected backend service. This is the real service that Fortify protects and proxies traffic to.
 
 ### Settings
 
 | Setting | Description | Example |
 |---------|-------------|---------|
-| `BACKEND_ADDRESS` | URL of your backend | `http://127.0.0.1:9000` |
-| `SERVICE_NAME` | Display name | `My Onion Service` |
+| `BACKEND_ADDRESS` | URL of your actual backend service | `http://abcd1234...xyz.onion` or `http://127.0.0.1:9000` |
+| `SERVICE_NAME` | Display name shown on Gate/CAPTCHA pages | `My Onion Service` |
 | `SERVICE_DESCRIPTION` | Short description | `A privacy-focused service` |
 | `PRIMARY_COLOR` | Hex color for branding | `#c9a227` |
 | `SECONDARY_COLOR` | Secondary hex color | `#a68b5b` |
 
+### Backend Address Options
+
+Your `BACKEND_ADDRESS` can be:
+
+1. **Another .onion address** (recommended for Tor-only services):
+   ```
+   http://abcdefghijklmnop1234567890abcdefghijklmnop1234567890abcd.onion
+   ```
+   Use this when your real backend is also a Tor hidden service.
+
+2. **Local address** (for clearnet backends behind Fortify):
+   ```
+   http://127.0.0.1:9000
+   ```
+   Use this when Fortify runs on the same machine as your backend.
+
 ### Security Notes
 
-- Always use `127.0.0.1` for backend (never expose to network)
-- Backend should only accept connections from Fortify
+- **For .onion backends**: Fortify proxies traffic through Tor to reach your real service
+- **For local backends**: Use `127.0.0.1` only (never expose to network directly)
+- Backend should be configured to accept connections only from Fortify
+- Never expose your real backend address publicly - Fortify is your public-facing gateway
 
 ---
 
