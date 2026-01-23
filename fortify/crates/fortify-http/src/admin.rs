@@ -19,6 +19,91 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Type alias for the response body type used throughout
 type BoxBody = Full<Bytes>;
 
+/// Traffic tier for auto-scaling multiple settings based on expected daily users.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TrafficTier {
+    /// ~100 users/day - Personal/test site
+    Micro,
+    /// ~1,000 users/day - Small community (DEFAULT)
+    #[default]
+    Small,
+    /// ~10,000 users/day - Active community
+    Medium,
+    /// ~100,000 users/day - Popular service
+    Large,
+    /// ~1,000,000+ users/day - High-traffic platform
+    Enterprise,
+}
+
+impl TrafficTier {
+    /// Parse traffic tier from form string value
+    pub fn parse(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "micro" => TrafficTier::Micro,
+            "small" => TrafficTier::Small,
+            "medium" => TrafficTier::Medium,
+            "large" => TrafficTier::Large,
+            "enterprise" => TrafficTier::Enterprise,
+            _ => TrafficTier::Small,
+        }
+    }
+
+    /// Returns the CAPTCHA pool size for this tier
+    pub fn pool_size(&self) -> usize {
+        match self {
+            TrafficTier::Micro => 50,
+            TrafficTier::Small => 500,
+            TrafficTier::Medium => 2_000,
+            TrafficTier::Large => 5_000,
+            TrafficTier::Enterprise => 10_000,
+        }
+    }
+
+    /// Returns the minimum CAPTCHA pool size for this tier
+    pub fn min_pool_size(&self) -> usize {
+        match self {
+            TrafficTier::Micro => 10,
+            TrafficTier::Small => 100,
+            TrafficTier::Medium => 500,
+            TrafficTier::Large => 1_000,
+            TrafficTier::Enterprise => 2_000,
+        }
+    }
+
+    /// Returns the maximum CAPTCHA pool size for this tier
+    pub fn max_pool_size(&self) -> usize {
+        match self {
+            TrafficTier::Micro => 100,
+            TrafficTier::Small => 1_000,
+            TrafficTier::Medium => 5_000,
+            TrafficTier::Large => 10_000,
+            TrafficTier::Enterprise => 20_000,
+        }
+    }
+
+    /// Returns the rate limit (requests per minute) for this tier
+    pub fn rate_limit_rpm(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 30,
+            TrafficTier::Small => 60,
+            TrafficTier::Medium => 120,
+            TrafficTier::Large => 300,
+            TrafficTier::Enterprise => 600,
+        }
+    }
+
+    /// Returns the DDoS detection threshold (requests per second) for this tier
+    pub fn ddos_rps_threshold(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 20,
+            TrafficTier::Small => 100,
+            TrafficTier::Medium => 500,
+            TrafficTier::Large => 2_000,
+            TrafficTier::Enterprise => 10_000,
+        }
+    }
+}
+
 /// Secret admin panel path - random 32 char string
 pub const ADMIN_PATH: &str = "/ctrl_8f7k3m9x2n4p1q6w5v0b8c";
 
@@ -56,6 +141,8 @@ struct AdminStateInner {
     banned_sessions: Vec<String>,
     /// Override tiers set by admin - session_id -> forced tier
     tier_overrides: HashMap<String, String>,
+    /// Traffic tier for auto-scaling settings
+    traffic_tier: TrafficTier,
     /// Behavioral analysis configuration
     behavior_config: BehaviorConfig,
     /// Captcha system configuration
@@ -1070,6 +1157,42 @@ impl AdminState {
     }
 
     // =========================================================================
+    // =========================================================================
+    // TRAFFIC TIER CONFIGURATION METHODS
+    // =========================================================================
+
+    /// Get current traffic tier
+    pub fn get_traffic_tier(&self) -> TrafficTier {
+        let inner = safe_read(&self.inner);
+        inner.traffic_tier
+    }
+
+    /// Apply traffic tier settings to all related configs.
+    /// This updates CAPTCHA pool config based on expected traffic.
+    /// Note: Rate limits and DDoS thresholds are managed via TUI ThresholdConfig.
+    pub fn apply_traffic_tier(&self, tier: TrafficTier) {
+        let mut inner = safe_write(&self.inner);
+        inner.traffic_tier = tier;
+
+        // Update CAPTCHA pool config
+        inner.captcha_pool_config.pool_size = tier.pool_size();
+        inner.captcha_pool_config.min_pool_size = tier.min_pool_size();
+        inner.captcha_pool_config.max_pool_size = tier.max_pool_size();
+
+        // Note: Rate limits (rate_limit_rpm, ddos_rps_threshold) are managed
+        // via TUI ThresholdConfig and applied at startup. The Control Panel
+        // displays the recommended values for reference.
+
+        tracing::info!(
+            "Traffic tier applied: {:?} - pool={}, min_pool={}, max_pool={}",
+            tier,
+            tier.pool_size(),
+            tier.min_pool_size(),
+            tier.max_pool_size()
+        );
+    }
+
+    // =========================================================================
     // BRANDING CONFIGURATION METHODS
     // =========================================================================
 
@@ -1417,6 +1540,9 @@ pub async fn handle_admin_request(
         // Behavioral Analysis Settings
         (Method::GET, "/settings") => render_settings(&admin_state),
         (Method::POST, "/settings/behavior") => handle_behavior_settings(req, admin_state).await,
+        (Method::POST, "/settings/traffic-tier") => {
+            handle_traffic_tier_settings(req, admin_state).await
+        }
         (Method::POST, "/settings/branding") => handle_branding_settings(req, admin_state).await,
         (Method::POST, "/settings/captcha") => handle_captcha_settings(req, admin_state).await,
         (Method::POST, "/settings/captcha-pool") => {
@@ -3505,6 +3631,60 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
             </p>
         </div>
 
+        <!-- TRAFFIC TIER CONFIGURATION -->
+        <div class="card" style="border-color: var(--amber); background: var(--bg-elevated);">
+            <h3>📊 Traffic Tier (Auto-Scaling)</h3>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">
+                Select your expected daily traffic to auto-configure CAPTCHA pool sizes, rate limits, mirror counts, and thresholds.
+            </p>
+
+            <form method="POST" action="{}/settings/traffic-tier">
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: var(--gold-primary); margin-bottom: 10px; font-weight: bold;">Expected Daily Users</label>
+                    <select name="traffic_tier" style="width: 100%; padding: 12px; background: var(--bg-deep); border: 1px solid var(--border-subtle); color: var(--text-primary); font-size: 1.1em;">
+                        <option value="micro" {}>Micro (~100/day) - Personal/test site</option>
+                        <option value="small" {}>Small (~1,000/day) - Small community [DEFAULT]</option>
+                        <option value="medium" {}>Medium (~10,000/day) - Active community</option>
+                        <option value="large" {}>Large (~100,000/day) - Popular service</option>
+                        <option value="enterprise" {}>Enterprise (~1,000,000+/day) - High-traffic platform</option>
+                    </select>
+                </div>
+
+                <div style="background: var(--bg-deep); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4 style="color: var(--amber); margin-bottom: 10px;">Settings Affected:</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9em;">
+                        <div style="color: var(--text-secondary);">
+                            <strong style="color: var(--gold-primary);">CAPTCHA Pool:</strong><br>
+                            • Target pool size<br>
+                            • Min/Max pool bounds
+                        </div>
+                        <div style="color: var(--text-secondary);">
+                            <strong style="color: var(--gold-primary);">Rate Limits:</strong><br>
+                            • Requests per minute<br>
+                            • DDoS RPS threshold
+                        </div>
+                        <div style="color: var(--text-secondary);">
+                            <strong style="color: var(--gold-primary);">Mirrors:</strong><br>
+                            • Min/Max active mirrors<br>
+                            • Standby mirror count
+                        </div>
+                        <div style="color: var(--text-secondary);">
+                            <strong style="color: var(--gold-primary);">Bans:</strong><br>
+                            • Temp ban duration<br>
+                            • Perm ban threshold
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" style="background: linear-gradient(135deg, var(--amber), var(--gold-dark)); color: var(--bg-primary); padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+                    Apply Traffic Tier
+                </button>
+                <small style="color: var(--text-muted); margin-left: 15px;">
+                    ⚠️ This will update multiple settings at once
+                </small>
+            </form>
+        </div>
+
         <!-- BRANDING CONFIGURATION -->
         <div class="card" style="border-color: var(--gold-primary); background: var(--bg-elevated);">
             <h3>🏰 Branding Configuration</h3>
@@ -3780,6 +3960,13 @@ fn render_settings(state: &AdminState) -> Response<BoxBody> {
         agg_stats.total_violations,
         agg_stats.sessions_with_suspicious_ua,
         violations_breakdown,
+        // Traffic tier config section
+        ADMIN_PATH,
+        if state.get_traffic_tier() == TrafficTier::Micro { "selected" } else { "" },
+        if state.get_traffic_tier() == TrafficTier::Small { "selected" } else { "" },
+        if state.get_traffic_tier() == TrafficTier::Medium { "selected" } else { "" },
+        if state.get_traffic_tier() == TrafficTier::Large { "selected" } else { "" },
+        if state.get_traffic_tier() == TrafficTier::Enterprise { "selected" } else { "" },
         // Branding config section
         ADMIN_PATH,
         html_escape(&branding_config.service_name),
@@ -4772,6 +4959,37 @@ fn parse_captcha_type(s: &str) -> CaptchaType {
         "Silhouette" => CaptchaType::Silhouette,
         _ => CaptchaType::BmpText, // Default
     }
+}
+
+async fn handle_traffic_tier_settings(
+    req: Request<Incoming>,
+    state: Arc<AdminState>,
+) -> Response<BoxBody> {
+    let body_bytes = req
+        .collect()
+        .await
+        .map(|b| b.to_bytes())
+        .unwrap_or_default();
+    let params = parse_form_data(&body_bytes);
+
+    // Get traffic tier from form
+    let tier = params
+        .get("traffic_tier")
+        .map(|s| TrafficTier::parse(s))
+        .unwrap_or_default();
+
+    // Apply tier settings to all related configs
+    state.apply_traffic_tier(tier);
+
+    tracing::info!(
+        "Admin: Traffic tier updated to {:?} - pool_size={}, rate_limit_rpm={}, ddos_rps={}",
+        tier,
+        tier.pool_size(),
+        tier.rate_limit_rpm(),
+        tier.ddos_rps_threshold()
+    );
+
+    redirect(&format!("{}/settings", ADMIN_PATH))
 }
 
 async fn handle_branding_settings(

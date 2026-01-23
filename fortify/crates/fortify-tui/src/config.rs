@@ -4,11 +4,176 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Traffic tier for auto-scaling multiple settings based on expected daily users.
+/// Selecting a tier adjusts CAPTCHA pool sizes, rate limits, mirror counts, and thresholds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TrafficTier {
+    /// ~100 users/day - Personal/test site
+    Micro,
+    /// ~1,000 users/day - Small community (DEFAULT)
+    #[default]
+    Small,
+    /// ~10,000 users/day - Active community
+    Medium,
+    /// ~100,000 users/day - Popular service
+    Large,
+    /// ~1,000,000+ users/day - High-traffic platform
+    Enterprise,
+}
+
+impl TrafficTier {
+    /// Returns all available traffic tiers
+    pub fn all() -> &'static [TrafficTier] {
+        &[
+            TrafficTier::Micro,
+            TrafficTier::Small,
+            TrafficTier::Medium,
+            TrafficTier::Large,
+            TrafficTier::Enterprise,
+        ]
+    }
+
+    /// Returns the display name for this tier
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            TrafficTier::Micro => "Micro (~100/day)",
+            TrafficTier::Small => "Small (~1K/day)",
+            TrafficTier::Medium => "Medium (~10K/day)",
+            TrafficTier::Large => "Large (~100K/day)",
+            TrafficTier::Enterprise => "Enterprise (~1M+/day)",
+        }
+    }
+
+    /// Returns the expected daily users for this tier
+    pub fn daily_users(&self) -> u64 {
+        match self {
+            TrafficTier::Micro => 100,
+            TrafficTier::Small => 1_000,
+            TrafficTier::Medium => 10_000,
+            TrafficTier::Large => 100_000,
+            TrafficTier::Enterprise => 1_000_000,
+        }
+    }
+
+    /// Returns the CAPTCHA pool size for this tier
+    pub fn pool_size(&self) -> usize {
+        match self {
+            TrafficTier::Micro => 50,
+            TrafficTier::Small => 500,
+            TrafficTier::Medium => 2_000,
+            TrafficTier::Large => 5_000,
+            TrafficTier::Enterprise => 10_000,
+        }
+    }
+
+    /// Returns the minimum CAPTCHA pool size for this tier
+    pub fn min_pool_size(&self) -> usize {
+        match self {
+            TrafficTier::Micro => 10,
+            TrafficTier::Small => 100,
+            TrafficTier::Medium => 500,
+            TrafficTier::Large => 1_000,
+            TrafficTier::Enterprise => 2_000,
+        }
+    }
+
+    /// Returns the maximum CAPTCHA pool size for this tier
+    pub fn max_pool_size(&self) -> usize {
+        match self {
+            TrafficTier::Micro => 100,
+            TrafficTier::Small => 1_000,
+            TrafficTier::Medium => 5_000,
+            TrafficTier::Large => 10_000,
+            TrafficTier::Enterprise => 20_000,
+        }
+    }
+
+    /// Returns the rate limit (requests per minute) for this tier
+    pub fn rate_limit_rpm(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 30,
+            TrafficTier::Small => 60,
+            TrafficTier::Medium => 120,
+            TrafficTier::Large => 300,
+            TrafficTier::Enterprise => 600,
+        }
+    }
+
+    /// Returns the DDoS detection threshold (requests per second) for this tier
+    pub fn ddos_rps_threshold(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 20,
+            TrafficTier::Small => 100,
+            TrafficTier::Medium => 500,
+            TrafficTier::Large => 2_000,
+            TrafficTier::Enterprise => 10_000,
+        }
+    }
+
+    /// Returns the minimum mirrors for this tier
+    pub fn min_mirrors(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 1,
+            TrafficTier::Small => 2,
+            TrafficTier::Medium => 3,
+            TrafficTier::Large => 5,
+            TrafficTier::Enterprise => 10,
+        }
+    }
+
+    /// Returns the maximum mirrors for this tier
+    pub fn max_mirrors(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 2,
+            TrafficTier::Small => 5,
+            TrafficTier::Medium => 10,
+            TrafficTier::Large => 20,
+            TrafficTier::Enterprise => 50,
+        }
+    }
+
+    /// Returns the standby mirrors for this tier
+    pub fn standby_mirrors(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 1,
+            TrafficTier::Small => 2,
+            TrafficTier::Medium => 3,
+            TrafficTier::Large => 5,
+            TrafficTier::Enterprise => 10,
+        }
+    }
+
+    /// Returns the temporary ban duration (minutes) for this tier
+    pub fn temp_ban_minutes(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 60,
+            TrafficTier::Small => 30,
+            TrafficTier::Medium => 15,
+            TrafficTier::Large => 10,
+            TrafficTier::Enterprise => 5,
+        }
+    }
+
+    /// Returns the permanent ban threshold for this tier
+    pub fn perm_ban_threshold(&self) -> u32 {
+        match self {
+            TrafficTier::Micro => 5,
+            TrafficTier::Small => 10,
+            TrafficTier::Medium => 15,
+            TrafficTier::Large => 20,
+            TrafficTier::Enterprise => 30,
+        }
+    }
+}
+
 /// Root configuration for a Fortify deployment
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FortifyConfig {
     /// Unique deployment identifier
     pub deployment_id: String,
+    /// Traffic tier for auto-scaling settings
+    #[serde(default)]
+    pub traffic_tier: TrafficTier,
     /// Branding configuration
     pub branding: BrandingConfig,
     /// CAPTCHA settings
@@ -27,6 +192,32 @@ pub struct FortifyConfig {
     /// Whether config has unsaved changes
     #[serde(skip)]
     pub dirty: bool,
+}
+
+impl FortifyConfig {
+    /// Apply traffic tier settings to all related config sections.
+    /// This updates CAPTCHA pool sizes, rate limits, mirror counts, and thresholds.
+    pub fn apply_traffic_tier(&mut self) {
+        let tier = self.traffic_tier;
+
+        // Update CAPTCHA settings
+        self.captcha.pool_size = tier.pool_size();
+        self.captcha.min_pool_size = tier.min_pool_size();
+        self.captcha.max_pool_size = tier.max_pool_size();
+
+        // Update threshold settings
+        self.thresholds.rate_limit_rpm = tier.rate_limit_rpm();
+        self.thresholds.ddos_rps_threshold = tier.ddos_rps_threshold();
+        self.thresholds.temp_ban_minutes = tier.temp_ban_minutes();
+        self.thresholds.perm_ban_threshold = tier.perm_ban_threshold();
+
+        // Update mirror settings (cast u32 to usize)
+        self.mirrors.min_mirrors = tier.min_mirrors() as usize;
+        self.mirrors.max_mirrors = tier.max_mirrors() as usize;
+        self.mirrors.standby_mirrors = tier.standby_mirrors() as usize;
+
+        self.dirty = true;
+    }
 }
 
 /// Branding configuration for the protected service
@@ -159,6 +350,7 @@ impl Default for FortifyConfig {
     fn default() -> Self {
         Self {
             deployment_id: uuid_short(),
+            traffic_tier: TrafficTier::default(),
             branding: BrandingConfig::default(),
             captcha: CaptchaConfig::default(),
             thresholds: ThresholdConfig::default(),
