@@ -173,13 +173,13 @@ async fn handle_request(
     Ok(response)
 }
 
-fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
+fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
     // Landing page for NEW users (first-time visitors)
     // Uses template engine with citadel/gold theme
     // NO JAVASCRIPT ALLOWED
 
     let engine = TemplateEngine::new();
-    let branding = BrandingVars::default();
+    let branding = gate.branding().clone();
     let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
 
     Response::builder()
@@ -194,14 +194,14 @@ fn serve_landing_page(_gate: Arc<Gate>) -> Response<BoxBody> {
         .unwrap()
 }
 
-fn serve_demoted_page(_gate: Arc<Gate>) -> Response<BoxBody> {
+fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
     // Demoted users see the "Hold Position" page with a friendly message
     // They click "Resume Access" to go to /Fortify/Portcullis for the 2-captcha challenge
     // This intermediate page reduces friction and explains what's happening
 
     // Use template engine to render demoted.html with branding
     let engine = TemplateEngine::new();
-    let branding = BrandingVars::default();
+    let branding = gate.branding().clone();
 
     // Mirror list is currently not available from Gate context
     // Hide the section by providing an empty list with a message
@@ -371,7 +371,7 @@ fn serve_captcha_challenge(
         // Fallback: use template engine for BMP text captcha page
         let captcha_id = &state.session_id;
         let engine = TemplateEngine::new();
-        let branding = BrandingVars::default();
+        let branding = gate.branding().clone();
         let mut extra_vars = std::collections::HashMap::new();
         extra_vars.insert(
             "CAPTCHA_IMAGE_URL".to_string(),
@@ -629,7 +629,7 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
 
             // Use the template engine for the verified page
             let engine = TemplateEngine::new();
-            let branding = BrandingVars::default();
+            let branding = gate.branding().clone();
             let mut extra_vars = std::collections::HashMap::new();
             extra_vars.insert("REDIRECT_DELAY".to_string(), delay_secs.to_string());
             let html =
@@ -732,7 +732,7 @@ async fn verify_submission(req: Request<Incoming>, gate: Arc<Gate>) -> Response<
 
             // Use template engine for verification failed page
             let engine = TemplateEngine::new();
-            let branding = BrandingVars::default();
+            let branding = gate.branding().clone();
             let mut extra_vars = std::collections::HashMap::new();
             extra_vars.insert("ATTEMPTS".to_string(), failed_attempts.to_string());
             extra_vars.insert("DELAY_SECONDS".to_string(), delay_seconds.to_string());
@@ -803,8 +803,10 @@ fn error_response(status: StatusCode, msg: &str) -> Response<BoxBody> {
 }
 
 /// Styled error response using template engine for consistent citadel/gold theme
+/// TODO: Pass gate branding to error pages for full brand consistency
 fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Response<BoxBody> {
     let engine = TemplateEngine::new();
+    // Use default branding for error pages (acceptable since errors are transient)
     let branding = BrandingVars::default();
     let mut extra_vars = std::collections::HashMap::new();
     extra_vars.insert("ERROR_TITLE".to_string(), title.to_string());

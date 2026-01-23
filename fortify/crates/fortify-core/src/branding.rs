@@ -10,9 +10,7 @@
 //! - `{{DESCRIPTION}}` - Short service description  
 //! - `{{PRIMARY_COLOR}}` - Primary brand color (hex)
 //! - `{{SECONDARY_COLOR}}` - Secondary/accent color (hex)
-//! - `{{TERTIARY_COLOR}}` - Tertiary/subtle color (hex)
 //! - `{{WELCOME_MESSAGE}}` - Welcome message for visitors
-//! - `{{LOGO_BASE64}}` - Base64-encoded logo image data
 //!
 //! # Security
 //!
@@ -34,12 +32,8 @@ pub struct TemplateBranding {
     pub primary_color: String,
     /// Secondary/accent color (hex format: #RRGGBB)
     pub secondary_color: String,
-    /// Tertiary/subtle color (hex format: #RRGGBB)
-    pub tertiary_color: String,
     /// Welcome message for visitors (HTML-escaped on render)
     pub welcome_message: String,
-    /// Base64-encoded logo image data (PNG/JPG)
-    pub logo_base64: Option<String>,
 }
 
 impl TemplateBranding {
@@ -50,9 +44,7 @@ impl TemplateBranding {
             description: "A Fortify-protected onion service".to_string(),
             primary_color: "#c9a227".to_string(),   // Gold
             secondary_color: "#a68b5b".to_string(), // Muted gold
-            tertiary_color: "#2D3748".to_string(),  // Dark slate
             welcome_message: "Please complete the verification to continue.".to_string(),
-            logo_base64: None,
         }
     }
 
@@ -62,18 +54,14 @@ impl TemplateBranding {
         description: impl Into<String>,
         primary_color: impl Into<String>,
         secondary_color: impl Into<String>,
-        tertiary_color: impl Into<String>,
         welcome_message: impl Into<String>,
-        logo_base64: Option<String>,
     ) -> Self {
         Self {
             service_name: service_name.into(),
             description: description.into(),
             primary_color: primary_color.into(),
             secondary_color: secondary_color.into(),
-            tertiary_color: tertiary_color.into(),
             welcome_message: welcome_message.into(),
-            logo_base64,
         }
     }
 }
@@ -96,14 +84,9 @@ pub fn render_html_template(template: &str, branding: &TemplateBranding) -> Stri
         .replace("{{DESCRIPTION}}", &html_escape(&branding.description))
         .replace("{{PRIMARY_COLOR}}", &branding.primary_color)
         .replace("{{SECONDARY_COLOR}}", &branding.secondary_color)
-        .replace("{{TERTIARY_COLOR}}", &branding.tertiary_color)
         .replace(
             "{{WELCOME_MESSAGE}}",
             &html_escape(&branding.welcome_message),
-        )
-        .replace(
-            "{{LOGO_BASE64}}",
-            branding.logo_base64.as_deref().unwrap_or(""),
         )
 }
 
@@ -203,30 +186,6 @@ mod tests {
     }
 
     #[test]
-    fn test_render_template_with_logo() {
-        let template = r#"<img src="data:image/png;base64,{{LOGO_BASE64}}">"#;
-        let branding = TemplateBranding {
-            logo_base64: Some("iVBORw0KGgo=".to_string()),
-            ..Default::default()
-        };
-
-        let result = render_html_template(template, &branding);
-        assert!(result.contains("iVBORw0KGgo="));
-    }
-
-    #[test]
-    fn test_render_template_without_logo() {
-        let template = r#"<img src="data:image/png;base64,{{LOGO_BASE64}}">"#;
-        let branding = TemplateBranding {
-            logo_base64: None,
-            ..Default::default()
-        };
-
-        let result = render_html_template(template, &branding);
-        assert!(result.contains("base64,\""));
-    }
-
-    #[test]
     fn test_valid_hex_colors() {
         assert!(is_valid_hex_color("#000000"));
         assert!(is_valid_hex_color("#FFFFFF"));
@@ -249,6 +208,6 @@ mod tests {
         let branding = TemplateBranding::new();
         assert_eq!(branding.service_name, "Protected Service");
         assert_eq!(branding.primary_color, "#c9a227");
-        assert!(branding.logo_base64.is_none());
+        assert_eq!(branding.secondary_color, "#a68b5b");
     }
 }
