@@ -1718,13 +1718,13 @@ CookieAuthentication 1
         std::fs::write(&torrc_path, torrc_content)?;
 
         // Build command with optional CPU affinity
-        let mut cmd = if self.config.cpu_affinity && daemon.cpu_core.is_some() {
-            let core = daemon.cpu_core.unwrap();
-            let mut c = std::process::Command::new("taskset");
-            c.arg("-c").arg(core.to_string()).arg("tor");
-            c
-        } else {
-            std::process::Command::new("tor")
+        let mut cmd = match (self.config.cpu_affinity, daemon.cpu_core) {
+            (true, Some(core)) => {
+                let mut c = std::process::Command::new("taskset");
+                c.arg("-c").arg(core.to_string()).arg("tor");
+                c
+            }
+            _ => std::process::Command::new("tor"),
         };
 
         cmd.arg("-f").arg(&torrc_path);
