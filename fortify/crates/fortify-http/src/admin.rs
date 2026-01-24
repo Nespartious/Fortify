@@ -496,9 +496,25 @@ impl Default for AdminState {
 
 impl AdminState {
     pub fn new() -> Self {
-        // Initialize with per-type CAPTCHA settings
+        // Start with default behavior config
+        let mut behavior_config = BehaviorConfig::default();
+
+        // Apply env var overrides for behavioral thresholds
+        if let Ok(val) = std::env::var("MAX_DEMOTIONS_BEFORE_KILL") {
+            if let Ok(count) = val.parse() {
+                behavior_config.max_demotions_before_kill = count;
+            }
+        }
+        if let Ok(val) = std::env::var("THREAT_DEMOTION_THRESHOLD") {
+            if let Ok(threshold) = val.parse() {
+                behavior_config.threat_demotion_threshold = threshold;
+            }
+        }
+
+        // Initialize with per-type CAPTCHA settings and configured behavior
         let inner = AdminStateInner {
             captcha_type_settings: CaptchaTypeSettings::all_types(),
+            behavior_config,
             ..Default::default()
         };
         Self {

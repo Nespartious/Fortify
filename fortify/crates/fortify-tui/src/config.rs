@@ -441,6 +441,10 @@ pub struct ThresholdConfig {
     pub ddos_rps_threshold: u32,
     /// Probe detection sensitivity (1-10)
     pub probe_sensitivity: u8,
+    /// Maximum demotions before session is killed (orphaned permanently)
+    pub max_demotions_before_kill: u32,
+    /// Total violations threshold for threat demotion
+    pub threat_demotion_threshold: u32,
 }
 
 /// Network and Tor settings
@@ -621,6 +625,8 @@ impl Default for ThresholdConfig {
             auto_ban_enabled: true,
             ddos_rps_threshold: 100,
             probe_sensitivity: 5,
+            max_demotions_before_kill: 3, // Kill session after 3 demotion cycles
+            threat_demotion_threshold: 10, // 10 total violations triggers demotion
         }
     }
 }

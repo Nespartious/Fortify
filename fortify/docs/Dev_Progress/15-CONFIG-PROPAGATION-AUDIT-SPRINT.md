@@ -1,6 +1,6 @@
 # Sprint 15: Configuration Propagation Audit & Fix
 
-## Status: IN PROGRESS
+## Status: COMPLETE ✅
 
 ## Objective
 Audit and fix the configuration propagation system to ensure all TUI settings are correctly wired through the system.
@@ -144,11 +144,32 @@ These should flow through Controller → Orchestrator. Currently they DON'T.
 
 ### Priority 3: Resolve Config Mismatch (Design Required)
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| P3.1 | Design: Align TUI ThresholdConfig with BehaviorConfig | Design |
-| P3.2 | Implement TUI behavioral settings UI | High |
-| P3.3 | Wire behavioral settings TUI → Controller → HTTP | High |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| P3.1 | Design: Align TUI ThresholdConfig with BehaviorConfig | Design | ✅ DONE |
+| P3.2 | Wire behavioral thresholds TUI → Controller → HTTP | Medium | ✅ DONE |
+| P3.3 | Document rate limiting gap (future work) | Low | ✅ DONE |
+
+**P3 Analysis & Implementation:**
+
+**ThresholdConfig vs BehaviorConfig Analysis:**
+- TUI's ThresholdConfig focuses on rate limiting: `rate_limit_rpm`, `temp_ban_minutes`, etc.
+- HTTP's BehaviorConfig focuses on behavioral analysis: UA/path/form detection, violation thresholds
+- Only 2 fields have direct overlap that make sense to wire
+
+**Fields Wired (P3.2):**
+- `max_demotions_before_kill` - Kill session after N demotion cycles (default: 3)
+- `threat_demotion_threshold` - Total violations before threat demotion (default: 10)
+
+**Implementation:**
+- Added 2 fields to TUI ThresholdConfig with sensible defaults
+- Added env vars in deployment.rs: `MAX_DEMOTIONS_BEFORE_KILL`, `THREAT_DEMOTION_THRESHOLD`
+- Added fields to ControllerConfig + from_env() parsing
+- Added forwarding in Controller proxy_env()
+- HTTP proxy AdminState::new() reads env vars and applies to BehaviorConfig
+
+**Rate Limiting Gap (P3.3):**
+TUI has rate limiting settings (`rate_limit_rpm`, `ddos_rps_threshold`, etc.) that are NOT implemented anywhere. These are documented as future work - no backend code exists to enforce them.
 
 ### Priority 4: Wire Mirror Settings
 

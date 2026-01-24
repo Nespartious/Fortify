@@ -92,6 +92,10 @@ pub struct ControllerConfig {
     pub burn_interval_days_min: u32,
     pub burn_interval_days_max: u32,
     pub retirement_page_hours: u32,
+
+    // Behavioral threshold settings (forwarded to HTTP proxy)
+    pub max_demotions_before_kill: u32,
+    pub threat_demotion_threshold: u32,
 }
 
 impl Default for ControllerConfig {
@@ -171,6 +175,9 @@ impl Default for ControllerConfig {
             burn_interval_days_min: 7,
             burn_interval_days_max: 14,
             retirement_page_hours: 24,
+            // Behavioral threshold defaults - forwarded to HTTP proxy
+            max_demotions_before_kill: 3,
+            threat_demotion_threshold: 10,
         }
     }
 }
@@ -354,6 +361,14 @@ impl ControllerConfig {
         }
         if let Ok(val) = env::var("RETIREMENT_PAGE_HOURS") {
             config.retirement_page_hours = val.parse().unwrap_or(24);
+        }
+
+        // Behavioral threshold settings - forwarded to HTTP proxy
+        if let Ok(val) = env::var("MAX_DEMOTIONS_BEFORE_KILL") {
+            config.max_demotions_before_kill = val.parse().unwrap_or(3);
+        }
+        if let Ok(val) = env::var("THREAT_DEMOTION_THRESHOLD") {
+            config.threat_demotion_threshold = val.parse().unwrap_or(10);
         }
 
         config.validate().map_err(|e| anyhow::anyhow!("{}", e))?;
