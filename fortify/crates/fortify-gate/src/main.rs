@@ -1,5 +1,6 @@
 use fortify_core::{
     logging::{init_logging, start_resource_logger},
+    templates::BrandingVars,
     SessionManager,
 };
 use fortify_gate::{server::GateServer, Gate};
@@ -34,14 +35,22 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "fortify-secret-key".to_string())
         .into_bytes();
 
+    // Load branding from environment variables (passed by controller)
+    let branding = BrandingVars::from_env();
+    info!(
+        "Gate branding: service_name='{}', primary_color='{}'",
+        branding.service_name, branding.primary_color
+    );
+
     let session_manager = Arc::new(SessionManager::new(secret_key.clone()));
-    let gate = Arc::new(Gate::new(
+    let gate = Arc::new(Gate::with_branding(
         bind_addr,
         max_concurrent,
         pow_difficulty,
         verification_timeout,
         Arc::clone(&session_manager),
         secret_key,
+        branding,
     ));
 
     // Periodic cleanup to prune stale verification states
