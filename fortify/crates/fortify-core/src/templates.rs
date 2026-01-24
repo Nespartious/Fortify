@@ -260,7 +260,7 @@ impl TemplateEngine {
 // ============================================================================
 
 /// Common branding variables for template rendering
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BrandingVars {
     /// Service/site name (e.g., "My Hidden Service")
     pub service_name: String,

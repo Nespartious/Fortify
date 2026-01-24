@@ -617,8 +617,17 @@ impl App {
 
             // Poll for events with timeout
             if event::poll(Duration::from_millis(50))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key(key).await?;
+                match event::read()? {
+                    Event::Key(key) => {
+                        self.handle_key(key).await?;
+                    }
+                    Event::Resize(_width, _height) => {
+                        // Terminal resized - just redraw on next loop iteration
+                        // The terminal.draw() call will automatically use the new size
+                    }
+                    _ => {
+                        // Ignore mouse events and other events
+                    }
                 }
             }
 

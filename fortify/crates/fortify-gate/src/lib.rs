@@ -423,8 +423,8 @@ pub struct Gate {
     captcha_pool: Arc<Mutex<Vec<CaptchaChallenge>>>,
     /// Target pool size for pre-generation
     captcha_pool_target: usize,
-    /// Branding configuration for HTML rendering
-    branding: Arc<fortify_core::templates::BrandingVars>,
+    /// Branding configuration for HTML rendering (runtime-updatable)
+    branding: Arc<Mutex<fortify_core::templates::BrandingVars>>,
 }
 
 impl Gate {
@@ -484,13 +484,20 @@ impl Gate {
             captcha_config: Arc::new(Mutex::new(CaptchaConfig::default())),
             captcha_pool,
             captcha_pool_target: pool_target,
-            branding: Arc::new(branding),
+            branding: Arc::new(Mutex::new(branding)),
         }
     }
 
-    /// Get the branding configuration
-    pub fn branding(&self) -> &fortify_core::templates::BrandingVars {
-        &self.branding
+    /// Get a clone of the current branding configuration
+    pub fn branding(&self) -> fortify_core::templates::BrandingVars {
+        self.branding.lock().unwrap().clone()
+    }
+
+    /// Update the branding configuration at runtime
+    pub fn update_branding(&self, new_branding: fortify_core::templates::BrandingVars) {
+        let mut branding = self.branding.lock().unwrap();
+        *branding = new_branding;
+        tracing::info!("Gate branding updated at runtime");
     }
 
     /// Take a pre-generated CAPTCHA from the pool, or generate on-demand if empty
@@ -1241,5 +1248,36 @@ mod tests {
             gate.create_verification("s3".into()),
             Err(GateError::QueueFull)
         ));
+    }
+
+    #[tokio::test]
+    async fn test_branding_hot_reload() {
+        use fortify_core::templates::BrandingVars;
+        let secret = b"test-secret-key";
+        let session_manager = Arc::new(SessionManager::new(secret.to_vec()));
+        let gate = Gate::new(
+            "127.0.0.1:8081".parse().unwrap(),
+            10,
+            4,
+            300,
+            session_manager,
+            secret.to_vec(),
+        );
+        // Initial branding
+        let initial_branding = gate.branding();
+        assert_eq!(initial_branding.service_name, "Protected Service");
+        // Update branding
+        let new_branding = BrandingVars {
+            service_name: "SIGIL".to_string(),
+            primary_color: "#123456".to_string(),
+            secondary_color: "#654321".to_string(),
+            footer_branding: String::new(),
+            branding_injection: String::new(),
+            gate_path: "/Fortify/Portcullis".to_string(),
+        };
+        gate.update_branding(new_branding.clone());
+        let updated_branding = gate.branding();
+        assert_eq!(updated_branding.service_name, "SIGIL");
+        assert_eq!(updated_branding.primary_color, "#123456");
     }
 }

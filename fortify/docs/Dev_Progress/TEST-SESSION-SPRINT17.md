@@ -228,11 +228,22 @@ If you find issues, note:
 
 | Test Area | Tester | Date | Pass/Fail |
 |-----------|--------|------|-----------|
-| Menu Navigation | | | |
-| View Settings | | | |
-| Modify Settings | | | |
-| CAPTCHA Fields | | | |
-| Apply Dialog | | | |
+| Menu Navigation | AI + User | Jan 23, 2026 | ✅ PASS |
+| View Settings | AI + User | Jan 23, 2026 | ✅ PASS |
+| Modify Settings | AI + User | Jan 23, 2026 | ✅ PASS |
+| CAPTCHA Fields | AI + User | Jan 23, 2026 | ✅ PASS |
+| Apply Dialog | AI + User | Jan 23, 2026 | ✅ PASS |
 | Hot Reload | | | |
 | Restart Flow | | | |
 | Shortcuts | | | |
+
+### Test Session Notes (January 23, 2026)
+
+**TUI Testing - Fresh Install:**
+- Menu shows View/Modify System Settings correctly
+- System Status removed as expected
+- View Settings read-only mode works
+- Tier tab is default
+- All new CAPTCHA fields present and functional
+- Apply Changes dialog appears correctly when deployed
+- Note: Dialog only appears with active deployment (expected behavior)

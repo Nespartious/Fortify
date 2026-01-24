@@ -434,16 +434,18 @@ fn draw_field_list(frame: &mut Frame, area: Rect, fields: &[(&str, &str)], selec
                 Style::default().fg(Color::White)
             };
 
-            // Truncate label if too long
-            let truncated_label: String = if label.len() > label_width {
-                format!("{}…", &label[..label_width.saturating_sub(1)])
+            // Truncate label if too long (character-aware for UTF-8 safety)
+            let truncated_label: String = if label.chars().count() > label_width {
+                let chars: String = label.chars().take(label_width.saturating_sub(1)).collect();
+                format!("{}…", chars)
             } else {
                 (*label).to_string()
             };
 
-            // Truncate value if too long
-            let truncated_value: String = if value.len() > value_width {
-                format!("{}…", &value[..value_width.saturating_sub(1)])
+            // Truncate value if too long (character-aware for UTF-8 safety)
+            let truncated_value: String = if value.chars().count() > value_width {
+                let chars: String = value.chars().take(value_width.saturating_sub(1)).collect();
+                format!("{}…", chars)
             } else {
                 (*value).to_string()
             };

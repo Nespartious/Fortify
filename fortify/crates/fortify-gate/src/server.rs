@@ -157,6 +157,9 @@ async fn handle_request(
             handle_update_captcha_config(req, gate).await
         }
 
+        // Admin API: update branding configuration
+        (&Method::POST, "/gate/admin/branding") => handle_update_branding_config(req, gate).await,
+
         // Catch-all: redirect everyone to /Fortify landing
         // Also clear any stale session cookie to prevent redirect loops
         _ => Response::builder()
@@ -806,7 +809,7 @@ fn error_response(status: StatusCode, msg: &str) -> Response<BoxBody> {
 /// TODO: Pass gate branding to error pages for full brand consistency
 fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Response<BoxBody> {
     let engine = TemplateEngine::new();
-    // Use default branding for error pages (acceptable since errors are transient)
+    // Use default branding for error pages (gate context not available here)
     let branding = BrandingVars::default();
     let mut extra_vars = std::collections::HashMap::new();
     extra_vars.insert("ERROR_TITLE".to_string(), title.to_string());
@@ -818,5 +821,31 @@ fn styled_error_response(status: StatusCode, title: &str, message: &str) -> Resp
         .status(status)
         .header("Content-Type", "text/html")
         .body(Full::new(Bytes::from(html)))
+        .expect("valid response")
+}
+// Handle admin request to update branding configuration
+async fn handle_update_branding_config(
+    req: Request<Incoming>,
+    gate: Arc<Gate>,
+) -> Response<BoxBody> {
+    // Read request body
+    let body_bytes = match req.collect().await {
+        Ok(b) => b.to_bytes(),
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid body"),
+    };
+
+    // Parse JSON body into BrandingVars
+    let branding: BrandingVars = match serde_json::from_slice(&body_bytes) {
+        Ok(b) => b,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e)),
+    };
+
+    // Update the gate's branding config
+    gate.update_branding(branding);
+
+    tracing::info!("Gate branding config updated via admin API");
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(Full::new(Bytes::from("Branding updated")))
         .expect("valid response")
 }

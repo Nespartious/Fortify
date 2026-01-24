@@ -312,8 +312,9 @@ fn draw_backend_health(frame: &mut Frame, app: &App, area: Rect) {
         // Show error message if check failed
         if !check.success {
             if let Some(ref error) = check.error {
-                let error_short = if error.len() > 35 {
-                    format!("{}...", &error[..32])
+                let error_short = if error.chars().count() > 35 {
+                    let chars: String = error.chars().take(32).collect();
+                    format!("{}...", chars)
                 } else {
                     error.clone()
                 };
@@ -452,8 +453,10 @@ fn draw_mirror_addresses(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_controls(frame: &mut Frame, area: Rect) {
     let controls = vec![
-        Span::styled("[S]", Style::default().fg(Color::Yellow)),
-        Span::raw(" Settings  "),
+        Span::styled("[V]", Style::default().fg(Color::Yellow)),
+        Span::raw(" View  "),
+        Span::styled("[M]", Style::default().fg(Color::Yellow)),
+        Span::raw(" Modify  "),
         Span::styled("[E]", Style::default().fg(Color::Cyan)),
         Span::raw(" Export  "),
         Span::styled("[P]", Style::default().fg(Color::Yellow)),
