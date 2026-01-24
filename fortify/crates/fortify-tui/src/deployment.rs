@@ -1601,8 +1601,8 @@ impl DeploymentManager {
         cfg.save()?;
 
         // Try to push hot-reloadable settings to running services via HTTP API
-        // The HTTP admin panel runs on the gate_bind address under /Fortify
-        let admin_url = format!("http://{}/Fortify", config.network.gate_bind);
+        // The HTTP admin panel runs on http_bind (NOT gate_bind) under /Fortify
+        let admin_url = format!("http://{}/Fortify", config.network.http_bind);
 
         // Build HTTP client
         let client = match reqwest::Client::builder()
