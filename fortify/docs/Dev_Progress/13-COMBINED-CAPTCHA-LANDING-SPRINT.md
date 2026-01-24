@@ -380,6 +380,59 @@ location /Fortify {
 
 ---
 
+## Phase 8: TUI/UX Improvements
+
+**Status**: NOT STARTED
+
+### Objective
+Improve user experience in the TUI during startup and initialization phases, particularly for mirror health checks which take several minutes to complete.
+
+### 8.1 Mirror Health Section - Waiting Indicator
+
+**Problem:**
+- When TUI starts, the mirror health section shows "No mirror health check..." but provides no context
+- Users don't know how long to wait or if something is wrong
+- No visual feedback that the system is actively working
+
+**Solution:**
+Add informative waiting messages with a dynamic "still checking" indicator.
+
+**Requirements:**
+1. Display message: "No mirror health data yet (Please wait ~5 minutes for initial check)"
+2. Add a dynamic indicator that updates every 10 seconds showing the system is still working
+3. Possible indicator formats:
+   - Elapsed time counter: `Waiting for health check... (45s elapsed)`
+   - Spinner with dots: `Checking mirrors...` → `Checking mirrors..` → `Checking mirrors.`
+   - Status message rotation: `Initializing...` → `Polling orchestrators...` → `Waiting for response...`
+
+**Implementation Tasks:**
+- [ ] Update TUI status panel to show informative waiting message
+- [ ] Add elapsed time tracking from TUI startup
+- [ ] Implement 10-second refresh interval for waiting indicator
+- [ ] Clear waiting message once actual health data is received
+
+### 8.2 General TUI Loading States
+
+**Additional UX improvements to consider:**
+- [ ] Add loading indicators for other slow-loading sections
+- [ ] Show "Connecting to controller..." during initial connection
+- [ ] Display startup progress (e.g., "Starting Gate... Starting HTTP Proxy...")
+- [ ] Add estimated time remaining for known long operations
+
+### Files to Modify
+| File | Change |
+|------|--------|
+| `fortify-tui/src/status.rs` | Add elapsed time tracking, update status messages |
+| `fortify-tui/src/ui.rs` or similar | Update mirror health panel rendering |
+
+### Success Criteria
+- [ ] User sees clear waiting message with time estimate when mirror health is pending
+- [ ] Dynamic indicator updates every 10 seconds confirming system is active
+- [ ] Message disappears once real health data arrives
+- [ ] No confusion about whether system is working or stuck
+
+---
+
 ## Decision: When to Start
 
 **Recommendation**: Start after current demoted/captcha verification bugs are fully resolved and tested.
@@ -400,6 +453,11 @@ location /Fortify {
 ---
 
 ## Progress Log
+
+### 2026-01-24
+- Added Phase 8: TUI/UX Improvements
+- Mirror health waiting indicator requirement documented
+- Dynamic 10-second refresh indicator planned
 
 ### 2025-01-22
 - Created Sprint 13 planning document
