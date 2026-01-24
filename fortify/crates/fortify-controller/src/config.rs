@@ -69,6 +69,13 @@ pub struct ControllerConfig {
     pub captcha_rotation_percent: u8,
     pub captcha_rotation_days: u32,
 
+    // CAPTCHA type settings (forwarded to Gate)
+    pub captcha_gate_type: String,
+    pub captcha_threat_type: String,
+    pub captcha_threat_enabled: bool,
+    pub captcha_difficulty: u8,
+    pub captcha_timeout: u64,
+
     // Branding configuration (forwarded to Gate)
     pub branding_service_name: String,
     pub branding_description: String,
@@ -133,6 +140,12 @@ impl Default for ControllerConfig {
             captcha_max_pool: 1000,
             captcha_rotation_percent: 25,
             captcha_rotation_days: 10,
+            // CAPTCHA type defaults - forwarded to Gate
+            captcha_gate_type: "BmpText".to_string(),
+            captcha_threat_type: "BmpText".to_string(),
+            captcha_threat_enabled: true,
+            captcha_difficulty: 5,
+            captcha_timeout: 120,
             // Branding defaults - forwarded to Gate
             branding_service_name: "Protected Service".to_string(),
             branding_description: "A Fortify-protected onion service".to_string(),
@@ -262,6 +275,23 @@ impl ControllerConfig {
         }
         if let Ok(val) = env::var("CAPTCHA_ROTATION_DAYS") {
             config.captcha_rotation_days = val.parse().unwrap_or(10);
+        }
+
+        // CAPTCHA type settings - forwarded to Gate
+        if let Ok(val) = env::var("CAPTCHA_GATE_TYPE") {
+            config.captcha_gate_type = val;
+        }
+        if let Ok(val) = env::var("CAPTCHA_THREAT_TYPE") {
+            config.captcha_threat_type = val;
+        }
+        if let Ok(val) = env::var("CAPTCHA_THREAT_ENABLED") {
+            config.captcha_threat_enabled = val.parse().unwrap_or(true);
+        }
+        if let Ok(val) = env::var("CAPTCHA_DIFFICULTY") {
+            config.captcha_difficulty = val.parse().unwrap_or(5);
+        }
+        if let Ok(val) = env::var("CAPTCHA_TIMEOUT") {
+            config.captcha_timeout = val.parse().unwrap_or(120);
         }
 
         // Branding config - forwarded to Gate
