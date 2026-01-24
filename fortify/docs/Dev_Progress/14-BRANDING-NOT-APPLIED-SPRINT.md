@@ -50,11 +50,17 @@ Identify and resolve the issue where branding (e.g., service name, welcome messa
 - Called this function from `handle_branding_settings` after updating branding config.
 - Ensured function is at module scope (not nested inside another function).
 
+### 5. fortify-core/src/templates.rs (Additional Fix)
+- Added `description` and `welcome_message` fields to `BrandingVars` struct.
+- Updated `Default` impl to include default values for new fields.
+- Updated `to_hashmap()` method to include `DESCRIPTION` and `WELCOME_MESSAGE` keys for template rendering.
+- **Root cause:** The HTML templates (`gate.html`) used `{{DESCRIPTION}}` and `{{WELCOME_MESSAGE}}` placeholders, but these fields were missing from `BrandingVars`, so they were never substituted.
+
 ## Testing Checklist
-- [x] Set branding via TUI, verify on all HTML pages (gate, busy, captcha, etc.).
-- [x] Set branding via Control Panel, verify on all HTML pages.
-- [x] Test hot reload: branding change appears without restart.
-- [x] Test restart: branding persists and appears after restart.
+- [ ] Set branding via TUI, verify on all HTML pages (gate, busy, captcha, etc.).
+- [ ] Set branding via Control Panel, verify on all HTML pages.
+- [ ] Test hot reload: branding change appears without restart.
+- [ ] Test restart: branding persists and appears after restart.
 
 ## Success Criteria
 - Branding (service name, welcome message, etc.) appears on all user-facing HTML pages after settings change via TUI or Control Panel.
