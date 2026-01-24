@@ -702,6 +702,15 @@ struct OrchestratorEnvFactory {
     captcha_max_pool: usize,
     captcha_rotation_percent: u8,
     captcha_rotation_days: u32,
+    /// Mirror management configuration
+    min_mirrors: usize,
+    max_mirrors: usize,
+    standby_mirrors: usize,
+    mirror_rotation_interval: u64,
+    proactive_burn_enabled: bool,
+    burn_interval_days_min: u32,
+    burn_interval_days_max: u32,
+    retirement_page_hours: u32,
     next_offset: AtomicUsize,
 }
 
@@ -731,6 +740,15 @@ impl OrchestratorEnvFactory {
             captcha_max_pool: config.captcha_max_pool,
             captcha_rotation_percent: config.captcha_rotation_percent,
             captcha_rotation_days: config.captcha_rotation_days,
+            // Mirror management
+            min_mirrors: config.min_mirrors,
+            max_mirrors: config.max_mirrors,
+            standby_mirrors: config.standby_mirrors,
+            mirror_rotation_interval: config.mirror_rotation_interval,
+            proactive_burn_enabled: config.proactive_burn_enabled,
+            burn_interval_days_min: config.burn_interval_days_min,
+            burn_interval_days_max: config.burn_interval_days_max,
+            retirement_page_hours: config.retirement_page_hours,
             next_offset: AtomicUsize::new(0),
         }
     }
@@ -777,6 +795,31 @@ impl OrchestratorEnvFactory {
         env.push(format!(
             "CAPTCHA_ROTATION_DAYS={}",
             self.captcha_rotation_days
+        ));
+
+        // Mirror management configuration
+        env.push(format!("MIN_MIRRORS={}", self.min_mirrors));
+        env.push(format!("MAX_MIRRORS={}", self.max_mirrors));
+        env.push(format!("STANDBY_MIRRORS={}", self.standby_mirrors));
+        env.push(format!(
+            "MIRROR_ROTATION_INTERVAL={}",
+            self.mirror_rotation_interval
+        ));
+        env.push(format!(
+            "PROACTIVE_BURN_ENABLED={}",
+            self.proactive_burn_enabled
+        ));
+        env.push(format!(
+            "BURN_INTERVAL_DAYS_MIN={}",
+            self.burn_interval_days_min
+        ));
+        env.push(format!(
+            "BURN_INTERVAL_DAYS_MAX={}",
+            self.burn_interval_days_max
+        ));
+        env.push(format!(
+            "RETIREMENT_PAGE_HOURS={}",
+            self.retirement_page_hours
         ));
 
         Ok(env)

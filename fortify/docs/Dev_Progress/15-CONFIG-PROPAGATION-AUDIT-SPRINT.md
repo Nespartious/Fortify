@@ -152,10 +152,18 @@ These should flow through Controller → Orchestrator. Currently they DON'T.
 
 ### Priority 4: Wire Mirror Settings
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| P4.1 | Wire `min_mirrors`/`max_mirrors` TUI → Controller → Orchestrator | Medium |
-| P4.2 | Wire rotation/burn settings TUI → Controller → Orchestrator | Medium |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| P4.1 | Wire `min_mirrors`/`max_mirrors` TUI → Controller → Orchestrator | Medium | ✅ DONE |
+| P4.2 | Wire rotation/burn settings TUI → Controller → Orchestrator | Medium | ✅ DONE |
+
+**P4 Implementation Details:**
+- Added env vars in TUI deployment.rs: `MIN_MIRRORS`, `MAX_MIRRORS`, `STANDBY_MIRRORS`, `MIRROR_ROTATION_INTERVAL`, `PROACTIVE_BURN_ENABLED`, `BURN_INTERVAL_DAYS_MIN`, `BURN_INTERVAL_DAYS_MAX`, `RETIREMENT_PAGE_HOURS`
+- Added 8 mirror fields to ControllerConfig struct in config.rs
+- Added from_env() parsing for all mirror settings
+- Added fields to OrchestratorEnvFactory in Controller lib.rs
+- Added forwarding in build_env() to pass all mirror settings to Orchestrators
+- Orchestrator main.rs reads env vars and applies to OrchestratorConfig and RetirementConfig
 
 ### Deferred to Sprint 16
 
@@ -196,7 +204,11 @@ gate.html rendered with branding
 - `crates/fortify-tui/src/app.rs` (MenuItem enable/disable logic)
 - `crates/fortify-tui/src/ui/home.rs` (grayed out menu items UI)
 - `crates/fortify-http/src/lib.rs` (branding for killed session page)
-- `crates/fortify-controller/src/lib.rs` (branding env vars to proxy)
+- `crates/fortify-controller/src/lib.rs` (branding env vars to proxy, mirror vars to orchestrator)
+- `crates/fortify-controller/src/config.rs` (CAPTCHA type fields, mirror management fields)
+- `crates/fortify-tui/src/deployment.rs` (CAPTCHA, network, vanguards, mirror env vars)
+- `crates/fortify-gate/src/main.rs` (parse CAPTCHA type from env, apply config)
+- `crates/fortify-orchestrator/src/main.rs` (mirror management env var parsing)
 
 ---
 
@@ -206,12 +218,15 @@ gate.html rendered with branding
 - [ ] Verify branding still works on gate.html
 - [ ] Verify captcha page branding (BmpText only - others deferred)
 - [ ] Verify killed session page uses branding from env
+- [ ] Verify CAPTCHA type settings flow to Gate
+- [ ] Verify mirror count settings flow to Orchestrators
 
 ---
 
 ## Success Criteria
 
-1. Settings cannot be modified while deployed
-2. All P0 and P1 fixes implemented and working
-3. Clear documentation of what's wired vs what's not
-4. Sprint 16 created for captcha template refactor
+1. ✅ Settings cannot be modified while deployed
+2. ✅ All P0, P1, P2, P4 fixes implemented and working
+3. ✅ Clear documentation of what's wired vs what's not
+4. ⏸️ Sprint 16 created for captcha template refactor
+5. ⏸️ P3 (ThresholdConfig/BehaviorConfig alignment) deferred - requires design

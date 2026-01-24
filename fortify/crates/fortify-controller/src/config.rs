@@ -82,6 +82,16 @@ pub struct ControllerConfig {
     pub branding_welcome_message: String,
     pub branding_primary_color: String,
     pub branding_secondary_color: String,
+
+    // Mirror management settings (forwarded to Orchestrators)
+    pub min_mirrors: usize,
+    pub max_mirrors: usize,
+    pub standby_mirrors: usize,
+    pub mirror_rotation_interval: u64,
+    pub proactive_burn_enabled: bool,
+    pub burn_interval_days_min: u32,
+    pub burn_interval_days_max: u32,
+    pub retirement_page_hours: u32,
 }
 
 impl Default for ControllerConfig {
@@ -152,6 +162,15 @@ impl Default for ControllerConfig {
             branding_welcome_message: "Please complete the verification to continue.".to_string(),
             branding_primary_color: "#c9a227".to_string(),
             branding_secondary_color: "#a68b5b".to_string(),
+            // Mirror management defaults - forwarded to Orchestrators
+            min_mirrors: 2,
+            max_mirrors: 5,
+            standby_mirrors: 2,
+            mirror_rotation_interval: 3600, // 1 hour
+            proactive_burn_enabled: true,
+            burn_interval_days_min: 7,
+            burn_interval_days_max: 14,
+            retirement_page_hours: 24,
         }
     }
 }
@@ -309,6 +328,32 @@ impl ControllerConfig {
         }
         if let Ok(val) = env::var("BRANDING_SECONDARY_COLOR") {
             config.branding_secondary_color = val;
+        }
+
+        // Mirror management settings - forwarded to Orchestrators
+        if let Ok(val) = env::var("MIN_MIRRORS") {
+            config.min_mirrors = val.parse().unwrap_or(2);
+        }
+        if let Ok(val) = env::var("MAX_MIRRORS") {
+            config.max_mirrors = val.parse().unwrap_or(5);
+        }
+        if let Ok(val) = env::var("STANDBY_MIRRORS") {
+            config.standby_mirrors = val.parse().unwrap_or(2);
+        }
+        if let Ok(val) = env::var("MIRROR_ROTATION_INTERVAL") {
+            config.mirror_rotation_interval = val.parse().unwrap_or(3600);
+        }
+        if let Ok(val) = env::var("PROACTIVE_BURN_ENABLED") {
+            config.proactive_burn_enabled = val.parse().unwrap_or(true);
+        }
+        if let Ok(val) = env::var("BURN_INTERVAL_DAYS_MIN") {
+            config.burn_interval_days_min = val.parse().unwrap_or(7);
+        }
+        if let Ok(val) = env::var("BURN_INTERVAL_DAYS_MAX") {
+            config.burn_interval_days_max = val.parse().unwrap_or(14);
+        }
+        if let Ok(val) = env::var("RETIREMENT_PAGE_HOURS") {
+            config.retirement_page_hours = val.parse().unwrap_or(24);
         }
 
         config.validate().map_err(|e| anyhow::anyhow!("{}", e))?;

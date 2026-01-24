@@ -1376,6 +1376,34 @@ impl DeploymentManager {
                 );
         }
 
+        // Mirror management settings - controller forwards to orchestrators
+        cmd.env("MIN_MIRRORS", config.mirrors.min_mirrors.to_string())
+            .env("MAX_MIRRORS", config.mirrors.max_mirrors.to_string())
+            .env(
+                "STANDBY_MIRRORS",
+                config.mirrors.standby_mirrors.to_string(),
+            )
+            .env(
+                "MIRROR_ROTATION_INTERVAL",
+                config.mirrors.rotation_interval_seconds.to_string(),
+            )
+            .env(
+                "PROACTIVE_BURN_ENABLED",
+                config.mirrors.proactive_burn_enabled.to_string(),
+            )
+            .env(
+                "BURN_INTERVAL_DAYS_MIN",
+                config.mirrors.burn_interval_days_min.to_string(),
+            )
+            .env(
+                "BURN_INTERVAL_DAYS_MAX",
+                config.mirrors.burn_interval_days_max.to_string(),
+            )
+            .env(
+                "RETIREMENT_PAGE_HOURS",
+                config.mirrors.retirement_page_hours.to_string(),
+            );
+
         let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
 
         self.log_tx
