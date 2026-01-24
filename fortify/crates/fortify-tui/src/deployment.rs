@@ -1298,6 +1298,22 @@ impl DeploymentManager {
                     .to_string_lossy()
                     .to_string(),
             )
+            // Network bind addresses
+            .env("GATE_BIND_ADDR", &config.network.gate_bind)
+            .env("PROXY_BIND_ADDR", &config.network.http_bind)
+            // Vanguards configuration
+            .env(
+                "VANGUARDS_ENABLED",
+                config.network.vanguards_enabled.to_string(),
+            )
+            .env(
+                "VANGUARDS_LAYER2_GUARDS",
+                config.network.vanguards_layer2.to_string(),
+            )
+            .env(
+                "VANGUARDS_LAYER3_GUARDS",
+                config.network.vanguards_layer3.to_string(),
+            )
             // CAPTCHA pool configuration
             .env("CAPTCHA_ENABLED", config.captcha.enabled.to_string())
             .env("CAPTCHA_POOL_SIZE", config.captcha.pool_size.to_string())
