@@ -679,6 +679,16 @@ impl Controller {
             ));
         }
 
+        // Behavioral threshold settings
+        env.push(format!(
+            "MAX_DEMOTIONS_BEFORE_KILL={}",
+            self.config.max_demotions_before_kill
+        ));
+        env.push(format!(
+            "THREAT_DEMOTION_THRESHOLD={}",
+            self.config.threat_demotion_threshold
+        ));
+
         env
     }
 }

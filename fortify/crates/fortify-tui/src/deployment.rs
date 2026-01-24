@@ -1402,6 +1402,15 @@ impl DeploymentManager {
             .env(
                 "RETIREMENT_PAGE_HOURS",
                 config.mirrors.retirement_page_hours.to_string(),
+            )
+            // Behavioral thresholds - forwarded to HTTP proxy
+            .env(
+                "MAX_DEMOTIONS_BEFORE_KILL",
+                config.thresholds.max_demotions_before_kill.to_string(),
+            )
+            .env(
+                "THREAT_DEMOTION_THRESHOLD",
+                config.thresholds.threat_demotion_threshold.to_string(),
             );
 
         let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
