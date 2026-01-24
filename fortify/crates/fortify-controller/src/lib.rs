@@ -588,6 +588,24 @@ impl Controller {
         vec![
             format!("GATE_BIND_ADDR={}", self.config.gate_bind_addr),
             format!("SECRET_KEY={}", self.config.secret_key),
+            // Branding for gate.html display
+            format!(
+                "BRANDING_SERVICE_NAME={}",
+                self.config.branding_service_name
+            ),
+            format!("BRANDING_DESCRIPTION={}", self.config.branding_description),
+            format!(
+                "BRANDING_WELCOME_MESSAGE={}",
+                self.config.branding_welcome_message
+            ),
+            format!(
+                "BRANDING_PRIMARY_COLOR={}",
+                self.config.branding_primary_color
+            ),
+            format!(
+                "BRANDING_SECONDARY_COLOR={}",
+                self.config.branding_secondary_color
+            ),
         ]
     }
 
@@ -597,6 +615,20 @@ impl Controller {
             format!("SECRET_KEY={}", self.config.secret_key),
             format!("GATE_ADDRESS=http://{}", self.config.gate_bind_addr),
             format!("NODE_BACKEND_ADDR={}", self.config.node_backend_addr),
+            // Branding variables for error pages (e.g., serve_killed_session_page)
+            format!(
+                "BRANDING_SERVICE_NAME={}",
+                self.config.branding_service_name
+            ),
+            format!("BRANDING_DESCRIPTION={}", self.config.branding_description),
+            format!(
+                "BRANDING_WELCOME_MESSAGE={}",
+                self.config.branding_welcome_message
+            ),
+            format!(
+                "BRANDING_PRIMARY_COLOR={}",
+                self.config.branding_primary_color
+            ),
         ];
 
         // Healthy nodes for verified traffic

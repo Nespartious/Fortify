@@ -68,6 +68,13 @@ pub struct ControllerConfig {
     pub captcha_max_pool: usize,
     pub captcha_rotation_percent: u8,
     pub captcha_rotation_days: u32,
+
+    // Branding configuration (forwarded to Gate)
+    pub branding_service_name: String,
+    pub branding_description: String,
+    pub branding_welcome_message: String,
+    pub branding_primary_color: String,
+    pub branding_secondary_color: String,
 }
 
 impl Default for ControllerConfig {
@@ -126,6 +133,12 @@ impl Default for ControllerConfig {
             captcha_max_pool: 1000,
             captcha_rotation_percent: 25,
             captcha_rotation_days: 10,
+            // Branding defaults - forwarded to Gate
+            branding_service_name: "Protected Service".to_string(),
+            branding_description: "A Fortify-protected onion service".to_string(),
+            branding_welcome_message: "Please complete the verification to continue.".to_string(),
+            branding_primary_color: "#c9a227".to_string(),
+            branding_secondary_color: "#a68b5b".to_string(),
         }
     }
 }
@@ -249,6 +262,23 @@ impl ControllerConfig {
         }
         if let Ok(val) = env::var("CAPTCHA_ROTATION_DAYS") {
             config.captcha_rotation_days = val.parse().unwrap_or(10);
+        }
+
+        // Branding config - forwarded to Gate
+        if let Ok(val) = env::var("BRANDING_SERVICE_NAME") {
+            config.branding_service_name = val;
+        }
+        if let Ok(val) = env::var("BRANDING_DESCRIPTION") {
+            config.branding_description = val;
+        }
+        if let Ok(val) = env::var("BRANDING_WELCOME_MESSAGE") {
+            config.branding_welcome_message = val;
+        }
+        if let Ok(val) = env::var("BRANDING_PRIMARY_COLOR") {
+            config.branding_primary_color = val;
+        }
+        if let Ok(val) = env::var("BRANDING_SECONDARY_COLOR") {
+            config.branding_secondary_color = val;
         }
 
         config.validate().map_err(|e| anyhow::anyhow!("{}", e))?;

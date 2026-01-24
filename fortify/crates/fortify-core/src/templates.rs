@@ -296,6 +296,27 @@ impl Default for BrandingVars {
 }
 
 impl BrandingVars {
+    /// Create BrandingVars from environment variables
+    /// Falls back to defaults for any missing values
+    pub fn from_env() -> Self {
+        Self {
+            service_name: std::env::var("BRANDING_SERVICE_NAME")
+                .unwrap_or_else(|_| "Protected Service".to_string()),
+            description: std::env::var("BRANDING_DESCRIPTION")
+                .unwrap_or_else(|_| "A Fortify-protected onion service".to_string()),
+            welcome_message: std::env::var("BRANDING_WELCOME_MESSAGE")
+                .unwrap_or_else(|_| "Please complete the verification to continue.".to_string()),
+            primary_color: std::env::var("BRANDING_PRIMARY_COLOR")
+                .unwrap_or_else(|_| "#c9a227".to_string()),
+            secondary_color: std::env::var("BRANDING_SECONDARY_COLOR")
+                .unwrap_or_else(|_| "#a68b5b".to_string()),
+            footer_branding: std::env::var("BRANDING_FOOTER").unwrap_or_default(),
+            branding_injection: std::env::var("BRANDING_INJECTION").unwrap_or_default(),
+            gate_path: std::env::var("BRANDING_GATE_PATH")
+                .unwrap_or_else(|_| "/Fortify/Portcullis".to_string()),
+        }
+    }
+
     /// Convert branding vars to HashMap for template rendering
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();

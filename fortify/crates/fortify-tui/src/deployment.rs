@@ -1311,6 +1311,12 @@ impl DeploymentManager {
                 "CAPTCHA_ROTATION_DAYS",
                 config.captcha.rotation_interval_days.to_string(),
             )
+            // Branding configuration - passed through Controller to Gate
+            .env("BRANDING_SERVICE_NAME", &config.branding.service_name)
+            .env("BRANDING_DESCRIPTION", &config.branding.description)
+            .env("BRANDING_WELCOME_MESSAGE", &config.branding.welcome_message)
+            .env("BRANDING_PRIMARY_COLOR", &config.branding.primary_color)
+            .env("BRANDING_SECONDARY_COLOR", &config.branding.secondary_color)
             .env("RUST_LOG", "info,fortify_controller=debug");
 
         // Pass vanity configuration - controller will forward to orchestrators for mirror generation

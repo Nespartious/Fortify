@@ -2093,13 +2093,12 @@ async fn route_to_backend(
 }
 
 /// Serve a friendly page for killed/burned sessions explaining they can try again
-/// TODO: Pass branding config for full brand consistency
 fn serve_killed_session_page() -> Response<BoxBody> {
     use fortify_core::templates::{BrandingVars, TemplateEngine, TemplateType};
 
     let engine = TemplateEngine::new();
-    // Use default branding for error pages (acceptable since errors are transient)
-    let branding = BrandingVars::default();
+    // Read branding from environment variables for consistency
+    let branding = BrandingVars::from_env();
     let html = engine.render_with_branding(TemplateType::SessionExpired, &branding, None);
 
     // Clear the old session cookie so they start fresh

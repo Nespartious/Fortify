@@ -82,6 +82,26 @@ impl MenuItem {
             _ => Color::White,
         }
     }
+
+    /// Check if this menu item is enabled based on deployment state.
+    /// Some items like ModifySettings should be disabled during deployment
+    /// because changes won't take effect until restart.
+    pub fn is_enabled(&self, is_running: bool) -> bool {
+        match self {
+            // ModifySettings disabled during deployment - changes won't apply
+            MenuItem::ModifySettings => !is_running,
+            // All other items always enabled
+            _ => true,
+        }
+    }
+
+    /// Get a hint explaining why this item is disabled
+    pub fn disabled_hint(&self) -> &'static str {
+        match self {
+            MenuItem::ModifySettings => "Stop deployment first to modify settings",
+            _ => "",
+        }
+    }
 }
 
 /// Settings tabs
@@ -1618,6 +1638,8 @@ impl App {
 
     /// Handle menu navigation
     async fn handle_menu_key(&mut self, key: KeyEvent) -> Result<()> {
+        let is_running = self.deployment.is_running();
+
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.menu_index > 0 {
@@ -1630,13 +1652,18 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                self.select_menu_item().await?;
+                // Check if current item is enabled before selecting
+                let current_item = MenuItem::all()[self.menu_index];
+                if current_item.is_enabled(is_running) {
+                    self.select_menu_item().await?;
+                }
+                // If disabled, do nothing (hint is shown in menu)
             }
             KeyCode::Char(c) => {
-                // Check hotkeys
+                // Check hotkeys - only activate if item is enabled
                 let upper = c.to_ascii_uppercase();
                 for (i, item) in MenuItem::all().iter().enumerate() {
-                    if item.hotkey() == upper {
+                    if item.hotkey() == upper && item.is_enabled(is_running) {
                         self.menu_index = i;
                         self.select_menu_item().await?;
                         break;
@@ -2401,21 +2428,16 @@ impl App {
 
         match key.code {
             KeyCode::Char('v') | KeyCode::Char('V') => {
-                // View settings (read-only)
+                // View settings (read-only) - always available during deployment
                 self.view = View::ViewSettings {
                     tab: SettingsTab::TrafficTier,
                     field_index: 0,
                 };
                 self.focus = Focus::Settings;
             }
-            KeyCode::Char('m') | KeyCode::Char('M') => {
-                // Modify settings (edit mode)
-                self.view = View::Settings {
-                    tab: SettingsTab::TrafficTier,
-                    field_index: 0,
-                };
-                self.focus = Focus::Settings;
-            }
+            // Note: 'M' for Modify settings is intentionally NOT available during deployment.
+            // Settings changes require restart, so modifying while running is misleading.
+            // Users must stop deployment first to modify settings.
             KeyCode::Char('p') | KeyCode::Char('P') => {
                 self.logs_paused = !self.logs_paused;
             }

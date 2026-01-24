@@ -246,7 +246,7 @@ pub fn render_bmp_text_captcha_with_message(
 ) -> String {
     // Use the new template engine for consistent styling
     let engine = TemplateEngine::new();
-    let branding = BrandingVars::default();
+    let branding = BrandingVars::from_env();
 
     let mut extra_vars = HashMap::new();
     extra_vars.insert(
