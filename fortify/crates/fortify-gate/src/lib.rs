@@ -1269,6 +1269,8 @@ mod tests {
         // Update branding
         let new_branding = BrandingVars {
             service_name: "SIGIL".to_string(),
+            description: "Custom Desc".to_string(),
+            welcome_message: "Welcome to SIGIL!".to_string(),
             primary_color: "#123456".to_string(),
             secondary_color: "#654321".to_string(),
             footer_branding: String::new(),

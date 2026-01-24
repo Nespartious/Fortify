@@ -264,6 +264,10 @@ impl TemplateEngine {
 pub struct BrandingVars {
     /// Service/site name (e.g., "My Hidden Service")
     pub service_name: String,
+    /// Short description of the service
+    pub description: String,
+    /// Welcome message displayed on gate page
+    pub welcome_message: String,
     /// Primary brand color (CSS color value)
     pub primary_color: String,
     /// Secondary brand color
@@ -280,6 +284,8 @@ impl Default for BrandingVars {
     fn default() -> Self {
         Self {
             service_name: "Protected Service".to_string(),
+            description: "A Fortify-protected onion service".to_string(),
+            welcome_message: "Please complete the verification to continue.".to_string(),
             primary_color: "#c9a227".to_string(),   // Gold
             secondary_color: "#a68b5b".to_string(), // Muted gold
             footer_branding: String::new(),
@@ -294,6 +300,8 @@ impl BrandingVars {
     pub fn to_hashmap(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
         map.insert("SERVICE_NAME".to_string(), self.service_name.clone());
+        map.insert("DESCRIPTION".to_string(), self.description.clone());
+        map.insert("WELCOME_MESSAGE".to_string(), self.welcome_message.clone());
         map.insert("PRIMARY_COLOR".to_string(), self.primary_color.clone());
         map.insert("SECONDARY_COLOR".to_string(), self.secondary_color.clone());
         map.insert(
@@ -434,6 +442,8 @@ mod tests {
     fn test_branding_vars_to_hashmap() {
         let branding = BrandingVars {
             service_name: "TestService".to_string(),
+            description: "Test Description".to_string(),
+            welcome_message: "Welcome!".to_string(),
             primary_color: "#ff0000".to_string(),
             secondary_color: "#00ff00".to_string(),
             footer_branding: "Footer".to_string(),
@@ -443,6 +453,8 @@ mod tests {
 
         let map = branding.to_hashmap();
         assert_eq!(map.get("SERVICE_NAME").unwrap(), "TestService");
+        assert_eq!(map.get("DESCRIPTION").unwrap(), "Test Description");
+        assert_eq!(map.get("WELCOME_MESSAGE").unwrap(), "Welcome!");
         assert_eq!(map.get("PRIMARY_COLOR").unwrap(), "#ff0000");
         assert_eq!(map.get("FORTIFY_FOOTER_BRANDING").unwrap(), "Footer");
         assert_eq!(map.get("GATE_PATH").unwrap(), "/test/gate");

@@ -5184,6 +5184,8 @@ async fn sync_branding_config_to_gate(
     // Convert BrandingConfig to BrandingVars
     let branding_vars = BrandingVars {
         service_name: config.service_name.clone(),
+        description: config.description.clone(),
+        welcome_message: config.welcome_message.clone(),
         primary_color: config.primary_color.clone(),
         secondary_color: config.secondary_color.clone(),
         footer_branding: String::new(),
