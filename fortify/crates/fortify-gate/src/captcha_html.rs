@@ -226,6 +226,64 @@ pub fn captcha_css() -> &'static str {
     "#
 }
 
+/// Generate a branded captcha page wrapper with consistent styling
+/// This replaces hardcoded "FORTIFY" with configurable branding from env vars
+fn branded_captcha_wrapper(
+    is_threat: bool,
+    subtitle: &str,
+    instruction: &str,
+    content_html: &str,
+    session_id: &str,
+    captcha_type: &str,
+) -> String {
+    let branding = BrandingVars::from_env();
+    let panel_class = if is_threat { "panel threat" } else { "panel" };
+
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{} — Verification</title>
+    <style>{}</style>
+</head>
+<body>
+    <div class="{}">
+        <h1>{}</h1>
+        <div class="subtitle">{}</div>
+        
+        <div class="instruction">
+            {}
+        </div>
+        
+        <form method="POST" action="/gate/verify">
+            <div class="captcha-container">
+                {}
+            </div>
+            
+            <input type="hidden" name="session_id" value="{}">
+            <input type="hidden" name="captcha_type" value="{}">
+        </form>
+        
+        <div class="footer">
+            <span>ONION-V3</span>
+            <span>NO-JS</span>
+        </div>
+    </div>
+</body>
+</html>"#,
+        branding.service_name,
+        captcha_css(),
+        panel_class,
+        branding.service_name,
+        subtitle,
+        instruction,
+        content_html,
+        session_id,
+        captcha_type
+    )
+}
+
 /// Generate HTML for BMP Text captcha (current/default)
 pub fn render_bmp_text_captcha(session_id: &str, captcha_id: &str, is_threat: bool) -> String {
     render_bmp_text_captcha_with_message(
@@ -284,8 +342,6 @@ pub fn render_emoji_captcha_with_message(
     subtitle: &str,
     instruction: &str,
 ) -> String {
-    let panel_class = if is_threat { "panel threat" } else { "panel" };
-
     let mut options_html = String::new();
     for opt in &challenge.options {
         options_html.push_str(&format!(
@@ -294,45 +350,13 @@ pub fn render_emoji_captcha_with_message(
         ));
     }
 
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
-    <style>{}</style>
-</head>
-<body>
-    <div class="{}">
-        <h1>FORTIFY</h1>
-        <div class="subtitle">{}</div>
-        
-        <div class="instruction">
-            {}
-        </div>
-        
-        <form method="POST" action="/gate/verify">
-            <div class="captcha-container">
-                {}
-            </div>
-            
-            <input type="hidden" name="session_id" value="{}">
-            <input type="hidden" name="captcha_type" value="emoji">
-        </form>
-        
-        <div class="footer">
-            <span>ONION-V3</span>
-            <span>NO-JS</span>
-        </div>
-    </div>
-</body>
-</html>"#,
-        captcha_css(),
-        panel_class,
+    branded_captcha_wrapper(
+        is_threat,
         subtitle,
         instruction,
-        options_html,
-        session_id
+        &options_html,
+        session_id,
+        "emoji",
     )
 }
 
@@ -361,8 +385,6 @@ pub fn render_direction_captcha_with_message(
     subtitle: &str,
     instruction: &str,
 ) -> String {
-    let panel_class = if is_threat { "panel threat" } else { "panel" };
-
     let mut options_html = String::new();
     for opt in &challenge.options {
         options_html.push_str(&format!(
@@ -371,47 +393,15 @@ pub fn render_direction_captcha_with_message(
         ));
     }
 
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
-    <style>{}</style>
-</head>
-<body>
-    <div class="{}">
-        <h1>FORTIFY</h1>
-        <div class="subtitle">{}</div>
-        
-        <div class="instruction">
-            {}
-        </div>
-        
-        <form method="POST" action="/gate/verify">
-            <div class="captcha-container">
-                <div class="arrow-grid">
-                    {}
-                </div>
-            </div>
-            
-            <input type="hidden" name="session_id" value="{}">
-            <input type="hidden" name="captcha_type" value="direction">
-        </form>
-        
-        <div class="footer">
-            <span>ONION-V3</span>
-            <span>NO-JS</span>
-        </div>
-    </div>
-</body>
-</html>"#,
-        captcha_css(),
-        panel_class,
+    // Wrap in arrow-grid div for proper layout
+    let content = format!(r#"<div class="arrow-grid">{}</div>"#, options_html);
+    branded_captcha_wrapper(
+        is_threat,
         subtitle,
         instruction,
-        options_html,
-        session_id
+        &content,
+        session_id,
+        "direction",
     )
 }
 
@@ -437,8 +427,6 @@ pub fn render_sequence_captcha_with_message(
     subtitle: &str,
     instruction: &str,
 ) -> String {
-    let panel_class = if is_threat { "panel threat" } else { "panel" };
-
     // Build sequence display
     let mut sequence_html = String::new();
     for item in &challenge.sequence_display {
@@ -455,50 +443,19 @@ pub fn render_sequence_captcha_with_message(
         ));
     }
 
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
-    <style>{}</style>
-</head>
-<body>
-    <div class="{}">
-        <h1>FORTIFY</h1>
-        <div class="subtitle">{}</div>
-        
-        <div class="instruction">
-            {}
-        </div>
-        
-        <div class="sequence-display">
-            {}
-        </div>
-        
-        <form method="POST" action="/gate/verify">
-            <div class="captcha-container">
-                {}
-            </div>
-            
-            <input type="hidden" name="session_id" value="{}">
-            <input type="hidden" name="captcha_type" value="sequence">
-        </form>
-        
-        <div class="footer">
-            <span>ONION-V3</span>
-            <span>NO-JS</span>
-        </div>
-    </div>
-</body>
-</html>"#,
-        captcha_css(),
-        panel_class,
+    // Combine sequence display with options for the wrapper
+    let content = format!(
+        r#"</div><div class="sequence-display">{}</div><div class="captcha-container">{}"#,
+        sequence_html, options_html
+    );
+
+    branded_captcha_wrapper(
+        is_threat,
         subtitle,
         instruction,
-        sequence_html,
-        options_html,
-        session_id
+        &content,
+        session_id,
+        "sequence",
     )
 }
 
@@ -524,6 +481,7 @@ pub fn render_word_unscramble_captcha_with_message(
     subtitle: &str,
     instruction: &str,
 ) -> String {
+    let branding = BrandingVars::from_env();
     let panel_class = if is_threat { "panel threat" } else { "panel" };
 
     let hint_html = if let Some(ref hint) = challenge.hint {
@@ -537,12 +495,12 @@ pub fn render_word_unscramble_captcha_with_message(
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
+    <title>{} — Verification</title>
     <style>{}</style>
 </head>
 <body>
     <div class="{}">
-        <h1>FORTIFY</h1>
+        <h1>{}</h1>
         <div class="subtitle">{}</div>
         
         <div class="instruction">
@@ -568,8 +526,10 @@ pub fn render_word_unscramble_captcha_with_message(
     </div>
 </body>
 </html>"#,
+        branding.service_name,
         captcha_css(),
         panel_class,
+        branding.service_name,
         subtitle,
         instruction,
         challenge.scrambled,
@@ -603,6 +563,7 @@ pub fn render_image_rotation_captcha_with_message(
     subtitle: &str,
     instruction: &str,
 ) -> String {
+    let branding = BrandingVars::from_env();
     let panel_class = if is_threat { "panel threat" } else { "panel" };
 
     let mut options_html = String::new();
@@ -625,12 +586,12 @@ pub fn render_image_rotation_captcha_with_message(
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
+    <title>{} — Verification</title>
     <style>{}</style>
 </head>
 <body>
     <div class="{}">
-        <h1>FORTIFY</h1>
+        <h1>{}</h1>
         <div class="subtitle">{}</div>
         
         <div class="instruction">
@@ -653,8 +614,10 @@ pub fn render_image_rotation_captcha_with_message(
     </div>
 </body>
 </html>"#,
+        branding.service_name,
         captcha_css(),
         panel_class,
+        branding.service_name,
         subtitle,
         instruction,
         options_html,
@@ -684,6 +647,7 @@ pub fn render_silhouette_captcha_with_message(
     subtitle: &str,
     instruction: &str,
 ) -> String {
+    let branding = BrandingVars::from_env();
     let panel_class = if is_threat { "panel threat" } else { "panel" };
 
     let mut options_html = String::new();
@@ -699,12 +663,12 @@ pub fn render_silhouette_captcha_with_message(
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>FORTIFY /// ACCESS CONTROL</title>
+    <title>{} — Verification</title>
     <style>{}</style>
 </head>
 <body>
     <div class="{}">
-        <h1>FORTIFY</h1>
+        <h1>{}</h1>
         <div class="subtitle">{}</div>
         
         <div class="instruction">
@@ -729,8 +693,10 @@ pub fn render_silhouette_captcha_with_message(
     </div>
 </body>
 </html>"#,
+        branding.service_name,
         captcha_css(),
         panel_class,
+        branding.service_name,
         subtitle,
         instruction,
         challenge.silhouette_symbol,
