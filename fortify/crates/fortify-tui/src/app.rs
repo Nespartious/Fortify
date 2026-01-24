@@ -3402,6 +3402,25 @@ impl App {
             Ok(()) => {
                 self.view = View::Running;
                 self.focus = Focus::Menu;
+
+                // Sync branding and other hot-reload config to running services
+                // Gate starts with defaults; this pushes actual branding from deployment.toml
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                if let Err(e) = self.deployment.reload_config(&self.config).await {
+                    self.log_tx
+                        .send(LogEntry::warn(&format!(
+                            "Failed to sync branding config: {}",
+                            e
+                        )))
+                        .await
+                        .ok();
+                } else {
+                    self.log_tx
+                        .send(LogEntry::debug("Branding config synced to Gate"))
+                        .await
+                        .ok();
+                }
+
                 self.log_tx
                     .send(LogEntry::info("Deployment started successfully"))
                     .await
