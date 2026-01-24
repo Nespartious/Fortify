@@ -5162,7 +5162,50 @@ async fn handle_branding_settings(
         config.primary_color
     );
 
+    // Push branding config to Gate server via HTTP API
+    let gate_address =
+        std::env::var("GATE_ADDRESS").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+    match sync_branding_config_to_gate(&gate_address, &config).await {
+        Ok(_) => tracing::info!("Admin: Branding config synced to Gate"),
+        Err(e) => tracing::warn!("Admin: Failed to sync branding config to Gate: {}", e),
+    }
     redirect(&format!("{}/settings", ADMIN_PATH))
+}
+
+// Sync branding configuration to Gate server
+async fn sync_branding_config_to_gate(
+    gate_address: &str,
+    config: &BrandingConfig,
+) -> Result<(), String> {
+    use fortify_core::templates::BrandingVars;
+    let client = reqwest::Client::new();
+    let url = format!("{}/gate/admin/branding", gate_address);
+
+    // Convert BrandingConfig to BrandingVars
+    let branding_vars = BrandingVars {
+        service_name: config.service_name.clone(),
+        description: config.description.clone(),
+        welcome_message: config.welcome_message.clone(),
+        primary_color: config.primary_color.clone(),
+        secondary_color: config.secondary_color.clone(),
+        footer_branding: String::new(),
+        branding_injection: String::new(),
+        gate_path: "/Fortify/Portcullis".to_string(),
+    };
+
+    let response = client
+        .post(&url)
+        .json(&branding_vars)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Gate returned error: {}", response.status()))
+    }
 }
 
 async fn handle_captcha_settings(
