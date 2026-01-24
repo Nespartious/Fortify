@@ -134,6 +134,46 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Mirror management configuration from Controller
+    if let Ok(val) = std::env::var("MIN_MIRRORS") {
+        if let Ok(count) = val.parse() {
+            config.min_mirrors = count;
+        }
+    }
+    if let Ok(val) = std::env::var("MAX_MIRRORS") {
+        if let Ok(count) = val.parse() {
+            config.max_mirrors = count;
+        }
+    }
+    if let Ok(val) = std::env::var("STANDBY_MIRRORS") {
+        if let Ok(count) = val.parse() {
+            config.standby_mirrors = count;
+        }
+    }
+    if let Ok(val) = std::env::var("MIRROR_ROTATION_INTERVAL") {
+        if let Ok(interval) = val.parse() {
+            config.rotation_interval_seconds = interval;
+        }
+    }
+    if let Ok(val) = std::env::var("PROACTIVE_BURN_ENABLED") {
+        config.retirement.proactive_burn_enabled = val.parse().unwrap_or(true);
+    }
+    if let Ok(val) = std::env::var("BURN_INTERVAL_DAYS_MIN") {
+        if let Ok(days) = val.parse::<u64>() {
+            config.retirement.burn_interval_days_min = days;
+        }
+    }
+    if let Ok(val) = std::env::var("BURN_INTERVAL_DAYS_MAX") {
+        if let Ok(days) = val.parse::<u64>() {
+            config.retirement.burn_interval_days_max = days;
+        }
+    }
+    if let Ok(val) = std::env::var("RETIREMENT_PAGE_HOURS") {
+        if let Ok(hours) = val.parse::<u64>() {
+            config.retirement.retirement_page_hours = hours;
+        }
+    }
+
     // Create orchestrator
     let orchestrator = Arc::new(Orchestrator::new(config.clone()));
 
