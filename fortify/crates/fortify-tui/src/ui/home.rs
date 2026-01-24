@@ -70,17 +70,29 @@ fn draw_header(frame: &mut Frame, area: Rect) {
 }
 
 fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
+    let is_running = app.deployment.is_running();
+
     let items: Vec<Line> = MenuItem::all()
         .iter()
         .enumerate()
         .map(|(i, item)| {
             let is_selected = i == app.menu_index;
+            let is_enabled = item.is_enabled(is_running);
             let prefix = if is_selected { " ▶ " } else { "   " };
 
-            // Use item's color (Destroy is red)
-            let base_color = item.color();
+            // Use item's color (Destroy is red), but gray out if disabled
+            let base_color = if is_enabled {
+                item.color()
+            } else {
+                Color::DarkGray
+            };
 
-            let style = if is_selected {
+            let style = if !is_enabled {
+                // Disabled items are always grayed out
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM)
+            } else if is_selected {
                 Style::default()
                     .fg(if base_color == Color::Red {
                         Color::LightRed
@@ -92,7 +104,11 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(base_color)
             };
 
-            let hotkey_style = if base_color == Color::Red {
+            let hotkey_style = if !is_enabled {
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM)
+            } else if base_color == Color::Red {
                 Style::default().fg(Color::Red).add_modifier(Modifier::DIM)
             } else {
                 Style::default()
@@ -100,10 +116,18 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::DIM)
             };
 
+            // Add disabled hint if selected and disabled
+            let suffix = if is_selected && !is_enabled {
+                format!(" ({})", item.disabled_hint())
+            } else {
+                String::new()
+            };
+
             Line::from(vec![
                 Span::styled(prefix, style),
                 Span::styled(format!("[{}] ", item.hotkey()), hotkey_style),
                 Span::styled(item.label(), style),
+                Span::styled(suffix, Style::default().fg(Color::DarkGray)),
             ])
         })
         .collect();

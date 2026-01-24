@@ -97,10 +97,21 @@ These should flow through Controller → Orchestrator. Currently they DON'T.
 
 ### Priority 0: Immediate Fixes (This Sprint)
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| P0.1 | Disable settings screen during deployment | Low |
-| P0.2 | Fix HTTP proxy `serve_killed_session_page()` to use `from_env()` | Low |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| P0.1 | Disable settings screen during deployment | Low | ✅ DONE |
+| P0.2 | Fix HTTP proxy `serve_killed_session_page()` to use `from_env()` | Low | ✅ DONE |
+
+**P0.1 Implementation Details:**
+- Added `is_enabled(is_running: bool)` method to `MenuItem` in `app.rs`
+- Added `disabled_hint()` method to explain why items are disabled
+- Updated `ui/home.rs` to gray out disabled menu items with hint text
+- Updated `handle_menu_key()` to block Enter and hotkeys for disabled items
+- Removed 'M' hotkey from running view (only 'V' for view-only allowed)
+
+**P0.2 Implementation Details:**
+- Changed `serve_killed_session_page()` to use `BrandingVars::from_env()`
+- Added branding env vars to `proxy_env()` in Controller
 
 ### Priority 1: Wire Missing CAPTCHA Settings
 
@@ -169,7 +180,11 @@ gate.html rendered with branding
 ## Files Modified This Sprint
 
 - `docs/Dev_Progress/15-CONFIG-PROPAGATION-AUDIT-SPRINT.md` (this file)
-- (pending implementation)
+- `docs/planning/CONFIG-PROPAGATION-ARCHITECTURE.md` (architecture documentation)
+- `crates/fortify-tui/src/app.rs` (MenuItem enable/disable logic)
+- `crates/fortify-tui/src/ui/home.rs` (grayed out menu items UI)
+- `crates/fortify-http/src/lib.rs` (branding for killed session page)
+- `crates/fortify-controller/src/lib.rs` (branding env vars to proxy)
 
 ---
 
