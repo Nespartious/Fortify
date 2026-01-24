@@ -130,11 +130,17 @@ These should flow through Controller → Orchestrator. Currently they DON'T.
 
 ### Priority 2: Wire Network Settings
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| P2.1 | Wire `gate_bind` TUI → Controller | Low |
-| P2.2 | Wire `http_bind` TUI → Controller | Low |
-| P2.3 | Wire `vanguards_*` settings TUI → Controller | Low |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| P2.1 | Wire `gate_bind` TUI → Controller | Low | ✅ DONE |
+| P2.2 | Wire `http_bind` TUI → Controller | Low | ✅ DONE |
+| P2.3 | Wire `vanguards_*` settings TUI → Controller | Low | ✅ DONE |
+
+**P2 Implementation Details:**
+- Added `GATE_BIND_ADDR` env var from TUI `config.network.gate_bind`
+- Added `PROXY_BIND_ADDR` env var from TUI `config.network.http_bind`
+- Added `VANGUARDS_ENABLED`, `VANGUARDS_LAYER2_GUARDS`, `VANGUARDS_LAYER3_GUARDS` env vars
+- Controller already had parsing for these - just needed TUI to pass them
 
 ### Priority 3: Resolve Config Mismatch (Design Required)
 
