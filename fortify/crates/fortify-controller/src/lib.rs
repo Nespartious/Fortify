@@ -588,6 +588,15 @@ impl Controller {
         vec![
             format!("GATE_BIND_ADDR={}", self.config.gate_bind_addr),
             format!("SECRET_KEY={}", self.config.secret_key),
+            // CAPTCHA type settings for Gate
+            format!("CAPTCHA_GATE_TYPE={}", self.config.captcha_gate_type),
+            format!("CAPTCHA_THREAT_TYPE={}", self.config.captcha_threat_type),
+            format!(
+                "CAPTCHA_THREAT_ENABLED={}",
+                self.config.captcha_threat_enabled
+            ),
+            format!("CAPTCHA_DIFFICULTY={}", self.config.captcha_difficulty),
+            format!("CAPTCHA_TIMEOUT={}", self.config.captcha_timeout),
             // Branding for gate.html display
             format!(
                 "BRANDING_SERVICE_NAME={}",

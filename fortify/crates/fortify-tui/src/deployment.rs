@@ -1311,6 +1311,24 @@ impl DeploymentManager {
                 "CAPTCHA_ROTATION_DAYS",
                 config.captcha.rotation_interval_days.to_string(),
             )
+            // CAPTCHA type settings - forwarded to Gate
+            .env(
+                "CAPTCHA_GATE_TYPE",
+                format!("{:?}", config.captcha.gate_captcha_type),
+            )
+            .env(
+                "CAPTCHA_THREAT_TYPE",
+                format!("{:?}", config.captcha.threat_captcha_type),
+            )
+            .env(
+                "CAPTCHA_THREAT_ENABLED",
+                config.captcha.threat_captcha_enabled.to_string(),
+            )
+            .env("CAPTCHA_DIFFICULTY", config.captcha.difficulty.to_string())
+            .env(
+                "CAPTCHA_TIMEOUT",
+                config.captcha.timeout_seconds.to_string(),
+            )
             // Branding configuration - passed through Controller to Gate
             .env("BRANDING_SERVICE_NAME", &config.branding.service_name)
             .env("BRANDING_DESCRIPTION", &config.branding.description)

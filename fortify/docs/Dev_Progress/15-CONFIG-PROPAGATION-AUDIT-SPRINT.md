@@ -115,12 +115,18 @@ These should flow through Controller → Orchestrator. Currently they DON'T.
 
 ### Priority 1: Wire Missing CAPTCHA Settings
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| P1.1 | Wire `gate_captcha_type` TUI → Controller → Gate | Medium |
-| P1.2 | Wire `threat_captcha_type` TUI → Controller → Gate | Medium |
-| P1.3 | Wire `timeout_seconds` (CAPTCHA) TUI → Controller → Gate | Low |
-| P1.4 | Wire `difficulty` TUI → Controller → Gate | Low |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| P1.1 | Wire `gate_captcha_type` TUI → Controller → Gate | Medium | ✅ DONE |
+| P1.2 | Wire `threat_captcha_type` TUI → Controller → Gate | Medium | ✅ DONE |
+| P1.3 | Wire `timeout_seconds` (CAPTCHA) TUI → Controller → Gate | Low | ✅ DONE |
+| P1.4 | Wire `difficulty` TUI → Controller → Gate | Low | ✅ DONE |
+
+**P1 Implementation Details:**
+- Added env vars in TUI deployment.rs: `CAPTCHA_GATE_TYPE`, `CAPTCHA_THREAT_TYPE`, `CAPTCHA_THREAT_ENABLED`, `CAPTCHA_DIFFICULTY`, `CAPTCHA_TIMEOUT`
+- Added fields to Controller config.rs and from_env() parsing
+- Added forwarding in Controller lib.rs `gate_env()`
+- Gate main.rs reads env vars, parses CaptchaType, and applies via `update_captcha_config()`
 
 ### Priority 2: Wire Network Settings
 
