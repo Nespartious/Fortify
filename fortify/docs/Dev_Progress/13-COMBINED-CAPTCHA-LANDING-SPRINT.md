@@ -1,9 +1,9 @@
 # Sprint 13: Combined CAPTCHA Landing Page
 
-**Status**: 🔄 PLANNING  
+**Status**: 🔄 PLANNING (Updated 2026-01-25)  
 **Branch**: `feature/combined-captcha-landing`  
 **Started**: 2025-01-22  
-**Depends On**: Sprint 12 (Template Migration)
+**Depends On**: Sprint 12 (Template Migration) ✅ COMPLETE
 
 ## Overview
 
@@ -40,24 +40,58 @@ User → HTTP Proxy → Cached combined page (landing + captcha from pre-gen poo
 
 | Document | Relevance |
 |----------|-----------|
-| [10-HARDENING-SPRINT.md](10-HARDENING-SPRINT.md) | Original proposal (lines 750-780) |
-| [11-STATIC-CAPTCHA-TEMPLATES-SPRINT.md](11-STATIC-CAPTCHA-TEMPLATES-SPRINT.md) | Template engine & pre-gen pool |
-| [CAPTCHA-POOL-MULTI-TYPE-PLANNING.md](../planning/CAPTCHA-POOL-MULTI-TYPE-PLANNING.md) | Multi-type pool planning |
+| [10-HARDENING-SPRINT.md](archive/10-HARDENING-SPRINT.md) | Original proposal |
+| [11-STATIC-CAPTCHA-TEMPLATES-SPRINT.md](archive/11-STATIC-CAPTCHA-TEMPLATES-SPRINT.md) | Template engine & pre-gen pool |
 
-## Current State Analysis
+---
+
+## Current State Analysis (Updated 2026-01-25)
 
 ### Already Implemented ✅
-1. **CaptchaPoolManager** - Pre-generates 200 BmpText CAPTCHAs at startup
-2. **Pool persistence** - Saved to disk (`captcha_pool.json`)
-3. **CPU-aware generation** - Pauses at 70% CPU usage
-4. **Template engine** - All pages use templates
-5. **Pre-rendered HTML** concept in `PrerenderedCaptchaPage` struct
 
-### Not Yet Implemented ❌
-1. **Combined landing+captcha template** - Still 2 separate pages (gate.html, captcha.html)
-2. **HTTP proxy serves CAPTCHA** - Still proxies all traffic to Gate
-3. **Pre-rendered full pages** - Pool stores image data, not complete HTML
-4. **Edge caching config** - No nginx config for CAPTCHA caching
+1. **Template Engine** (`fortify-core/src/templates.rs`)
+   - `TemplateEngine` with `TemplateType::Gate` and `TemplateType::Captcha` variants
+   - Full branding variable support (`{{SERVICE_NAME}}`, `{{PRIMARY_COLOR}}`, etc.)
+   - `PrerenderedCaptchaPage` struct exists - generates complete HTML with embedded CAPTCHA image
+
+2. **Multi-Type CAPTCHA System** (`fortify-gate/src/captcha_types.rs`, `captcha_html.rs`)
+   - 4 CAPTCHA types: BmpText, Emoji, Rotation, Silhouette
+   - CSS-only rendering (Tor Browser Safest compatible)
+   - Dynamic HTML generation per type
+
+3. **CaptchaPoolManager** (`fortify-orchestrator/src/lib.rs`)
+   - Pre-generates CAPTCHAs at startup
+   - `PregenCaptcha` struct: `{ id, answer, image_data, generated_at, difficulty }`
+   - Pool persistence to disk (`captcha_pool.json`)
+   - CPU-aware generation (pauses at 70% CPU)
+
+4. **Branding Propagation** (Sprints 14-16)
+   - TUI → Controller → Gate branding sync
+   - Runtime hot reload of branding variables
+   - All templates use branding CSS variables
+
+5. **HTML Templates** (`assets/html/`)
+   - `gate.html` - Landing page with "Request Entry" button
+   - `captcha.html` - CAPTCHA form page (uses `{{CAPTCHA_IMAGE_URL}}`)
+   - Both have full branding integration
+
+### NOT Yet Implemented ❌
+
+1. **Combined `gate-challenge.html` Template**
+   - Currently: 2 pages - `gate.html` → `captcha.html`
+   - Need: 1 page with embedded CAPTCHA
+
+2. **HTTP Proxy Direct CAPTCHA Serving**
+   - Currently: HTTP proxy → Gate for ALL requests
+   - Need: HTTP proxy serves pre-rendered CAPTCHA pages directly
+
+3. **Pre-rendered Full HTML Pages in Pool**
+   - Currently: Pool stores raw image bytes (`Vec<u8>`)
+   - Need: Pool stores complete HTML pages (use `PrerenderedCaptchaPage`)
+
+4. **Session Pre-Registration**
+   - Currently: Session created when user hits Gate
+   - Need: Session ID embedded in pre-rendered page, registered with Gate
 
 ---
 
@@ -128,32 +162,40 @@ Create a single HTML template that combines the gate landing page with an embedd
 ### Objective
 Extend `CaptchaPoolManager` to store complete HTML pages, not just image data.
 
-### Current `PregenCaptcha` Struct
+### Current `PregenCaptcha` Struct (in fortify-orchestrator)
 ```rust
 pub struct PregenCaptcha {
-    pub text: String,
-    pub image_data: Vec<u8>,
-    pub created_at: u64,
+    pub id: String,           // Unique ID
+    pub answer: String,       // Expected answer
+    pub image_data: Vec<u8>,  // Raw BMP bytes
+    pub generated_at: u64,    // Timestamp
+    pub difficulty: u8,       // Difficulty level
 }
 ```
 
-### Proposed `PregenCaptchaPage` Struct
+### Existing `PrerenderedCaptchaPage` Struct (in fortify-core/templates.rs)
 ```rust
-pub struct PregenCaptchaPage {
-    pub session_id: String,          // Pre-assigned session ID
-    pub answer: String,              // Expected answer
-    pub html_page: String,           // Complete rendered HTML
-    pub captcha_type: CaptchaType,   // Type of captcha
-    pub created_at: u64,             // For rotation
+// NOTE: This already exists but is NOT used by the pool!
+pub struct PrerenderedCaptchaPage {
+    pub captcha_id: String,    // For answer verification
+    pub html: String,          // Complete HTML page
+    pub generated_at: u64,     // Staleness check
 }
 ```
+
+### Required Changes
+The pool currently stores `PregenCaptcha` (raw image bytes). We need to either:
+1. **Option A**: Change pool to store `PrerenderedCaptchaPage` directly
+2. **Option B**: Keep `PregenCaptcha` and render HTML on-demand from HTTP proxy
+
+**Recommendation**: Option A - store pre-rendered HTML pages in pool.
 
 ### Files to Modify
 | File | Change |
 |------|--------|
-| `fortify-gate/src/lib.rs` | Add `PregenCaptchaPage` struct |
-| `fortify-gate/src/lib.rs` | Update pool to generate full pages |
-| `fortify-core/src/templates.rs` | Add helper for page pre-rendering |
+| `fortify-orchestrator/src/lib.rs` | Modify `CaptchaPoolManager` to use `PrerenderedCaptchaPage` |
+| `fortify-orchestrator/src/lib.rs` | Add branding + template engine to pool generation |
+| `fortify-core/src/templates.rs` | Add `TemplateType::GateChallenge` for combined template |
 
 ---
 
@@ -162,54 +204,53 @@ pub struct PregenCaptchaPage {
 **Status**: NOT STARTED
 
 ### Objective
-Modify `fortify-http` to serve the combined CAPTCHA page directly from the pre-gen pool, bypassing Gate for page loads.
+Modify `fortify-http` to serve the combined CAPTCHA page directly, bypassing Gate for initial page loads.
 
-### Current Flow
+### Current Flow (from lib.rs)
 ```rust
-// fortify-http/src/lib.rs - THREAT PATH
+// HTTP Proxy sends ALL unknown/threat users to Gate
 if trust_tier.requires_gate() {
-    // Proxy ALL requests to Gate
-    proxy_to_gate(req, &gate_address, &gate_path).await
+    proxy_to_gate(req, &gate_address, "/Fortify").await
 }
 ```
 
 ### Proposed Flow
 ```rust
-// fortify-http/src/lib.rs - THREAT PATH
-if trust_tier.requires_gate() {
-    // For landing page requests, serve pre-gen CAPTCHA directly
-    if gate_path == "/Fortify" || gate_path == "/Fortify/Portcullis" {
-        // Fetch pre-rendered page from pool
-        serve_pregen_captcha_page(&pool).await
-    } else {
-        // Only proxy /verify and other dynamic routes to Gate
-        proxy_to_gate(req, &gate_address, &gate_path).await
+// HTTP Proxy serves pre-rendered CAPTCHA page directly
+if trust_tier.requires_gate() && !is_demoted_user {
+    if path == "/Fortify" || path == "/Fortify/Portcullis" {
+        // Fetch pre-rendered combined page from Controller API
+        serve_pregen_captcha_page().await
+    } else if path.starts_with("/gate/verify") {
+        // Only verification needs Gate
+        proxy_to_gate(req, &gate_address, path).await
     }
 }
 ```
 
-### Implementation Considerations
-1. **Pool access from HTTP proxy** - Need to share pool or API endpoint
-2. **Session registration** - Pre-assigned session IDs must be registered with Gate
-3. **Fallback** - If pool empty, fall back to Gate proxy
-4. **Rate limiting** - Still apply rate limiting before serving pages
+### Communication Options
 
-### Option A: Shared Pool via Controller API
+**Option A: Controller API (Recommended)**
 ```
-HTTP Proxy → GET /api/captcha-page → Controller → Pool → Pre-rendered page
+HTTP Proxy → GET /api/captcha-page → Controller → Pool → Pre-rendered HTML
 ```
+- Pros: Simple, centralized pool management
+- Cons: Extra network hop
 
-### Option B: Local Pool in HTTP Proxy
-- HTTP Proxy maintains own copy of pre-gen pool
-- Synced periodically from Controller
-- Zero network latency for page serving
+**Option B: Shared File System**
+```
+Orchestrator writes: /dev/shm/fortify/captcha-pages/
+HTTP Proxy reads: /dev/shm/fortify/captcha-pages/
+```
+- Pros: Zero network latency
+- Cons: File system coordination
 
-### Option C: Redis/Shared Memory
-- Pre-gen pages stored in shared memory (e.g., /dev/shm)
-- All services read from same location
-- Highest performance, most complex
+**Option C: HTTP Proxy Local Pool**
+- HTTP Proxy syncs pool from Controller on startup
+- Generates its own pre-rendered pages
+- Cons: Duplicated logic, memory usage
 
-**Recommendation**: Option A (Controller API) for simplicity, migrate to Option C for production.
+**Recommendation**: Start with Option A, optimize to B if needed.
 
 ---
 
@@ -218,29 +259,26 @@ HTTP Proxy → GET /api/captcha-page → Controller → Pool → Pre-rendered pa
 **Status**: NOT STARTED
 
 ### Objective
-When a pre-rendered page is taken from the pool, register its session ID with Gate so verification will work.
+Pre-rendered pages have session IDs embedded. Gate must know about these sessions before verification.
 
-### Current Issue
-Pre-rendered pages have session IDs embedded, but Gate doesn't know about them until verification attempt.
+### Solution: Lazy Registration
+When user submits `/gate/verify`:
+1. Gate checks if session exists
+2. If not, create new session from CAPTCHA ID
+3. Verify answer against pool's expected answer
 
-### Solution
-```rust
-// When page is served from pool:
-1. Take page from pre-gen pool
-2. Register session with Gate via API call
-3. Serve page to user
-4. User submits → Gate already has session → Verification works
-```
+### Alternative: Eager Registration
+When page is served:
+1. HTTP Proxy tells Controller "session X is now active"
+2. Controller registers session with Gate
+3. Extra network call, but cleaner
 
 ### API Endpoint (New)
 ```
-POST /gate/register-session
+POST /api/register-captcha-session
 {
-    "session_id": "uuid",
-    "captcha_answer": "ABC123",
-    "captcha_type": "bmptext",
-    "is_threat": false,
-    "captchas_remaining": 1
+    "captcha_id": "uuid",
+    "session_id": "uuid"  // Same as captcha_id or derived
 }
 ```
 
@@ -248,18 +286,16 @@ POST /gate/register-session
 
 ## Phase 5: Demoted User Flow
 
-**Status**: NOT STARTED
+**Status**: ALREADY HANDLED ✅
 
-### Objective
-Ensure demoted users still see the "Hold Position" page and solve 2 different CAPTCHAs.
-
-### Special Handling
-- Demoted users should NOT get the combined page
-- They get: demoted.html → (click Resume) → captcha page 1 → captcha page 2
-- This is already implemented, just need to preserve it
+### Current Implementation
+Demoted users are detected via `fortify_demoted` cookie and `X-Fortify-Demoted` header:
+- They ALWAYS get redirected to `/Fortify` landing (not combined page)
+- They see the "Hold Position" demoted.html page
+- They must solve 2 CAPTCHAs (already implemented)
 
 ### No Changes Needed
-The `X-Fortify-Demoted` header logic remains unchanged.
+The demoted user flow should remain separate from the combined page optimization.
 
 ---
 
@@ -382,24 +418,36 @@ location /Fortify {
 
 ## Decision: When to Start
 
-**Recommendation**: Start after current demoted/captcha verification bugs are fully resolved and tested.
+**Recommendation**: Ready to start. Prerequisites are complete.
 
 **Rationale**:
-1. Current sprint (12) has residual bugs in demoted flow
-2. Verification logic must be solid before adding complexity
-3. Combined page is an optimization, not a bug fix
-4. Better to have working 2-page flow than broken 1-page flow
+1. Branding propagation working (Sprints 14-17 complete)
+2. Multi-type CAPTCHA system working (Emoji, Rotation, Silhouette, BmpText)
+3. Template engine with full branding support
+4. Backend redirect fix merged (Sprint 18)
 
-**Trigger to Start Sprint 13**:
+**Prerequisites ✅**:
 - [x] Demoted user sees Hold Position page
 - [x] 2 different captcha types work for threat sessions
-- [ ] Captcha verification succeeds (all types) ← Testing
-- [ ] End-to-end flow tested and working ← Testing
-- [ ] Sprint 12 doc archived
+- [x] Captcha verification succeeds (all types)
+- [x] End-to-end flow tested and working
+- [x] Branding propagation complete (Sprints 14-17)
+- [x] Backend redirect passthrough working (Sprint 18)
 
 ---
 
 ## Progress Log
+
+### 2026-01-25
+- **Updated document** with accurate current state
+- Verified existing implementations:
+  - `PrerenderedCaptchaPage` exists in templates.rs (not yet used by pool)
+  - `CaptchaPoolManager` exists with `PregenCaptcha` (raw bytes, not HTML)
+  - Multi-type CAPTCHA HTML generation in captcha_html.rs
+- Updated Phase 2 to reflect existing vs needed structs
+- Updated Phase 3 with clearer HTTP proxy integration options
+- Marked Phase 5 (Demoted Flow) as already handled
+- Marked all prerequisites as complete
 
 ### 2025-01-22
 - Created Sprint 13 planning document
@@ -408,5 +456,5 @@ location /Fortify {
 - Added Phase 1B: Branding System Requirements
 - Documented all branding variables and defaults
 - Added branding success criteria
-- Estimated ~19 hours total effort
+- Estimated ~22 hours total effort
 - Recommendation: Start after current bugs resolved

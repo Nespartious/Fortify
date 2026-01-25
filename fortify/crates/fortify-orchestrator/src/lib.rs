@@ -1250,6 +1250,42 @@ pub struct PregenCaptcha {
     pub difficulty: u8,
 }
 
+impl PregenCaptcha {
+    /// Convert to a base64 data URI for embedding in HTML
+    pub fn to_data_uri(&self) -> String {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&self.image_data);
+        format!("data:image/bmp;base64,{}", b64)
+    }
+
+    /// Convert to a pre-rendered CAPTCHA page using the GateChallenge template
+    ///
+    /// This creates a complete HTML page ready for instant serving.
+    ///
+    /// # Arguments
+    /// * `session_id` - Pre-assigned session ID for this challenge
+    /// * `engine` - Template engine for rendering
+    /// * `branding` - Branding variables for the template
+    pub fn to_prerendered_page(
+        &self,
+        session_id: String,
+        engine: &fortify_core::TemplateEngine,
+        branding: &fortify_core::BrandingVars,
+    ) -> fortify_core::PrerenderedCaptchaPage {
+        let data_uri = self.to_data_uri();
+        let instruction = "Type the characters shown in the image";
+
+        fortify_core::PrerenderedCaptchaPage::new(
+            self.id.clone(),
+            session_id,
+            &data_uri,
+            instruction,
+            engine,
+            branding,
+        )
+    }
+}
+
 /// Manager for pre-generated CAPTCHA pool
 pub struct CaptchaPoolManager {
     config: CaptchaPregenConfig,
@@ -1394,6 +1430,30 @@ impl CaptchaPoolManager {
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Some(pool.remove(0))
         }
+    }
+
+    /// Take a pre-generated CAPTCHA and convert it to a pre-rendered HTML page
+    ///
+    /// This combines taking a CAPTCHA with immediate HTML rendering for the
+    /// combined gate+challenge single-page flow.
+    ///
+    /// # Arguments
+    /// * `session_id` - Pre-assigned session ID for this challenge
+    /// * `engine` - Template engine for rendering
+    /// * `branding` - Branding variables for the template
+    ///
+    /// # Returns
+    /// A tuple of (PrerenderedCaptchaPage, answer) if pool has CAPTCHAs available
+    pub fn take_prerendered_page(
+        &self,
+        session_id: String,
+        engine: &fortify_core::TemplateEngine,
+        branding: &fortify_core::BrandingVars,
+    ) -> Option<(fortify_core::PrerenderedCaptchaPage, String)> {
+        let captcha = self.take_captcha()?;
+        let answer = captcha.answer.clone();
+        let page = captcha.to_prerendered_page(session_id, engine, branding);
+        Some((page, answer))
     }
 
     /// Add a pre-generated CAPTCHA to the pool

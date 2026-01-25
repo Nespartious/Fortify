@@ -22,6 +22,8 @@ pub enum TemplateType {
     Gate,
     /// CAPTCHA challenge page (static template, image injected separately)
     Captcha,
+    /// Combined gate + CAPTCHA page for pre-rendered pool (single-page flow)
+    GateChallenge,
     /// Generic error page
     Error,
     /// Burned/banned visitor page
@@ -52,6 +54,7 @@ impl TemplateType {
         &[
             TemplateType::Gate,
             TemplateType::Captcha,
+            TemplateType::GateChallenge,
             TemplateType::Error,
             TemplateType::Burned,
             TemplateType::Demoted,
@@ -71,6 +74,7 @@ impl TemplateType {
         match self {
             TemplateType::Gate => "gate.html",
             TemplateType::Captcha => "captcha.html",
+            TemplateType::GateChallenge => "gate-challenge.html",
             TemplateType::Error => "error.html",
             TemplateType::Burned => "burned.html",
             TemplateType::Demoted => "demoted.html",
@@ -95,6 +99,9 @@ pub static TEMPLATE_GATE: &str = include_str!("../../../assets/html/gate.html");
 
 /// CAPTCHA challenge page template
 pub static TEMPLATE_CAPTCHA: &str = include_str!("../../../assets/html/captcha.html");
+
+/// Combined Gate + CAPTCHA page template (single-page flow)
+pub static TEMPLATE_GATE_CHALLENGE: &str = include_str!("../../../assets/html/gate-challenge.html");
 
 /// Error page template
 pub static TEMPLATE_ERROR: &str = include_str!("../../../assets/html/error.html");
@@ -178,6 +185,7 @@ impl TemplateEngine {
         match template_type {
             TemplateType::Gate => TEMPLATE_GATE,
             TemplateType::Captcha => TEMPLATE_CAPTCHA,
+            TemplateType::GateChallenge => TEMPLATE_GATE_CHALLENGE,
             TemplateType::Error => TEMPLATE_ERROR,
             TemplateType::Burned => TEMPLATE_BURNED,
             TemplateType::Demoted => TEMPLATE_DEMOTED,
@@ -347,10 +355,14 @@ impl BrandingVars {
 /// This struct holds a complete HTML page with the CAPTCHA image already
 /// embedded as a data URI. Used by CaptchaPoolManager to pre-generate
 /// pages during low-traffic periods.
+///
+/// Uses the GateChallenge template for single-page verification flow.
 #[derive(Debug, Clone)]
 pub struct PrerenderedCaptchaPage {
     /// The CAPTCHA challenge ID (for answer verification)
     pub captcha_id: String,
+    /// Pre-assigned session ID for this page
+    pub session_id: String,
     /// Complete HTML page ready to serve
     pub html: String,
     /// When this page was generated (for staleness checks)
@@ -358,14 +370,47 @@ pub struct PrerenderedCaptchaPage {
 }
 
 impl PrerenderedCaptchaPage {
-    /// Create a new pre-rendered CAPTCHA page
+    /// Create a new pre-rendered CAPTCHA page using the GateChallenge template
     ///
     /// # Arguments
     /// * `captcha_id` - Unique identifier for answer verification
+    /// * `session_id` - Pre-assigned session ID for this challenge
     /// * `image_data_uri` - Base64-encoded image as data URI (data:image/png;base64,...)
+    /// * `instruction` - Human-readable CAPTCHA instruction (e.g., "Type the characters shown")
     /// * `engine` - Template engine for rendering
     /// * `branding` - Branding variables
     pub fn new(
+        captcha_id: String,
+        session_id: String,
+        image_data_uri: &str,
+        instruction: &str,
+        engine: &TemplateEngine,
+        branding: &BrandingVars,
+    ) -> Self {
+        let mut vars = branding.to_hashmap();
+        vars.insert("CAPTCHA_ID".to_string(), captcha_id.clone());
+        vars.insert("SESSION_ID".to_string(), session_id.clone());
+        vars.insert("CAPTCHA_IMAGE".to_string(), image_data_uri.to_string());
+        vars.insert("CAPTCHA_INSTRUCTION".to_string(), instruction.to_string());
+
+        let html = engine.render(TemplateType::GateChallenge, &vars);
+
+        Self {
+            captcha_id,
+            session_id,
+            html,
+            generated_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        }
+    }
+
+    /// Create a pre-rendered page using the legacy Captcha template
+    ///
+    /// This is provided for backward compatibility with existing CAPTCHA flows.
+    #[allow(dead_code)]
+    pub fn new_legacy(
         captcha_id: String,
         image_data_uri: &str,
         engine: &TemplateEngine,
@@ -379,6 +424,7 @@ impl PrerenderedCaptchaPage {
 
         Self {
             captcha_id,
+            session_id: String::new(),
             html,
             generated_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -484,9 +530,10 @@ mod tests {
     #[test]
     fn test_template_type_all() {
         let all = TemplateType::all();
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 14); // Includes GateChallenge
         assert!(all.contains(&TemplateType::Gate));
         assert!(all.contains(&TemplateType::Captcha));
+        assert!(all.contains(&TemplateType::GateChallenge));
         assert!(all.contains(&TemplateType::VerificationFailed));
         assert!(all.contains(&TemplateType::SessionExpired));
         assert!(all.contains(&TemplateType::Verified));
@@ -496,6 +543,10 @@ mod tests {
     fn test_template_type_filename() {
         assert_eq!(TemplateType::Gate.filename(), "gate.html");
         assert_eq!(TemplateType::Captcha.filename(), "captcha.html");
+        assert_eq!(
+            TemplateType::GateChallenge.filename(),
+            "gate-challenge.html"
+        );
         assert_eq!(TemplateType::Busy.filename(), "busy.html");
     }
 
@@ -516,13 +567,37 @@ mod tests {
 
         let page = PrerenderedCaptchaPage::new(
             "test-id-123".to_string(),
+            "test-session-456".to_string(),
             "data:image/png;base64,AAAA",
+            "Type the characters shown",
             &engine,
             &branding,
         );
 
         assert_eq!(page.captcha_id, "test-id-123");
+        assert_eq!(page.session_id, "test-session-456");
         assert!(!page.html.is_empty());
+        assert!(page.html.contains("test-id-123")); // CAPTCHA ID in hidden field
+        assert!(page.html.contains("test-session-456")); // Session ID in hidden field
+        assert!(page.html.contains("Type the characters shown")); // Instruction
         assert!(!page.is_stale(3600)); // Not stale within 1 hour
+    }
+
+    #[test]
+    fn test_prerendered_captcha_page_legacy() {
+        let engine = TemplateEngine::new();
+        let branding = BrandingVars::default();
+
+        let page = PrerenderedCaptchaPage::new_legacy(
+            "legacy-id-789".to_string(),
+            "data:image/png;base64,BBBB",
+            &engine,
+            &branding,
+        );
+
+        assert_eq!(page.captcha_id, "legacy-id-789");
+        assert!(page.session_id.is_empty()); // Legacy has no pre-assigned session
+        assert!(!page.html.is_empty());
+        assert!(!page.is_stale(3600));
     }
 }
