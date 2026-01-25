@@ -190,7 +190,7 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
     let captcha_type = config.gate_captcha_type;
 
     // Create verification session and generate CAPTCHA
-    let _state = match gate.create_verification_with_type(
+    let state = match gate.create_verification_with_type(
         session_id.clone(),
         captcha_type,
         crate::CaptchaDifficulty::Medium,
@@ -211,18 +211,51 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
         }
     };
 
-    // Build the CAPTCHA image URL
-    let captcha_image_url = format!("/gate/captcha/{}", session_id);
+    // Generate the CAPTCHA content HTML dynamically based on type
+    let (captcha_content, instruction, input_type) = if let Some(ref captcha_data) =
+        state.captcha_data
+    {
+        crate::captcha_html::render_captcha_content_for_landing(
+            &session_id,
+            &session_id,
+            captcha_data,
+        )
+    } else {
+        // Fallback for legacy BmpText (no captcha_data, uses image URL)
+        let content = format!(
+            r#"<img src="/gate/captcha/{}" alt="Security Challenge" style="max-width: 100%; height: auto;">"#,
+            session_id
+        );
+        (content, captcha_type.description().to_string(), "text")
+    };
 
-    // Get instruction text based on CAPTCHA type
-    let instruction = captcha_type.description();
+    // Generate input HTML based on whether this is text-based or selection-based
+    let input_html = if input_type == "text" {
+        r#"<div class="input-group">
+                    <label for="captcha">Enter Code</label>
+                    <input type="text" id="captcha" name="captcha" placeholder="• • • • • •" required autofocus autocomplete="off">
+                </div>"#.to_string()
+    } else {
+        // Selection-based CAPTCHAs don't need a text input - buttons submit directly
+        String::new()
+    };
+
+    // Generate submit button HTML (only for text-based CAPTCHAs)
+    let submit_html = if input_type == "text" {
+        r#"<button type="submit">Verify &amp; Enter</button>"#.to_string()
+    } else {
+        // Selection-based CAPTCHAs submit via the option buttons
+        String::new()
+    };
 
     // Render the combined gate-challenge template
     let engine = TemplateEngine::new();
     let branding = gate.branding().clone();
     let mut extra_vars = std::collections::HashMap::new();
-    extra_vars.insert("CAPTCHA_IMAGE".to_string(), captcha_image_url);
-    extra_vars.insert("CAPTCHA_INSTRUCTION".to_string(), instruction.to_string());
+    extra_vars.insert("CAPTCHA_CONTENT".to_string(), captcha_content);
+    extra_vars.insert("CAPTCHA_INSTRUCTION".to_string(), instruction);
+    extra_vars.insert("CAPTCHA_INPUT".to_string(), input_html);
+    extra_vars.insert("CAPTCHA_SUBMIT".to_string(), submit_html);
     extra_vars.insert("SESSION_ID".to_string(), session_id.clone());
     extra_vars.insert("CAPTCHA_ID".to_string(), session_id.clone());
 
