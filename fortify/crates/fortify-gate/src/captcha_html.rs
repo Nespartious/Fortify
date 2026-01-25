@@ -987,3 +987,129 @@ pub fn render_captcha_page_with_timer_and_reason(
 
     with_timer
 }
+
+// ============================================================================
+// LANDING PAGE CAPTCHA CONTENT GENERATION
+// ============================================================================
+
+/// Generate just the CAPTCHA content HTML for injection into gate-challenge.html template.
+/// Returns (content_html, instruction_text, input_type)
+/// - content_html: The HTML to display in the captcha-display div
+/// - instruction_text: Human-readable instruction for this CAPTCHA type
+/// - input_type: "text" for text input, "selection" for button clicks
+pub fn render_captcha_content_for_landing(
+    _session_id: &str,
+    captcha_id: &str,
+    data: &CaptchaData,
+) -> (String, String, &'static str) {
+    match data {
+        CaptchaData::BmpText { .. } => {
+            // BmpText: Show image, user types text
+            let content = format!(
+                r#"<img src="/gate/captcha/{}" alt="Security Challenge" style="max-width: 100%; height: auto;">"#,
+                captcha_id
+            );
+            let instruction = "Type the characters shown in the image".to_string();
+            (content, instruction, "text")
+        }
+        CaptchaData::Emoji(challenge) => {
+            // Emoji: Show clickable emoji buttons
+            let mut content = String::new();
+            for opt in &challenge.options {
+                content.push_str(&format!(
+                    r#"<button type="submit" name="selection" value="{}" class="option-btn" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 18px; font-size: 2rem; cursor: pointer; min-width: 70px; text-align: center; border-radius: 3px; transition: all 0.2s;">{}</button>"#,
+                    opt.index, opt.emoji
+                ));
+            }
+            let instruction = format!(
+                "Click the <strong>{}</strong>",
+                challenge.target_description
+            );
+            (content, instruction, "selection")
+        }
+        CaptchaData::Direction(challenge) => {
+            // Direction: Show arrow buttons in a grid
+            let mut buttons = String::new();
+            for opt in &challenge.options {
+                buttons.push_str(&format!(
+                    r#"<button type="submit" name="selection" value="{}" class="option-btn" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 18px; font-size: 3rem; cursor: pointer; min-width: 70px; text-align: center; border-radius: 3px;">{}</button>"#,
+                    opt.index, opt.direction.arrow_char()
+                ));
+            }
+            let content = format!(
+                r#"<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; max-width: 280px; margin: 0 auto;">{}</div>"#,
+                buttons
+            );
+            let instruction = format!(
+                "Click the arrow pointing <strong>{}</strong>",
+                challenge.target_direction.name()
+            );
+            (content, instruction, "selection")
+        }
+        CaptchaData::Sequence(challenge) => {
+            // Sequence: Show pattern and options
+            let mut options = String::new();
+            for opt in &challenge.options {
+                options.push_str(&format!(
+                    r#"<button type="submit" name="selection" value="{}" class="option-btn" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 12px 20px; font-size: 1.5rem; cursor: pointer; border-radius: 3px;">{}</button>"#,
+                    opt.index, opt.display
+                ));
+            }
+            let sequence_display = challenge
+                .sequence_display
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(" → ");
+            let content = format!(
+                r#"<div style="text-align: center; margin-bottom: 16px; font-size: 1.3rem; color: var(--brand-primary);">{} → ?</div><div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;">{}</div>"#,
+                sequence_display, options
+            );
+            (content, challenge.question_text.clone(), "selection")
+        }
+        CaptchaData::WordUnscramble(challenge) => {
+            // WordUnscramble: Show scrambled word, user types answer
+            let content = format!(
+                r#"<div style="font-size: 2rem; letter-spacing: 6px; text-align: center; color: var(--brand-primary); padding: 14px; background: var(--bg-elevated); border: 1px solid var(--brand-secondary); border-radius: 4px;">{}</div>"#,
+                challenge.scrambled
+            );
+            let instruction = format!(
+                "Unscramble the letters to form a {} letter word",
+                challenge.original_word.len()
+            );
+            (content, instruction, "text")
+        }
+        CaptchaData::ImageRotation(challenge) => {
+            // ImageRotation: Show rotated images as buttons
+            let mut options = String::new();
+            for (i, opt) in challenge.options.iter().enumerate() {
+                options.push_str(&format!(
+                    r#"<button type="submit" name="selection" value="{}" class="option-btn" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 12px; cursor: pointer; border-radius: 3px;"><span style="display: inline-block; font-size: 3rem; transform: rotate({}deg);">{}</span></button>"#,
+                    i, opt.rotation.degrees(), challenge.shape_char
+                ));
+            }
+            let content = format!(
+                r#"<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;">{}</div>"#,
+                options
+            );
+            let instruction = "Select the image that is right-side up".to_string();
+            (content, instruction, "selection")
+        }
+        CaptchaData::Silhouette(challenge) => {
+            // Silhouette: Show silhouette and category options
+            let mut options = String::new();
+            for opt in &challenge.options {
+                options.push_str(&format!(
+                    r#"<button type="submit" name="selection" value="{}" class="option-btn text" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 10px 16px; font-size: 0.95rem; cursor: pointer; border-radius: 3px;">{}</button>"#,
+                    opt.index, opt.category_name
+                ));
+            }
+            let content = format!(
+                r#"<div style="font-size: 5rem; text-align: center; margin-bottom: 16px;">{}</div><div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">{}</div>"#,
+                challenge.silhouette_symbol, options
+            );
+            let instruction = "Identify what the silhouette represents".to_string();
+            (content, instruction, "selection")
+        }
+    }
+}

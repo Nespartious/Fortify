@@ -294,26 +294,23 @@
             
             <!-- CAPTCHA Form -->
             <form method="POST" action="/gate/verify">
-                <!-- CAPTCHA Image Display -->
+                <!-- CAPTCHA Content (dynamically injected per type) -->
                 <div class="captcha-display">
-                    <img src="{{CAPTCHA_IMAGE}}" alt="Security Challenge">
+                    {{CAPTCHA_CONTENT}}
                 </div>
                 
                 <!-- CAPTCHA Instructions -->
                 <p class="captcha-instruction">{{CAPTCHA_INSTRUCTION}}</p>
                 
-                <!-- Answer Input -->
-                <div class="input-group">
-                    <label for="captcha">Enter Code</label>
-                    <input type="text" id="captcha" name="captcha" placeholder="• • • • • •" required autofocus autocomplete="off">
-                </div>
+                <!-- Text Input (only shown for text-based CAPTCHAs) -->
+                {{CAPTCHA_INPUT}}
                 
                 <!-- Hidden Fields -->
                 <input type="hidden" name="session_id" value="{{SESSION_ID}}">
                 <input type="hidden" name="captcha_id" value="{{CAPTCHA_ID}}">
                 
-                <!-- Submit -->
-                <button type="submit">Verify &amp; Enter</button>
+                <!-- Submit (only for text-based CAPTCHAs, selection types submit via buttons) -->
+                {{CAPTCHA_SUBMIT}}
             </form>
             
             <footer class="footer-note">
