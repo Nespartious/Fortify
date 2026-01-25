@@ -949,17 +949,34 @@ impl ImageRotationChallenge {
         // The correct answer is always the upright one (Deg0)
         // We show rotated versions and user must pick the upright one
         let angles = RotationAngle::all();
-        let correct_index = 0; // Deg0 is always correct
 
-        let options: Vec<RotationOption> = angles
+        // Build options with original indices
+        let mut options: Vec<RotationOption> = angles
             .iter()
             .enumerate()
             .map(|(i, &angle)| RotationOption {
                 rotation: angle,
-                index: i,
+                index: i, // Will be updated after shuffle
                 display: format!("{} ({}°)", shape_char, angle.degrees()),
             })
             .collect();
+
+        // Shuffle the options so correct answer isn't always first
+        for i in (1..options.len()).rev() {
+            let j = rng.random_range(0..=i);
+            options.swap(i, j);
+        }
+
+        // Find where Deg0 ended up after shuffle (that's the correct answer)
+        let correct_index = options
+            .iter()
+            .position(|opt| opt.rotation == RotationAngle::Deg0)
+            .unwrap_or(0);
+
+        // Update indices to match new positions
+        for (i, opt) in options.iter_mut().enumerate() {
+            opt.index = i;
+        }
 
         Self {
             shape_name: shape_name.to_string(),

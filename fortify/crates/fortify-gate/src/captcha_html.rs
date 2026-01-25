@@ -746,8 +746,11 @@ pub fn render_captcha_page_with_reason(
             render_bmp_text_captcha_with_message(session_id, captcha_id, is_threat, title, message)
         }
         CaptchaData::Emoji(challenge) => {
-            // For emoji CAPTCHA, we need the specific instruction, not the generic message
-            let instruction = format!("Select all <strong>{}</strong>", challenge.target_category);
+            // For emoji CAPTCHA, use the description (e.g., "smiling or happy face")
+            let instruction = format!(
+                "Click the <strong>{}</strong>",
+                challenge.target_description
+            );
             render_emoji_captcha_with_message(session_id, challenge, is_threat, title, &instruction)
         }
         CaptchaData::Direction(challenge) => {
@@ -770,12 +773,26 @@ pub fn render_captcha_page_with_reason(
         CaptchaData::WordUnscramble(challenge) => render_word_unscramble_captcha_with_message(
             session_id, challenge, is_threat, title, message,
         ),
-        CaptchaData::ImageRotation(challenge) => render_image_rotation_captcha_with_message(
-            session_id, challenge, is_threat, title, message,
-        ),
-        CaptchaData::Silhouette(challenge) => {
-            render_silhouette_captcha_with_message(session_id, challenge, is_threat, title, message)
+        CaptchaData::ImageRotation(challenge) => {
+            let instruction = format!(
+                "Click the <strong>{}</strong> that is upright",
+                challenge.shape_name
+            );
+            render_image_rotation_captcha_with_message(
+                session_id,
+                challenge,
+                is_threat,
+                title,
+                &instruction,
+            )
         }
+        CaptchaData::Silhouette(challenge) => render_silhouette_captcha_with_message(
+            session_id,
+            challenge,
+            is_threat,
+            title,
+            "What does this silhouette show?",
+        ),
     }
 }
 
