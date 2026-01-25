@@ -1,30 +1,50 @@
 # Sprint 13: Combined CAPTCHA Landing Page
 
-**Status**: 🔄 PLANNING (Updated 2026-01-25)  
-**Branch**: `feature/combined-captcha-landing`  
+**Status**: ✅ COMPLETED (Phases 1-3)  
+**Branch**: `feature/sprint-13-combined-captcha-landing`  
+**PR**: #57  
 **Started**: 2025-01-22  
+**Completed**: 2026-01-25  
 **Depends On**: Sprint 12 (Template Migration) ✅ COMPLETE
 
 ## Overview
 
 This sprint implements the **Combined CAPTCHA Landing Page** optimization identified in Sprint 10 (Hardening). The goal is to eliminate the 2-page hop for new users (landing page → separate captcha page) and serve a single combined page with an embedded pre-generated CAPTCHA, dramatically reducing Gate load.
 
+## Completed Work
+
+### Phase 1: Combined Template ✅
+- Created `assets/html/gate-challenge.html` - Single page combining landing + CAPTCHA
+- Added `TemplateType::GateChallenge` to template engine
+- Template includes branding, welcome message, embedded CAPTCHA, and form
+
+### Phase 2: PrerenderedCaptchaPage Update ✅
+- Updated `PrerenderedCaptchaPage` struct to include `session_id` field
+- Added `instruction` parameter for CAPTCHA-specific instructions
+- Now uses `GateChallenge` template by default
+- Added `new_legacy()` method for backward compatibility
+
+### Phase 3: CaptchaPoolManager Update ✅
+- Added `to_data_uri()` method to `PregenCaptcha` for base64 encoding
+- Added `to_prerendered_page()` method for full HTML generation
+- Added `take_prerendered_page()` method to `CaptchaPoolManager`
+- Pool can now provide complete HTML pages ready for instant serving
+
+### Future Work (Phase 4+)
+- HTTP proxy integration to serve pre-rendered pages directly via Controller API
+- Edge caching optimizations
+- Session pre-registration when page is served
+
 ## Problem Statement
 
-### Current Architecture (Bottleneck)
+### Original Architecture (Bottleneck)
 ```
 User → HTTP Proxy → Gate → Landing page (gate.html) → User clicks "Request Entry"
                          → Gate → Generate CAPTCHA → Response (captcha.html)
                          → Gate → Verify submission
 ```
 
-**Issues:**
-1. **Two page loads** for new users (landing + captcha)
-2. **Gate is the bottleneck** - attackers can exhaust Gate capacity
-3. **CPU-bound CAPTCHA generation** at request time (even with pool)
-4. **Legitimate users blocked** during attacks when Gate is overwhelmed
-
-### Proposed Architecture (Optimized)
+### New Architecture (Optimized)
 ```
 User → HTTP Proxy → Cached combined page (landing + captcha from pre-gen pool)
                          └─► /verify only → Gate (only verification needs processing)

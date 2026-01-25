@@ -1,6 +1,6 @@
 # Dev Progress Master Tracker
 
-**Last Updated:** January 23, 2026  
+**Last Updated:** January 25, 2026  
 **Purpose:** Central tracking for all active development sprints
 
 ---
@@ -22,21 +22,25 @@ Key requirements:
 
 | Sprint | Document | Status | Priority |
 |--------|----------|--------|----------|
-| **13** | [Combined CAPTCHA Landing](13-COMBINED-CAPTCHA-LANDING-SPRINT.md) | 📋 Planning | 🟡 MEDIUM |
+| **13** | [Combined CAPTCHA Landing](13-COMBINED-CAPTCHA-LANDING-SPRINT.md) | ✅ Complete (Phases 1-3) | 🟡 MEDIUM |
+| **17** | [CAPTCHA Instruction Fix](17-CAPTCHA-INSTRUCTION-FIX-SPRINT.md) | ✅ Complete | 🟢 DONE |
+| **18** | [Redirect Passthrough](archive/18-REDIRECT-PASSTHROUGH-SPRINT.md) | ✅ Complete | 🟢 DONE |
 
 ---
 
-## Recently Archived (January 23, 2026)
+## Recently Archived (January 25, 2026)
 
 | Sprint | Title | Merged PR |
 |--------|-------|-----------|
+| **18** | Redirect Passthrough (302 Fix) | PR #59 |
+| **17** | CAPTCHA Instruction Fix | PR #58 |
+| **13** | Combined CAPTCHA Landing (Phases 1-3) | PR #57 |
 | **15** | Branding & Config Propagation | PR #46 |
 | **02** | Panic Audit Phase 2 | PR #45 |
 | **03** | CI/CD Quality Workflows | PR #37 |
 | **04** | TUI Deployment Wizard | PR #36 |
 | **09** | Tech Stack Audit | PR #38 |
 | **16** | Traffic Tier Integration | PR #43 |
-| **17** | Settings Hot Reload | PR #44 |
 
 See [archive/](archive/) for completed sprint documentation.
 
@@ -44,19 +48,21 @@ See [archive/](archive/) for completed sprint documentation.
 
 ## Active Sprint Details
 
-### Sprint 13: Combined CAPTCHA Landing Page
+### Sprint 13: Combined CAPTCHA Landing Page - Phase 4+
 **File:** [13-COMBINED-CAPTCHA-LANDING-SPRINT.md](13-COMBINED-CAPTCHA-LANDING-SPRINT.md)  
-**Status:** 📋 Planning  
+**Status:** ✅ Phases 1-3 Complete (PR #57), Phase 4+ Future  
 **Priority:** 🟡 MEDIUM (Performance Optimization)
 
 **Goal:** Eliminate 2-page hop for new users, serve combined landing+CAPTCHA page.
 
-**Phases:**
-- ⬜ Phase 1: Combined Template Design
-- ⬜ Phase 2: Pool Expansion & Pre-rendering
-- ⬜ Phase 3: HTTP Proxy Caching
+**Completed Phases:**
+- ✅ Phase 1: Combined Template (`gate-challenge.html`)
+- ✅ Phase 2: `PrerenderedCaptchaPage` Update
+- ✅ Phase 3: `CaptchaPoolManager` pre-rendering support
 
-**Blocked By:** None (can start anytime)
+**Future Phases:**
+- ⬜ Phase 4: HTTP Proxy Integration (serve pre-rendered pages directly)
+- ⬜ Phase 5: Edge caching optimizations
 
 ---
 
@@ -66,13 +72,6 @@ See [archive/](archive/) for completed sprint documentation.
 |----------|---------|
 | [SECURITY-REVIEW-COMPARISON.md](SECURITY-REVIEW-COMPARISON.md) | Gap analysis vs external security review |
 | [TEST-SESSION-SPRINT17.md](TEST-SESSION-SPRINT17.md) | Testing guide for Sprint 17 changes |
-
----
-
-## Recommended Work Order
-
-1. **Sprint 15** (Branding) - Fix config propagation to unblock user customization
-2. **Sprint 13** (CAPTCHA Landing) - Performance optimization after core is stable
 
 ---
 
@@ -97,4 +96,5 @@ Located in [archive/](archive/):
 | 14 | TUI/CP Alignment | Jan 2026 |
 | 16 | Tier Integration | Jan 2026 |
 | 17 | Settings Hot Reload | Jan 2026 |
+| 18 | Redirect Passthrough | Jan 2026 |
 | - | Clippy Sprint | Jan 2026 |
