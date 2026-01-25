@@ -22,8 +22,8 @@ Key requirements:
 
 | Sprint | Document | Status | Priority |
 |--------|----------|--------|----------|
-| **13** | [Combined CAPTCHA Landing](13-COMBINED-CAPTCHA-LANDING-SPRINT.md) | ✅ Complete (Phases 1-3) | 🟡 MEDIUM |
-| **17** | [CAPTCHA Instruction Fix](17-CAPTCHA-INSTRUCTION-FIX-SPRINT.md) | ✅ Complete | 🟢 DONE |
+| **13** | [Combined CAPTCHA Landing](archive/13-COMBINED-CAPTCHA-LANDING-SPRINT.md) | ✅ Complete | 🟢 DONE |
+| **17** | [CAPTCHA Instruction Fix](archive/17-CAPTCHA-INSTRUCTION-FIX-SPRINT.md) | ✅ Complete | 🟢 DONE |
 | **18** | [Redirect Passthrough](archive/18-REDIRECT-PASSTHROUGH-SPRINT.md) | ✅ Complete | 🟢 DONE |
 
 ---
@@ -32,6 +32,7 @@ Key requirements:
 
 | Sprint | Title | Merged PR |
 |--------|-------|-----------|
+| **13** | Combined CAPTCHA Landing (Phase 4: Gate Direct Serving) | PR #60 |
 | **18** | Redirect Passthrough (302 Fix) | PR #59 |
 | **17** | CAPTCHA Instruction Fix | PR #58 |
 | **13** | Combined CAPTCHA Landing (Phases 1-3) | PR #57 |
@@ -46,23 +47,10 @@ See [archive/](archive/) for completed sprint documentation.
 
 ---
 
-## Active Sprint Details
+## No Active Sprints
 
-### Sprint 13: Combined CAPTCHA Landing Page - Phase 4+
-**File:** [13-COMBINED-CAPTCHA-LANDING-SPRINT.md](13-COMBINED-CAPTCHA-LANDING-SPRINT.md)  
-**Status:** ✅ Phases 1-3 Complete (PR #57), Phase 4+ Future  
-**Priority:** 🟡 MEDIUM (Performance Optimization)
-
-**Goal:** Eliminate 2-page hop for new users, serve combined landing+CAPTCHA page.
-
-**Completed Phases:**
-- ✅ Phase 1: Combined Template (`gate-challenge.html`)
-- ✅ Phase 2: `PrerenderedCaptchaPage` Update
+All sprints are currently complete. See the archive for historical sprint documentation.
 - ✅ Phase 3: `CaptchaPoolManager` pre-rendering support
-
-**Future Phases:**
-- ⬜ Phase 4: HTTP Proxy Integration (serve pre-rendered pages directly)
-- ⬜ Phase 5: Edge caching optimizations
 
 ---
 
@@ -93,8 +81,9 @@ Located in [archive/](archive/):
 | 10 | Hardening | Jan 2026 |
 | 11 | Static CAPTCHA Templates | Jan 2026 |
 | 12 | Template Migration | Jan 2026 |
+| 13 | Combined CAPTCHA Landing | Jan 2026 |
 | 14 | TUI/CP Alignment | Jan 2026 |
 | 16 | Tier Integration | Jan 2026 |
-| 17 | Settings Hot Reload | Jan 2026 |
+| 17 | CAPTCHA Instruction Fix | Jan 2026 |
 | 18 | Redirect Passthrough | Jan 2026 |
 | - | Clippy Sprint | Jan 2026 |

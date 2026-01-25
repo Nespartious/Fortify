@@ -1,10 +1,10 @@
 # Sprint 13: Combined CAPTCHA Landing Page
 
-**Status**: ✅ COMPLETED (Phases 1-3)  
-**Branch**: `feature/sprint-13-combined-captcha-landing`  
-**PR**: #57  
+**Status**: ✅ COMPLETED  
+**Branch**: `feature/sprint-13-combined-captcha-landing` (Phases 1-3), `feature/sprint-13-phase-4-http-integration` (Phase 4)  
+**PR**: #57 (Phases 1-3), #60 (Phase 4)  
 **Started**: 2025-01-22  
-**Completed**: 2026-01-25  
+**Completed**: 2025-01-25  
 **Depends On**: Sprint 12 (Template Migration) ✅ COMPLETE
 
 ## Overview
@@ -30,10 +30,17 @@ This sprint implements the **Combined CAPTCHA Landing Page** optimization identi
 - Added `take_prerendered_page()` method to `CaptchaPoolManager`
 - Pool can now provide complete HTML pages ready for instant serving
 
-### Future Work (Phase 4+)
-- HTTP proxy integration to serve pre-rendered pages directly via Controller API
-- Edge caching optimizations
-- Session pre-registration when page is served
+### Phase 4: Gate Direct Combined Page Serving ✅
+- Modified `serve_landing_page()` in Gate server to serve combined `GateChallenge` template
+- New visitors now see CAPTCHA embedded directly on first page load
+- Session ID generated upfront and set as `fortify_pending_session` cookie
+- Verification session created before page render with CAPTCHA ID embedded
+- Fallback to legacy `gate.html` if verification creation fails
+- **Result**: Eliminated "Request Entry" button - users go straight to CAPTCHA
+
+### Future Work
+- Edge caching optimizations (nginx can serve pre-rendered pages)
+- HTTP proxy direct serving from pool (bypass Gate entirely for cached pages)
 
 ## Problem Statement
 
