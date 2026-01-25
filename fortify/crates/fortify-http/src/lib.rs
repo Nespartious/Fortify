@@ -10,6 +10,7 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::collections::HashMap;
+use std::error::Error as StdError;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -929,10 +930,7 @@ async fn process_request(
             Ok(response) => return response,
             Err(e) => {
                 tracing::error!("Failed to proxy to Gate: {}", e);
-                return Response::builder()
-                    .status(StatusCode::BAD_GATEWAY)
-                    .body(Full::new(Bytes::from("Gate service unavailable")))
-                    .expect("valid response");
+                return serve_backend_error_page(&format!("Gate service error: {}", e));
             }
         }
     }
@@ -1499,7 +1497,7 @@ async fn process_request(
             }
             Err(e) => {
                 tracing::error!("Failed to proxy to Gate: {}", e);
-                return error_response(StatusCode::BAD_GATEWAY, "Gate temporarily unavailable");
+                return serve_backend_error_page("Gate service connection failed");
             }
         }
     }
@@ -1545,11 +1543,8 @@ async fn process_request(
                 tracing::warn!("503: All backend nodes at capacity");
                 (serve_busy_page(), String::new(), 0u64)
             } else {
-                (
-                    error_response(StatusCode::BAD_GATEWAY, &format!("Backend error: {}", e)),
-                    String::new(),
-                    0u64,
-                )
+                tracing::warn!("502: Backend error: {}", e);
+                (serve_backend_error_page(&e), String::new(), 0u64)
             }
         }
     };
@@ -1992,7 +1987,10 @@ async fn route_to_backend(
     const BACKEND_CONNECT_TIMEOUT_SECS: u64 = 10;
 
     // Use reqwest for backend proxying with explicit timeouts
+    // IMPORTANT: Disable redirect following so 302s are passed through to client
+    // This allows backend redirects (e.g., /monitor/go/### -> external onion) to work
     let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(jittered_timeout(BACKEND_CONNECT_TIMEOUT_SECS))
         .timeout(jittered_timeout(BACKEND_TIMEOUT_SECS))
         .build()
@@ -2046,7 +2044,16 @@ async fn route_to_backend(
         })?
         .to_bytes();
 
-    request_builder = request_builder.body(body_bytes.to_vec());
+    // Only set body if there's actual content (avoid sending empty body on GET requests)
+    if !body_bytes.is_empty() {
+        request_builder = request_builder.body(body_bytes.to_vec());
+    }
+
+    tracing::debug!(
+        "Sending request to backend: {} (body size: {} bytes)",
+        backend_url,
+        body_bytes.len()
+    );
 
     let result = request_builder.send().await;
 
@@ -2054,7 +2061,33 @@ async fn route_to_backend(
     node.release();
     admin_state.release_node_connection(&node_id);
 
-    let response = result.map_err(|e| format!("Backend request failed: {}", e))?;
+    let response = result.map_err(|e| {
+        // Log detailed error chain for debugging
+        let mut error_chain = String::new();
+        let mut current: Option<&(dyn StdError + 'static)> = Some(&e);
+        let mut depth = 0;
+        while let Some(err) = current {
+            error_chain.push_str(&format!("[{}] {} ", depth, err));
+            current = err.source();
+            depth += 1;
+        }
+
+        tracing::error!(
+            "Backend request to {} failed after connecting: {} (is_connect: {}, is_timeout: {}, is_request: {}, is_body: {}, is_decode: {}, is_builder: {}, is_redirect: {}, is_status: {}, error_chain: {})",
+            backend_url,
+            e,
+            e.is_connect(),
+            e.is_timeout(),
+            e.is_request(),
+            e.is_body(),
+            e.is_decode(),
+            e.is_builder(),
+            e.is_redirect(),
+            e.is_status(),
+            error_chain
+        );
+        format!("Backend request failed: {}", e)
+    })?;
 
     // Convert reqwest response to hyper response
     let status = StatusCode::from_u16(response.status().as_u16())
@@ -2253,9 +2286,175 @@ fn serve_busy_page() -> Response<BoxBody> {
 
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
-        .header("Content-Type", "text/html")
+        .header("Content-Type", "text/html; charset=utf-8")
         .header("Retry-After", retry_seconds.to_string())
         .header("Cache-Control", "no-store")
+        // CSP for Tor Browser compatibility (no JS, no external resources)
+        .header(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        )
+        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Frame-Options", "DENY")
+        .body(Full::new(Bytes::from(html)))
+        .expect("valid response")
+}
+
+/// Serve a user-friendly error page for backend failures (502)
+/// This returns proper HTML with CSP headers to avoid NoScript failsafe CSP injection in Tor Browser
+fn serve_backend_error_page(error_detail: &str) -> Response<BoxBody> {
+    // Sanitize error message - only show generic info to users
+    let user_message = if error_detail.contains("timeout") {
+        "The backend service is taking too long to respond."
+    } else if error_detail.contains("connection") {
+        "Unable to connect to the backend service."
+    } else {
+        "The backend service is temporarily unavailable."
+    };
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend Unavailable</title>
+    <style>
+        :root {{
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --border-subtle: #3a3a42;
+            --gold-primary: #c9a227;
+            --gold-muted: #a68b5b;
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            --amber: #e4bc5e;
+            --slate-blue: #6b7c8c;
+            --error-red: #d45555;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }}
+        .container {{ max-width: 520px; width: 100%; }}
+        .error-box {{
+            background: var(--bg-surface);
+            border: 1px solid var(--error-red);
+            border-radius: 4px;
+            padding: 32px;
+        }}
+        .error-header {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }}
+        .error-icon {{ font-size: 2.25rem; opacity: 0.9; }}
+        h1 {{
+            font-size: 1.2rem;
+            font-weight: 500;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--error-red);
+        }}
+        .message {{
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }}
+        .action-section {{
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }}
+        .retry-link {{
+            display: inline-block;
+            padding: 12px 24px;
+            background: transparent;
+            border: 1px solid var(--gold-muted);
+            color: var(--gold-primary);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }}
+        .retry-link:hover {{
+            background: var(--gold-primary);
+            color: var(--bg-deep);
+            border-color: var(--gold-primary);
+        }}
+        .home-link {{
+            display: inline-block;
+            padding: 12px 24px;
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }}
+        .home-link:hover {{
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }}
+        .status-info {{
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-subtle);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }}
+        .status-code {{ font-family: monospace; color: var(--slate-blue); }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-box">
+            <div class="error-header">
+                <span class="error-icon">⚠️</span>
+                <h1>Backend Unavailable</h1>
+            </div>
+            <p class="message">
+                {} Please try again in a moment.
+            </p>
+            <div class="action-section">
+                <a href="." class="retry-link">Retry</a>
+                <a href="/" class="home-link">Go Home</a>
+            </div>
+            <div class="status-info">
+                <span class="status-code">HTTP 502</span> — 
+                Backend gateway error. Your session remains valid.
+            </div>
+        </div>
+    </div>
+</body>
+</html>"#,
+        user_message
+    );
+
+    Response::builder()
+        .status(StatusCode::BAD_GATEWAY)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        // CSP for Tor Browser compatibility (no JS, no external resources)
+        .header(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        )
+        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Frame-Options", "DENY")
         .body(Full::new(Bytes::from(html)))
         .expect("valid response")
 }
