@@ -178,12 +178,62 @@ async fn handle_request(
 
 fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
     // Landing page for NEW users (first-time visitors)
-    // Uses template engine with citadel/gold theme
+    // NOW serves the combined gate-challenge page with embedded CAPTCHA
+    // This eliminates the 2-page hop (landing → captcha)
     // NO JAVASCRIPT ALLOWED
 
+    // Generate a new session ID for this visitor
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    // Get captcha configuration
+    let config = gate.get_captcha_config();
+    let captcha_type = config.gate_captcha_type;
+
+    // Create verification session and generate CAPTCHA
+    let _state = match gate.create_verification_with_type(
+        session_id.clone(),
+        captcha_type,
+        crate::CaptchaDifficulty::Medium,
+        false, // not threat mode for new visitors
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to create verification session: {}", e);
+            // Fallback to old landing page without CAPTCHA
+            let engine = TemplateEngine::new();
+            let branding = gate.branding().clone();
+            let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/html")
+                .body(Full::new(Bytes::from(html)))
+                .expect("valid response");
+        }
+    };
+
+    // Build the CAPTCHA image URL
+    let captcha_image_url = format!("/gate/captcha/{}", session_id);
+
+    // Get instruction text based on CAPTCHA type
+    let instruction = captcha_type.description();
+
+    // Render the combined gate-challenge template
     let engine = TemplateEngine::new();
     let branding = gate.branding().clone();
-    let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
+    let mut extra_vars = std::collections::HashMap::new();
+    extra_vars.insert("CAPTCHA_IMAGE".to_string(), captcha_image_url);
+    extra_vars.insert("CAPTCHA_INSTRUCTION".to_string(), instruction.to_string());
+    extra_vars.insert("SESSION_ID".to_string(), session_id.clone());
+    extra_vars.insert("CAPTCHA_ID".to_string(), session_id.clone());
+
+    let html =
+        engine.render_with_branding(TemplateType::GateChallenge, &branding, Some(&extra_vars));
+
+    tracing::info!(
+        "Serving combined gate-challenge page for new session: {}, captcha_type={:?}",
+        session_id,
+        captcha_type
+    );
 
     Response::builder()
         .status(StatusCode::OK)
@@ -192,6 +242,11 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
         .header(
             "Set-Cookie",
             "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+        )
+        // Set pending session cookie so the session is tracked through verification
+        .header(
+            "Set-Cookie",
+            format!("fortify_pending_session={}; Path=/; HttpOnly", session_id),
         )
         .body(Full::new(Bytes::from(html)))
         .expect("valid response")
