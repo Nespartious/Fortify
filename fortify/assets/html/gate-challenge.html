@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{SERVICE_NAME}} — Secure Entry</title>
+    <style>
+        /* ============================================================
+         * COMBINED GATE + CAPTCHA PAGE
+         * Single-page verification for instant loading from pre-rendered pool.
+         * CSS variables are injected by Fortify's template engine.
+         * ============================================================ */
+        :root {
+            /* Brand Colors (injected from config) */
+            --brand-primary: {{PRIMARY_COLOR}};
+            --brand-secondary: {{SECONDARY_COLOR}};
+            --brand-tertiary: {{SECONDARY_COLOR}};
+            
+            /* Background Colors */
+            --bg-deep: #141417;
+            --bg-surface: #1e1e23;
+            --bg-elevated: #26262d;
+            --bg-input: #1a1a1f;
+            
+            /* Border Colors */
+            --border-subtle: #3a3a42;
+            --border-accent: #4a4a55;
+            
+            /* Text Colors */
+            --text-primary: #f5f0e8;
+            --text-secondary: #a8a4a0;
+            --text-muted: #6b6862;
+            
+            /* Status Colors */
+            --status-success: #9ab893;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-deep);
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+        }
+        /* Subtle texture overlay using brand colors */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: 
+                radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--brand-primary) 3%, transparent) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--brand-secondary) 2%, transparent) 0%, transparent 40%);
+            pointer-events: none;
+        }
+        
+        /* Main Container */
+        .gate-container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 460px;
+        }
+        
+        /* Brand Header */
+        .brand-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .emblem {
+            font-size: 3.5rem;
+            margin-bottom: 12px;
+            opacity: 0.9;
+            filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--brand-primary) 15%, transparent));
+        }
+        .brand-name {
+            font-size: clamp(1.5rem, 3.5vw, 2rem);
+            font-weight: 300;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .brand-description {
+            font-size: 0.8rem;
+            color: var(--brand-secondary);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        
+        /* Challenge Panel */
+        .panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+        
+        .panel-header {
+            text-align: center;
+            padding-bottom: 20px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .panel-title {
+            font-size: 0.85rem;
+            font-weight: 500;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--brand-primary);
+            margin-bottom: 6px;
+        }
+        .panel-subtitle {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+        }
+        
+        /* Welcome Message (above CAPTCHA) */
+        .welcome-message {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin-bottom: 24px;
+            padding: 16px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-left: 3px solid var(--brand-secondary);
+            border-radius: 0 4px 4px 0;
+        }
+        
+        /* CAPTCHA Display */
+        .captcha-display {
+            background: var(--bg-input);
+            border: 1px solid var(--border-accent);
+            border-radius: 3px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+            min-height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .captcha-display img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 2px;
+        }
+        
+        /* CAPTCHA Instructions */
+        .captcha-instruction {
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.08em;
+            margin-bottom: 16px;
+        }
+        
+        /* Input Group */
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        input[type="text"] {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-accent);
+            border-radius: 3px;
+            color: var(--text-primary);
+            padding: 12px 16px;
+            font-family: inherit;
+            font-size: 1.1rem;
+            letter-spacing: 0.15em;
+            text-align: center;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--brand-secondary);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 10%, transparent);
+        }
+        input[type="text"]::placeholder {
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+        
+        /* Submit Button */
+        button {
+            width: 100%;
+            background: var(--brand-primary);
+            color: var(--bg-deep);
+            border: none;
+            border-radius: 3px;
+            padding: 14px 24px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        button:hover {
+            filter: brightness(1.15);
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--brand-primary) 30%, transparent);
+        }
+        
+        /* Footer Note */
+        .footer-note {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        
+        /* Status Bar */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: var(--bg-surface);
+            border-top: 1px solid var(--border-subtle);
+            padding: 10px 20px;
+            font-size: 0.65rem;
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            color: var(--text-muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .status-bar span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-bar span::before {
+            content: '';
+            width: 5px;
+            height: 5px;
+            background: var(--status-success);
+            border-radius: 50%;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 480px) {
+            .panel {
+                padding: 24px 20px;
+            }
+            .brand-header {
+                margin-bottom: 20px;
+            }
+            .emblem {
+                font-size: 2.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="gate-container">
+        <!-- Brand Header -->
+        <header class="brand-header">
+            <div class="emblem">🏰</div>
+            <h1 class="brand-name">{{SERVICE_NAME}}</h1>
+            <p class="brand-description">{{DESCRIPTION}}</p>
+        </header>
+        
+        <!-- Challenge Panel -->
+        <div class="panel">
+            <header class="panel-header">
+                <h2 class="panel-title">Secure Entry Verification</h2>
+                <p class="panel-subtitle">Complete the challenge to proceed</p>
+            </header>
+            
+            <!-- Welcome Message -->
+            <div class="welcome-message">
+                {{WELCOME_MESSAGE}}
+            </div>
+            
+            <!-- CAPTCHA Form -->
+            <form method="POST" action="/gate/verify">
+                <!-- CAPTCHA Image Display -->
+                <div class="captcha-display">
+                    <img src="{{CAPTCHA_IMAGE}}" alt="Security Challenge">
+                </div>
+                
+                <!-- CAPTCHA Instructions -->
+                <p class="captcha-instruction">{{CAPTCHA_INSTRUCTION}}</p>
+                
+                <!-- Answer Input -->
+                <div class="input-group">
+                    <label for="captcha">Enter Code</label>
+                    <input type="text" id="captcha" name="captcha" placeholder="• • • • • •" required autofocus autocomplete="off">
+                </div>
+                
+                <!-- Hidden Fields -->
+                <input type="hidden" name="session_id" value="{{SESSION_ID}}">
+                <input type="hidden" name="captcha_id" value="{{CAPTCHA_ID}}">
+                
+                <!-- Submit -->
+                <button type="submit">Verify &amp; Enter</button>
+            </form>
+            
+            <footer class="footer-note">
+                Server-side verification • No scripts required
+            </footer>
+        </div>
+    </div>
+    
+    <!-- Status Bar -->
+    <footer class="status-bar">
+        <span>System Online</span>
+        <span>Protected</span>
+        <span>Encrypted</span>
+    </footer>
+</body>
+</html>
