@@ -1446,12 +1446,19 @@ async fn process_request(
 
         // OPTIMIZATION: For new visitors, use the Gate API to fetch pre-rendered pages
         // This reduces per-request overhead - Gate generates the page once and we serve it
-        // Only works for landing page requests; other paths need full proxy
+        // Works for: /, /Fortify (landing), and /Fortify/Portcullis (rate limit redirects)
+        // This is CRITICAL during attacks - serves cached pages without hitting Gate's CAPTCHA generation
         let can_use_prerendered = !is_demoted_user
-            && (request_path == "/" || request_path.is_empty() || request_path == "/Fortify");
+            && (request_path == "/"
+                || request_path.is_empty()
+                || request_path == "/Fortify"
+                || request_path.starts_with("/Fortify/Portcullis"));
 
         if can_use_prerendered {
-            tracing::info!("Using pre-rendered Gate page for new visitor");
+            tracing::info!(
+                "Using pre-rendered Gate page for new visitor (path: {})",
+                request_path
+            );
             match fetch_prerendered_gate_page(&gate_address).await {
                 Ok(resp) => {
                     return resp;
