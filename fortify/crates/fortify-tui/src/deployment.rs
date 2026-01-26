@@ -827,7 +827,8 @@ impl DeploymentManager {
             .await
             .ok();
 
-        // Check 1: Stop old systemd services (fortify, fortifyd)
+        // Check 1: Stop old systemd services (fortify, fortifyd) - use sudo -n (non-interactive)
+        // If sudo requires a password, this will silently fail which is fine
         let systemctl_check = tokio::process::Command::new("systemctl")
             .args(["is-active", "fortify", "fortifyd"])
             .output()
@@ -845,14 +846,19 @@ impl DeploymentManager {
                     .await
                     .ok();
 
+                // Use sudo -n (non-interactive) - silently fails if password needed
                 let _ = tokio::process::Command::new("sudo")
-                    .args(["systemctl", "stop", "fortify", "fortifyd"])
+                    .args(["-n", "systemctl", "stop", "fortify", "fortifyd"])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
                     .status()
                     .await;
             }
         }
 
         // Check 2: Port conflicts (8080-8090 range)
+        // Use pkill for user-owned processes instead of sudo kill
         let netstat_check = tokio::process::Command::new("sh")
             .arg("-c")
             .arg("netstat -tuln 2>/dev/null | grep -E ':(808[0-9]|8090)' | awk '{print $4}' | awk -F: '{print $NF}' | sort -u")
@@ -874,12 +880,26 @@ impl DeploymentManager {
                     .await
                     .ok();
 
+                // Kill any fortify processes owned by current user (no sudo needed)
+                let _ = tokio::process::Command::new("pkill")
+                    .args(["-9", "-f", "fortify-"])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .await;
+
+                // Also try killing by port using fuser (no sudo) - best effort
                 for port in ports.lines() {
                     let port = port.trim();
                     if !port.is_empty() {
+                        // fuser can kill processes without sudo if owned by user
                         let _ = tokio::process::Command::new("sh")
                             .arg("-c")
-                            .arg(format!("sudo lsof -t -i :{} 2>/dev/null | xargs -r sudo kill -9 2>/dev/null || true", port))
+                            .arg(format!("fuser -k {}/tcp 2>/dev/null || true", port))
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
                             .status()
                             .await;
                     }

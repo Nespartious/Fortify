@@ -2,12 +2,13 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
-use std::io;
+use std::io::{self, Write};
+use std::time::Duration;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use fortify_tui::App;
@@ -42,6 +43,16 @@ async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
+
+    // Drain any pending mouse events from the terminal buffer
+    // This prevents escape codes from leaking during startup
+    while event::poll(Duration::from_millis(1))? {
+        let _ = event::read();
+    }
+
+    // Flush stdout before entering alternate screen
+    stdout.flush()?;
+
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
