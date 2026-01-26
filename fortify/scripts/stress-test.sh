@@ -6,8 +6,6 @@
 #
 # Usage: ./stress-test.sh [mirror_address] [duration_seconds]
 
-set -e
-
 MIRROR="${1:-}"
 DURATION="${2:-60}"
 TOR_SOCKS_PORT="${TOR_SOCKS_PORT:-9150}"
@@ -53,13 +51,13 @@ attack_single_circuit() {
             -o /dev/null -w "%{http_code}" \
             "http://$MIRROR/" 2>/dev/null || echo "000")
         
-        ((TOTAL_REQUESTS++))
+        TOTAL_REQUESTS=$((TOTAL_REQUESTS + 1))
         
         case "$status" in
-            200) ((SUCCESS_REQUESTS++)); echo -n "." ;;
-            429) ((BLOCKED_REQUESTS++)); echo -n "R" ;;
-            403) ((BLOCKED_REQUESTS++)); echo -n "B" ;;
-            000) ((TIMEOUT_REQUESTS++)); echo -n "T" ;;
+            200) SUCCESS_REQUESTS=$((SUCCESS_REQUESTS + 1)); echo -n "." ;;
+            429) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "R" ;;
+            403) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "B" ;;
+            000) TIMEOUT_REQUESTS=$((TIMEOUT_REQUESTS + 1)); echo -n "T" ;;
             *) echo -n "?" ;;
         esac
     done
@@ -81,13 +79,13 @@ attack_bot_agents() {
             -o /dev/null -w "%{http_code}" \
             "http://$MIRROR/" 2>/dev/null || echo "000")
         
-        ((TOTAL_REQUESTS++))
+        TOTAL_REQUESTS=$((TOTAL_REQUESTS + 1))
         
         case "$status" in
-            200) ((SUCCESS_REQUESTS++)); echo -n "." ;;
-            429) ((BLOCKED_REQUESTS++)); echo -n "R" ;;
-            403) ((BLOCKED_REQUESTS++)); echo -n "B" ;;
-            000) ((TIMEOUT_REQUESTS++)); echo -n "T" ;;
+            200) SUCCESS_REQUESTS=$((SUCCESS_REQUESTS + 1)); echo -n "." ;;
+            429) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "R" ;;
+            403) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "B" ;;
+            000) TIMEOUT_REQUESTS=$((TIMEOUT_REQUESTS + 1)); echo -n "T" ;;
             *) echo -n "?" ;;
         esac
     done
@@ -112,14 +110,14 @@ attack_paths() {
             -o /dev/null -w "%{http_code}" \
             "http://$MIRROR$path" 2>/dev/null || echo "000")
         
-        ((TOTAL_REQUESTS++))
+        TOTAL_REQUESTS=$((TOTAL_REQUESTS + 1))
         
         case "$status" in
-            200) ((SUCCESS_REQUESTS++)); echo -n "." ;;
+            200) SUCCESS_REQUESTS=$((SUCCESS_REQUESTS + 1)); echo -n "." ;;
             404) echo -n "N" ;;
-            429) ((BLOCKED_REQUESTS++)); echo -n "R" ;;
-            403) ((BLOCKED_REQUESTS++)); echo -n "B" ;;
-            000) ((TIMEOUT_REQUESTS++)); echo -n "T" ;;
+            429) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "R" ;;
+            403) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "B" ;;
+            000) TIMEOUT_REQUESTS=$((TIMEOUT_REQUESTS + 1)); echo -n "T" ;;
             *) echo -n "?" ;;
         esac
     done
@@ -149,12 +147,12 @@ attack_parallel() {
     # Count results
     if [ -f /tmp/fortify_stress_results.txt ]; then
         while read status; do
-            ((TOTAL_REQUESTS++))
+            TOTAL_REQUESTS=$((TOTAL_REQUESTS + 1))
             case "$status" in
-                200) ((SUCCESS_REQUESTS++)); echo -n "." ;;
-                429) ((BLOCKED_REQUESTS++)); echo -n "R" ;;
-                403) ((BLOCKED_REQUESTS++)); echo -n "B" ;;
-                000) ((TIMEOUT_REQUESTS++)); echo -n "T" ;;
+                200) SUCCESS_REQUESTS=$((SUCCESS_REQUESTS + 1)); echo -n "." ;;
+                429) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "R" ;;
+                403) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "B" ;;
+                000) TIMEOUT_REQUESTS=$((TIMEOUT_REQUESTS + 1)); echo -n "T" ;;
                 *) echo -n "?" ;;
             esac
         done < /tmp/fortify_stress_results.txt
