@@ -16,6 +16,7 @@ type HmacSha256 = Hmac<Sha256>;
 pub mod bitmap;
 pub mod captcha_html;
 pub mod captcha_types;
+pub mod prerendered_pool;
 pub mod server;
 
 pub use bitmap::CaptchaDifficulty;
@@ -27,6 +28,7 @@ pub use captcha_types::{
     CaptchaConfig, CaptchaData, CaptchaType, CaptchaTypeConfig, DirectionChallenge, EmojiChallenge,
     ImageRotationChallenge, SequenceChallenge, SilhouetteChallenge, WordUnscrambleChallenge,
 };
+pub use prerendered_pool::{PoolConfig, PoolStats, PooledPage, PrerenderedPagePool};
 
 /// Single-use verification token issued after CAPTCHA solve
 /// Prevents session cloning attacks by requiring token upgrade before session creation
@@ -419,12 +421,14 @@ pub struct Gate {
     secret_key: Vec<u8>,
     /// Shared captcha configuration (updated from admin panel)
     captcha_config: Arc<Mutex<CaptchaConfig>>,
-    /// Pre-generated CAPTCHA pool for instant serving
+    /// Pre-generated CAPTCHA pool for instant serving (raw images)
     captcha_pool: Arc<Mutex<Vec<CaptchaChallenge>>>,
     /// Target pool size for pre-generation
     captcha_pool_target: usize,
     /// Branding configuration for HTML rendering (runtime-updatable)
     branding: Arc<Mutex<fortify_core::templates::BrandingVars>>,
+    /// Pre-rendered HTML page pool for instant serving during attacks
+    prerendered_pool: Arc<PrerenderedPagePool>,
 }
 
 impl Gate {
@@ -457,19 +461,49 @@ impl Gate {
         secret_key: Vec<u8>,
         branding: fortify_core::templates::BrandingVars,
     ) -> Self {
-        let pool_target = 200; // Pre-generate 200 CAPTCHAs
+        let pool_target = 200; // Pre-generate 200 CAPTCHAs (raw images)
         let captcha_pool = Arc::new(Mutex::new(Vec::with_capacity(pool_target)));
 
-        // Pre-generate initial pool
+        // Pre-generate initial raw CAPTCHA pool
         {
             let mut pool = captcha_pool.lock().unwrap();
-            tracing::info!("Pre-generating {} CAPTCHAs for pool...", pool_target);
+            tracing::info!("Pre-generating {} raw CAPTCHAs for pool...", pool_target);
             for _ in 0..pool_target {
                 pool.push(CaptchaChallenge::generate_with_difficulty(
                     CaptchaDifficulty::Medium,
                 ));
             }
-            tracing::info!("CAPTCHA pool initialized with {} challenges", pool.len());
+            tracing::info!(
+                "Raw CAPTCHA pool initialized with {} challenges",
+                pool.len()
+            );
+        }
+
+        // Create pre-rendered HTML page pool (500 pages for attack resilience)
+        // Pool is filled lazily by the maintenance task to avoid blocking startup
+        let prerendered_config = PoolConfig {
+            target_size: 500,
+            timeout_seconds: 120,
+            max_age_seconds: 600,
+            initial_fill: true,
+        };
+        let prerendered_pool = Arc::new(PrerenderedPagePool::new(
+            prerendered_config,
+            branding.clone(),
+        ));
+
+        // Pre-fill a small initial batch (20 pages) for immediate availability
+        // The maintenance task will fill the rest asynchronously
+        #[cfg(not(test))]
+        {
+            tracing::info!("Pre-filling initial batch of 20 pages for pre-rendered pool...");
+            for _ in 0..20 {
+                let page = prerendered_pool.generate_page(CaptchaDifficulty::Medium);
+                prerendered_pool.add_page(page);
+            }
+            tracing::info!(
+                "Pre-rendered pool initialized with 20 pages, maintenance task will fill to 500"
+            );
         }
 
         Self {
@@ -485,7 +519,18 @@ impl Gate {
             captcha_pool,
             captcha_pool_target: pool_target,
             branding: Arc::new(Mutex::new(branding)),
+            prerendered_pool,
         }
+    }
+
+    /// Get the pre-rendered page pool
+    pub fn prerendered_pool(&self) -> Arc<PrerenderedPagePool> {
+        Arc::clone(&self.prerendered_pool)
+    }
+
+    /// Get pre-rendered pool statistics
+    pub fn prerendered_pool_stats(&self) -> PoolStats {
+        self.prerendered_pool.get_stats()
     }
 
     /// Get a clone of the current branding configuration
@@ -715,20 +760,77 @@ impl Gate {
     }
 
     /// Verify captcha solution - handles all captcha types
+    ///
+    /// Supports LAZY VERIFICATION for pre-rendered pool pages:
+    /// - If session_id not found in verification_states, check prerendered_pool
+    /// - If found in pool, verify answer and create session on success
     pub fn verify_captcha(&self, session_id: &str, solution: &str) -> Result<()> {
         let mut states = safe_lock(&self.verification_states);
-        let state = match states.get_mut(session_id) {
-            Some(s) => s,
-            None => {
-                tracing::error!(
-                    "CAPTCHA verify failed: session {} not found in states (have {} sessions)",
-                    session_id,
-                    states.len()
-                );
-                return Err(GateError::ChallengeNotFound);
-            }
-        };
 
+        // Check if session exists in normal verification states
+        if let Some(state) = states.get_mut(session_id) {
+            // Use existing verification flow
+            return self.verify_existing_session(state, session_id, solution);
+        }
+
+        // Session not found - try LAZY VERIFICATION from prerendered pool
+        drop(states); // Release lock before checking pool
+
+        if let Some(expected_answer) = self.prerendered_pool.get_answer(session_id) {
+            let is_valid = expected_answer.eq_ignore_ascii_case(solution);
+
+            tracing::info!(
+                "LAZY verification: session={}, expected='{}', submitted='{}', match={}",
+                session_id,
+                expected_answer,
+                solution,
+                is_valid
+            );
+
+            if is_valid {
+                // Mark page as solved (triggers regeneration)
+                self.prerendered_pool.mark_solved(session_id);
+
+                // Create a completed verification state for this session
+                let mut states = safe_lock(&self.verification_states);
+                let mut state = VerificationState::new(session_id.to_string());
+                state.captcha_solved = true;
+                state.captchas_remaining = 0;
+                state.captchas_solved = 1;
+                state.pow_solved = true; // Skip PoW for pool pages
+                state.pow_challenge = Some(ProofOfWorkChallenge::new(0)); // Dummy
+                states.insert(session_id.to_string(), state);
+
+                tracing::info!(
+                    "LAZY verification SUCCESS: session={} created from pool",
+                    session_id
+                );
+
+                return Ok(());
+            } else {
+                tracing::warn!(
+                    "LAZY verification FAILED: session={} wrong answer",
+                    session_id
+                );
+                return Err(GateError::InvalidCaptcha);
+            }
+        }
+
+        // Session not found anywhere
+        tracing::error!(
+            "CAPTCHA verify failed: session {} not found in states or pool",
+            session_id
+        );
+        Err(GateError::ChallengeNotFound)
+    }
+
+    /// Verify an existing session (internal helper)
+    fn verify_existing_session(
+        &self,
+        state: &mut VerificationState,
+        session_id: &str,
+        solution: &str,
+    ) -> Result<()> {
         // Log session state for debugging
         tracing::debug!(
             "verify_captcha: session={}, is_threat={}, captchas_remaining={}, captcha_solved={}, has_captcha_data={}",
