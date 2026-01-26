@@ -1,5 +1,13 @@
 #!/bin/bash
 # Pre-deployment conflict detection and resolution
+# 
+# NOTE: This script is now AUTOMATICALLY RUN by:
+#   - deploy.sh (headless deployments)
+#   - start-fortify.sh (manual starts)
+#
+# You generally DON'T need to run this manually anymore.
+# It's kept as a standalone tool for debugging deployment issues.
+#
 # Automatically detects and resolves port conflicts and old service instances
 
 set -e
