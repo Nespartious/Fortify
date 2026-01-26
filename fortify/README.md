@@ -54,7 +54,7 @@ cargo build --release
 ./target/release/fortify
 ```
 
-Runtime dependencies (Tor, Python, vanguards) are automatically detected and installed when you deploy.
+**That's it!** The TUI wizard will guide you through the rest, including Tor installation and configuration.
 
 ## Installation (Full)
 

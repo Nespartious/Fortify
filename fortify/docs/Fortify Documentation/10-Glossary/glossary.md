@@ -27,10 +27,10 @@ System that monitors request patterns to detect bots and attacks without JavaScr
 
 **Burn / Burned**  
 1. (Session) Permanently banned session that can no longer access the service.
-2. (Mirror) Compromised or attacked mirror that is destroyed and replaced.
+2. (Mirror) Compromised or attacked mirror that CAN be destroyed and replaced, though rarely done in practice.
 
 **Burn Threshold**  
-The limit that triggers a burn action. For sessions: 3 demotions. For mirrors: configurable compromise score.
+The limit that triggers a burn action. For sessions: 3 demotions. For mirrors: manual operator decision (automated burning rarely used).
 
 ---
 
@@ -119,10 +119,10 @@ Permanent session ban after reaching demotion threshold (3 demotions). Session m
 ## M
 
 **Mirror**  
-Public-facing .onion address that users connect to. Disposable and rotatable. Fortify runs 3-5 active mirrors by default.
+Public-facing .onion address that users connect to. Relatively stable, running for months at a time. CAN be burned and replaced if needed, but not commonly done. Fortify runs 3-5 active mirrors by default.
 
 **Mirror Rotation**  
-Process of burning old mirrors and creating new ones. Can be time-based (every 24 hours) or compromise-based (when attacked).
+Process of burning old mirrors and creating new ones. Capability exists but rarely used in practice. Can be manual or automated if needed.
 
 ---
 

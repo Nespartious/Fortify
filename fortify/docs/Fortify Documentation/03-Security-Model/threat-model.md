@@ -68,7 +68,7 @@ Fortify is designed to protect Tor hidden services from a wide range of attacks 
 - Vanguards (Layer 2/3 guard protection)
 - Timeout protection on all network operations
 - Safe lock helpers (prevent cascading failures)
-- Mirror rotation (burn compromised entry points)
+- Mirror burn capability (can replace compromised entry points if needed)
 
 ---
 
@@ -179,12 +179,12 @@ Tries to identify backend service
 ```
 
 **Defense:**
-1. **Disposable Mirrors:** Mirrors rotated regularly
-2. **Burn & Replace:** Compromised mirrors destroyed
+1. **Long-lived Mirrors:** Mirrors stable over months
+2. **Burn Capability:** Compromised mirrors CAN be destroyed if needed
 3. **Multiple Active Mirrors:** No single point of failure
 4. **Traffic Isolation:** Backend never exposed
 
-**Outcome:** ✅ Compromised mirror burned, new ones spawned
+**Outcome:** ✅ Compromised mirror can be burned if necessary, service continues
 
 ---
 
@@ -282,7 +282,7 @@ Fortify implements multiple layers of protection:
 3. **Detection Layer:** Behavioral analysis
 4. **Response Layer:** Demotion and burning
 5. **Network Layer:** Vanguards and circuit isolation
-6. **Infrastructure Layer:** Mirror rotation
+6. **Infrastructure Layer:** Multiple stable mirrors
 
 ### Fail Closed
 

@@ -136,7 +136,7 @@ Fortify Documentation/
 - ✅ **Behavioral Analysis** - Detects bots and attacks
 - ✅ **Circuit-Based Rate Limiting** - Per-circuit quotas
 - ✅ **Demotion System** - Progressive penalties
-- ✅ **Mirror Rotation** - Disposable entry points
+- ✅ **Mirror Burn Capability** - CAN replace mirrors if needed
 - ✅ **Vanguards** - Guard discovery protection
 - ✅ **HMAC-SHA256 Tokens** - Unforgeable session tokens
 

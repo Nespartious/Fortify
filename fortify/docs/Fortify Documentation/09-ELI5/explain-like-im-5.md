@@ -250,7 +250,8 @@ Result: Attack FAILS! Real users unaffected 🎉
 
 **Public Mirrors** (The Fake Doors)
 - These are the .onion addresses people connect to
-- They're DISPOSABLE - if one gets attacked, burn it and make a new one
+- Relatively stable - run for months at a time
+- CAN be burned and replaced if needed, but not commonly done
 - You run 3-5 at a time
 
 **HTTP Proxy** (The Bouncer)

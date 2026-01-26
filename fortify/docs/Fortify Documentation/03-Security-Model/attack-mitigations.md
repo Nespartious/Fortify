@@ -294,23 +294,23 @@ Identifying and compromising public mirror addresses.
 
 **Detection:**
 ```rust
-// Manual burn trigger
+// Manual burn trigger (rarely used)
 POST /ctrl_xxx/burn-mirror
 
-// Automatic burn on high compromise score
-if mirror.compromise_score > threshold {
+// Automated burning capability exists but rarely used
+if operator_decides_to_burn {
     burn_mirror(mirror_id);
 }
 ```
 
 **Mitigations:**
 
-1. **Disposable Mirrors:** Designed to be burned
-2. **Grace Period:** 24h death page before full destruction
-3. **Auto-Spawn:** Replacement mirrors created automatically
-4. **Minimum Active:** Always maintain 3+ active mirrors
+1. **Burn Capability:** Mirrors CAN be burned if needed
+2. **Grace Period:** 24h death page before full destruction (if burned)
+3. **Replacement Option:** New mirrors can be created if needed
+4. **Multiple Active:** Always maintain 3-5 active mirrors
 
-**Burn Process:**
+**Burn Process (when used):**
 ```
 1. Mark mirror as burned (stop accepting new sessions)
 2. Serve death page for 24 hours

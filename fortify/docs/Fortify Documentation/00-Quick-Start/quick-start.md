@@ -17,104 +17,52 @@
 
 ---
 
-## Step 1: Install Dependencies (5 minutes)
+## Step 1: Install and Build (5 minutes)
 
 ```bash
-# Update system
+# 1. Update system and install build dependencies
 sudo apt update && sudo apt upgrade -y
+sudo apt install -y git build-essential pkg-config libssl-dev
 
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# 2. Clone the repository
+git clone https://github.com/Nespartious/Fortify.git
+cd Fortify/fortify
+
+# 3. Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source $HOME/.cargo/env
 
-# Install dependencies
-sudo apt install -y build-essential pkg-config libssl-dev tor git
+# 4. Build the project (takes ~5-10 minutes)
+cargo build --release
 
-# Start Tor
-sudo systemctl start tor
-sudo systemctl enable tor
-```
-
----
-
-## Step 2: Get Fortify (2 minutes)
-
-```bash
-# Clone repository
-git clone https://github.com/your-org/fortify.git
-cd fortify
-
-# Build (this takes ~5-10 minutes)
-cargo build --release --workspace
+# 5. Run the TUI
+./target/release/fortify
 ```
 
 **☕ While it builds:** Read the [ELI5 Guide](../09-ELI5/explain-like-im-5.md) to understand how Fortify works.
 
----
-
-## Step 3: Quick Configuration (3 minutes)
-
-```bash
-# Create config directory
-sudo mkdir -p /etc/fortify
-
-# Copy example config
-sudo cp config/fortify.example.toml /etc/fortify/fortify.toml
-
-# Generate signing key
-sudo openssl rand -hex 32 > /etc/fortify/gate-signing.key
-sudo chmod 600 /etc/fortify/gate-signing.key
-
-# Edit config
-sudo nano /etc/fortify/fortify.toml
-```
-
-**Change these lines:**
-```toml
-[service]
-# YOUR ACTUAL BACKEND .ONION ADDRESS
-real_onion_address = "http://your-real-backend.onion"
-
-[orchestrator]
-# Verify this matches your Tor setup
-tor_cookie_path = "/var/lib/tor/control_auth_cookie"
-
-[gate]
-# Point to the key you just created
-token_signing_key = "/etc/fortify/gate-signing.key"
-```
-
-Save and exit (Ctrl+X, Y, Enter).
+**That's it!** The TUI wizard will detect and install Tor, Python, and vanguards automatically.
 
 ---
 
-## Step 4: Launch Fortify (2 minutes)
+## Step 2: Configure Through TUI (3 minutes)
 
-**Option A: Using TUI (Recommended)**
+The TUI wizard will guide you through:
+1. Backend configuration (your real .onion address)
+2. Signing key generation
+3. Tor setup and configuration
+4. Component deployment
+5. Mirror creation
 
-```bash
-./target/release/fortify
-```
-
-Navigate through the wizard, it will:
-1. Validate your configuration
-2. Start all components
-3. Create initial mirrors
-4. Show you the mirror addresses
-
-**Option B: Manual Start (Development)**
-
-```bash
-# Simple development mode
-./scripts/dev-run.sh
-```
+Just follow the prompts - it's interactive and intuitive!
 
 ---
 
-## Step 5: Get Your Mirror Addresses (1 minute)
+## Step 3: Get Your Mirror Addresses (1 minute)
 
 **From TUI:**
 - Navigate to "Mirrors" tab
+- Press 'E' to export mirror addresses
 - Copy the .onion addresses
 
 **From Logs:**
@@ -131,7 +79,7 @@ You should see something like:
 
 ---
 
-## Step 6: Test It! (2 minutes)
+## Step 4: Test It! (2 minutes)
 
 **Test from Tor Browser:**
 
