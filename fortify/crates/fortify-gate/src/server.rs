@@ -37,6 +37,12 @@ impl GateServer {
         let gate = Arc::clone(&self.gate);
         let static_dir = self.static_dir.clone();
 
+        // Spawn the pre-rendered pool maintenance task
+        let maintenance_gate = Arc::clone(&gate);
+        tokio::spawn(async move {
+            pool_maintenance_task(maintenance_gate).await;
+        });
+
         let listener = TcpListener::bind(addr).await?;
         tracing::info!("Gate HTTP server listening on {}", addr);
 
@@ -163,6 +169,9 @@ async fn handle_request(
         // API: Get pre-rendered CAPTCHA page for HTTP Proxy caching
         // Returns JSON with HTML, session_id, and cookie headers
         (&Method::GET, "/gate/api/prerendered-page") => serve_prerendered_page_api(gate),
+
+        // API: Get pre-rendered pool statistics
+        (&Method::GET, "/gate/api/pool-stats") => serve_pool_stats(gate),
 
         // Catch-all: redirect everyone to /Fortify landing
         // Also clear any stale session cookie to prevent redirect loops
@@ -346,8 +355,59 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
 
 /// API endpoint for HTTP Proxy to fetch pre-rendered CAPTCHA pages
 /// Returns JSON with the rendered HTML and session metadata
-/// This allows HTTP Proxy to cache and serve pages without full proxy overhead
+///
+/// CRITICAL: This now serves from the pre-rendered pool for instant response.
+/// Pages are pre-generated during idle periods and served instantly during attacks.
+/// Session registration is LAZY - created when user submits answer, not on page serve.
 fn serve_prerendered_page_api(gate: Arc<Gate>) -> Response<BoxBody> {
+    let pool = gate.prerendered_pool();
+    let pool_stats = pool.get_stats();
+
+    // Try to serve from pre-rendered pool first (INSTANT - no generation)
+    if let Some(page) = pool.take_available() {
+        // Generate unique session_id for this user
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        // Mark page as in-use and register for lazy verification
+        pool.mark_in_use(&page.captcha_id, &session_id);
+
+        // Inject session_id into HTML (replace placeholder)
+        let html = page.html.replace("{{SESSION_ID}}", &session_id);
+
+        tracing::info!(
+            "API: Served pre-rendered page from pool: session={}, captcha_id={}, pool={}",
+            session_id,
+            page.captcha_id,
+            pool_stats
+        );
+
+        // Return JSON with all the data HTTP Proxy needs
+        let response_json = serde_json::json!({
+            "html": html,
+            "session_id": session_id,
+            "captcha_id": page.captcha_id,
+            "from_pool": true,
+            "pool_available": pool_stats.available,
+            "cookies": [
+                "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+                format!("fortify_pending_session={}; Path=/; HttpOnly", session_id)
+            ]
+        });
+
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from(response_json.to_string())))
+            .expect("valid response");
+    }
+
+    // Pool exhausted - fall back to on-demand generation
+    // This should be rare if pool is properly sized
+    tracing::warn!(
+        "Pre-rendered pool EXHAUSTED! Generating on-demand. Stats: {}",
+        pool_stats
+    );
+
     // Generate a new session ID for this visitor
     let session_id = uuid::Uuid::new_v4().to_string();
 
@@ -429,7 +489,7 @@ fn serve_prerendered_page_api(gate: Arc<Gate>) -> Response<BoxBody> {
         engine.render_with_branding(TemplateType::GateChallenge, &branding, Some(&extra_vars));
 
     tracing::info!(
-        "API: Generated pre-rendered page for session: {}, captcha_type={:?}",
+        "API: Generated on-demand page for session: {}, captcha_type={:?}",
         session_id,
         captcha_type
     );
@@ -439,10 +499,36 @@ fn serve_prerendered_page_api(gate: Arc<Gate>) -> Response<BoxBody> {
         "html": html,
         "session_id": session_id,
         "captcha_id": session_id,
+        "from_pool": false,
+        "pool_available": pool_stats.available,
         "cookies": [
-            format!("fortify_session=; Path=/; Max-Age=0; HttpOnly"),
+            "fortify_session=; Path=/; Max-Age=0; HttpOnly",
             format!("fortify_pending_session={}; Path=/; HttpOnly", session_id)
         ]
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(response_json.to_string())))
+        .expect("valid response")
+}
+
+/// API endpoint to get pre-rendered pool statistics
+fn serve_pool_stats(gate: Arc<Gate>) -> Response<BoxBody> {
+    let stats = gate.prerendered_pool_stats();
+
+    let response_json = serde_json::json!({
+        "total": stats.total,
+        "available": stats.available,
+        "in_use": stats.in_use,
+        "target": stats.target,
+        "pages_served": stats.pages_served,
+        "pages_generated": stats.pages_generated,
+        "pages_reclaimed": stats.pages_reclaimed,
+        "pages_solved": stats.pages_solved,
+        "generation_rate": stats.generation_rate,
+        "utilization_percent": stats.utilization_percent,
     });
 
     Response::builder()
@@ -1074,4 +1160,75 @@ async fn handle_update_branding_config(
         .status(StatusCode::OK)
         .body(Full::new(Bytes::from("Branding updated")))
         .expect("valid response")
+}
+
+/// Background task to maintain the pre-rendered page pool
+///
+/// This task runs continuously and:
+/// 1. Reclaims expired InUse pages back to Available
+/// 2. Removes solved and stale pages
+/// 3. Fills pool back to target size
+/// 4. Updates metrics
+async fn pool_maintenance_task(gate: Arc<Gate>) {
+    tracing::info!("Pre-rendered pool maintenance task started");
+
+    loop {
+        let pool = gate.prerendered_pool();
+        let stats_before = pool.get_stats();
+
+        // 1. Reclaim expired InUse pages
+        let reclaimed = pool.reclaim_expired_pages();
+
+        // 2. Remove solved and stale pages
+        let removed = pool.remove_stale_pages();
+
+        // 3. Calculate how many pages we need
+        let available = pool.available_count();
+        let target = pool.config.target_size;
+        let needed = target.saturating_sub(available);
+
+        // 4. Generate pages based on traffic-aware rate
+        if needed > 0 {
+            let rate = pool.calculate_generation_rate();
+            // Generate in batches (5-second intervals, rate = pages/sec)
+            let batch_size = (rate * 5).min(needed as u64) as usize;
+
+            if batch_size > 0 {
+                tracing::debug!(
+                    "Pool maintenance: generating {} pages (rate={}/sec, needed={})",
+                    batch_size,
+                    rate,
+                    needed
+                );
+
+                for _ in 0..batch_size {
+                    let page = pool.generate_page(crate::CaptchaDifficulty::Medium);
+                    pool.add_page(page);
+                }
+            }
+        }
+
+        // 5. Update metrics
+        pool.update_metrics();
+
+        let stats_after = pool.get_stats();
+
+        // Log status periodically (every ~minute with 5s sleep = every 12 iterations)
+        static ITERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let iter = ITERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if iter.is_multiple_of(12) || reclaimed > 0 || removed > 0 || needed > 10 {
+            tracing::info!(
+                "Pool maintenance: {} (reclaimed={}, removed={}, generated={})",
+                stats_after,
+                reclaimed,
+                removed,
+                stats_after
+                    .pages_generated
+                    .saturating_sub(stats_before.pages_generated)
+            );
+        }
+
+        // Sleep for 5 seconds before next maintenance cycle
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
 }
