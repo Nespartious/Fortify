@@ -1444,20 +1444,29 @@ async fn process_request(
         // Demoted/stale users (is_new_visitor=false) get 2 CAPTCHAs to re-verify
         let is_demoted_user = !is_new_visitor;
 
-        // OPTIMIZATION: For new visitors, use the Gate API to fetch pre-rendered pages
-        // This reduces per-request overhead - Gate generates the page once and we serve it
-        // Works for: /, /Fortify (landing), and /Fortify/Portcullis (rate limit redirects)
-        // This is CRITICAL during attacks - serves cached pages without hitting Gate's CAPTCHA generation
-        let can_use_prerendered = !is_demoted_user
-            && (request_path == "/"
-                || request_path.is_empty()
-                || request_path == "/Fortify"
-                || request_path.starts_with("/Fortify/Portcullis"));
+        // OPTIMIZATION: Use pre-rendered pages to reduce load on Gate's CAPTCHA generation
+        // CRITICAL during attacks: rate-limited users need cached pages immediately
+        // Two scenarios:
+        // 1. New visitors (no session) hitting landing pages - use cache
+        // 2. Rate-limited users (any session) hitting /Portcullis - ALWAYS use cache
+        let is_rate_limit_redirect = request_path.starts_with("/Fortify/Portcullis");
+        let is_landing_page =
+            request_path == "/" || request_path.is_empty() || request_path == "/Fortify";
+
+        let can_use_prerendered = if is_rate_limit_redirect {
+            // Rate-limited users ALWAYS get cached pages - prevents Gate queue overflow
+            true
+        } else {
+            // Landing pages: only new visitors (prevents demoted users from skipping 2-CAPTCHA flow)
+            !is_demoted_user && is_landing_page
+        };
 
         if can_use_prerendered {
             tracing::info!(
-                "Using pre-rendered Gate page for new visitor (path: {})",
-                request_path
+                "Using pre-rendered Gate page (path: {}, rate_limit: {}, new_visitor: {})",
+                request_path,
+                is_rate_limit_redirect,
+                is_new_visitor
             );
             match fetch_prerendered_gate_page(&gate_address).await {
                 Ok(resp) => {
