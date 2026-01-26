@@ -8,6 +8,7 @@
 
 MIRROR="${1:-}"
 DURATION="${2:-60}"
+RATE="${3:-30}"  # Requests per second
 TOR_SOCKS_PORT="${TOR_SOCKS_PORT:-9150}"
 
 RED='\033[0;31m'
@@ -33,6 +34,8 @@ fi
 
 log_info "Target Mirror: $MIRROR"
 log_info "Test Duration: ${DURATION}s"
+log_info "Target Rate: ${RATE} req/sec"
+log_info "Total Requests: ~$((RATE * DURATION))"
 echo ""
 
 # Metrics tracking
@@ -40,6 +43,70 @@ TOTAL_REQUESTS=0
 BLOCKED_REQUESTS=0
 SUCCESS_REQUESTS=0
 TIMEOUT_REQUESTS=0
+START_TIME=0
+
+# High-speed attack - sends at target rate
+attack_high_speed() {
+    local total_requests=$((RATE * DURATION))
+    local delay=$(echo "scale=6; 1.0 / $RATE" | bc)
+    
+    log_info "High-speed attack: $total_requests requests at ${RATE}/sec..."
+    log_info "Request delay: ${delay}s between requests"
+    echo ""
+    
+    START_TIME=$(date +%s.%N)
+    
+    for i in $(seq 1 $total_requests); do
+        # Launch in background to not block
+        (
+            local status=$(curl -s --max-time 10 --socks5-hostname 127.0.0.1:$TOR_SOCKS_PORT \
+                -o /dev/null -w "%{http_code}" \
+                "http://$MIRROR/" 2>/dev/null || echo "000")
+            
+            # Write to temp file for aggregation
+            echo "$status" >> /tmp/fortify_stress_results_$$.txt
+        ) &
+        
+        # Limit concurrent background jobs to avoid overwhelming system
+        if [ $((i % 50)) -eq 0 ]; then
+            wait # Wait for batch to complete before continuing
+        fi
+        
+        # Control request rate
+        sleep "$delay" 2>/dev/null || sleep 0.033
+        
+        # Show progress every 100 requests
+        if [ $((i % 100)) -eq 0 ]; then
+            echo -n "[$i]"
+        fi
+    done
+    
+    echo ""
+    log_info "Waiting for all requests to complete..."
+    wait
+    
+    # Aggregate results
+    if [ -f /tmp/fortify_stress_results_$$.txt ]; then
+        log_info "Aggregating results from $(wc -l < /tmp/fortify_stress_results_$$.txt) responses..."
+        while read status; do
+            TOTAL_REQUESTS=$((TOTAL_REQUESTS + 1))
+            case "$status" in
+                200) SUCCESS_REQUESTS=$((SUCCESS_REQUESTS + 1)); echo -n "." ;;
+                429) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "R" ;;
+                403) BLOCKED_REQUESTS=$((BLOCKED_REQUESTS + 1)); echo -n "B" ;;
+                000) TIMEOUT_REQUESTS=$((TIMEOUT_REQUESTS + 1)); echo -n "T" ;;
+                *) echo -n "?" ;;
+            esac
+        done < /tmp/fortify_stress_results_$$.txt
+        echo ""
+        
+        rm /tmp/fortify_stress_results_$$.txt
+    else
+        log_error "No results file found!"
+    fi
+    
+    echo ""
+}
 
 # Attack 1: Rapid fire from single circuit
 attack_single_circuit() {
@@ -207,29 +274,23 @@ main() {
     echo "        T = Timeout | N = Not found   | ? = Unknown"
     echo ""
     
-    START_TIME=$(date +%s)
+    # Check for bc (needed for precise timing)
+    if ! command -v bc &> /dev/null; then
+        log_warning "bc not found, using approximate timing"
+    fi
     
-    # Run attacks in sequence
-    attack_single_circuit 30
-    sleep 1
+    # Run high-speed attack
+    attack_high_speed
     
-    attack_bot_agents 20
-    sleep 1
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - ${START_TIME%.*}))
     
-    attack_paths 15
-    sleep 1
-    
-    attack_parallel 10
-    sleep 2
-    
-    # Test legitimate access
+    # Test legitimate access after attack
+    log_info ""
     test_legitimate_user
     
     # Check system state
     check_metrics
-    
-    END_TIME=$(date +%s)
-    ELAPSED=$((END_TIME - START_TIME))
     
     # Results
     echo ""
@@ -244,13 +305,23 @@ main() {
     echo "Timeouts: $TIMEOUT_REQUESTS"
     echo ""
     
-    local block_rate=$((BLOCKED_REQUESTS * 100 / TOTAL_REQUESTS))
-    echo "Block Rate: ${block_rate}%"
-    
-    if [ $block_rate -gt 20 ]; then
-        log_success "Fortify is actively blocking malicious traffic"
+    if [ $TOTAL_REQUESTS -gt 0 ]; then
+        local block_rate=$((BLOCKED_REQUESTS * 100 / TOTAL_REQUESTS))
+        local actual_rate=$((TOTAL_REQUESTS / ELAPSED))
+        echo "Block Rate: ${block_rate}%"
+        echo "Actual Rate: ${actual_rate} req/sec"
+        echo "Target Rate: ${RATE} req/sec"
+        echo ""
+        
+        if [ $block_rate -gt 20 ]; then
+            log_success "Fortify is actively blocking malicious traffic"
+        elif [ $block_rate -gt 5 ]; then
+            log_warning "Some blocking, but rate may be low"
+        else
+            log_error "Block rate very low - check configuration"
+        fi
     else
-        log_error "Block rate seems low - check configuration"
+        log_error "No requests completed - check connectivity"
     fi
     
     echo ""
