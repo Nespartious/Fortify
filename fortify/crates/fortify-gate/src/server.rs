@@ -204,7 +204,11 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
     ) {
         Ok(s) => s,
         Err(e) => {
-            tracing::error!("Failed to create verification session with {:?}: {}", captcha_type, e);
+            tracing::error!(
+                "Failed to create verification session with {:?}: {}",
+                captcha_type,
+                e
+            );
             tracing::warn!("Falling back to Emoji CAPTCHA type");
             // Fallback to lightweight Emoji CAPTCHA which is guaranteed to work
             match gate.create_verification_with_type(
