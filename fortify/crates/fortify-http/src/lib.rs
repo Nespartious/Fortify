@@ -1444,6 +1444,28 @@ async fn process_request(
         // Demoted/stale users (is_new_visitor=false) get 2 CAPTCHAs to re-verify
         let is_demoted_user = !is_new_visitor;
 
+        // OPTIMIZATION: For new visitors, use the Gate API to fetch pre-rendered pages
+        // This reduces per-request overhead - Gate generates the page once and we serve it
+        // Only works for landing page requests; other paths need full proxy
+        let can_use_prerendered = !is_demoted_user
+            && (request_path == "/" || request_path.is_empty() || request_path == "/Fortify");
+
+        if can_use_prerendered {
+            tracing::info!("Using pre-rendered Gate page for new visitor");
+            match fetch_prerendered_gate_page(&gate_address).await {
+                Ok(resp) => {
+                    return resp;
+                }
+                Err(e) => {
+                    // Fallback to full proxy if API fails
+                    tracing::warn!(
+                        "Pre-rendered page fetch failed, falling back to proxy: {}",
+                        e
+                    );
+                }
+            }
+        }
+
         // Proxy to Gate - path logic:
         // 1. Demoted users ALWAYS go to /Fortify first (to see "Hold Position" page)
         // 2. Already in Gate flow (/Fortify/*) - preserve path for captcha/verify etc
@@ -1751,6 +1773,76 @@ async fn upgrade_verification_token(
     }
 
     None
+}
+
+/// Fetch a pre-rendered CAPTCHA page from Gate API
+/// This is more efficient than full proxy - Gate generates the page and returns JSON
+/// HTTP Proxy then constructs the response with the HTML and sets cookies
+/// This reduces per-request overhead for new visitors
+async fn fetch_prerendered_gate_page(
+    gate_address: &str,
+) -> std::result::Result<Response<BoxBody>, String> {
+    const GATE_REQUEST_TIMEOUT_SECS: u64 = 10;
+    const GATE_CONNECT_TIMEOUT_SECS: u64 = 5;
+
+    let api_url = format!("{}/gate/api/prerendered-page", gate_address);
+    tracing::debug!("Fetching pre-rendered page from Gate API: {}", api_url);
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(jittered_timeout(GATE_CONNECT_TIMEOUT_SECS))
+        .timeout(jittered_timeout(GATE_REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let response = client
+        .get(&api_url)
+        .send()
+        .await
+        .map_err(|e| format!("Gate API request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Gate API returned error status: {}",
+            response.status()
+        ));
+    }
+
+    let body_bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read Gate API response: {}", e))?;
+
+    // Parse JSON response
+    #[derive(serde::Deserialize)]
+    struct PrerenderedPageResponse {
+        html: String,
+        session_id: String,
+        #[allow(dead_code)]
+        captcha_id: String,
+        cookies: Vec<String>,
+    }
+
+    let page_data: PrerenderedPageResponse = serde_json::from_slice(&body_bytes)
+        .map_err(|e| format!("Failed to parse Gate API JSON: {}", e))?;
+
+    tracing::info!(
+        "Serving pre-rendered CAPTCHA page for session: {}",
+        page_data.session_id
+    );
+
+    // Build HTTP response with HTML body and cookies from Gate
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/html");
+
+    // Add all cookies from Gate's response
+    for cookie in &page_data.cookies {
+        builder = builder.header("Set-Cookie", cookie.as_str());
+    }
+
+    builder
+        .body(Full::new(Bytes::from(page_data.html)))
+        .map_err(|e| format!("Failed to build response: {}", e))
 }
 
 /// Proxy request to Gate for unknown users

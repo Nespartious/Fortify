@@ -271,10 +271,16 @@ Fortify is a **decentralized Tor hidden service protection layer** that acts as 
 │  │   └── Trust tier extraction                                      │
 │  │                                                                   │
 │  ├── Request Routing                                                │
-│  │   ├── No token → Gate                                            │
+│  │   ├── No token → Gate (via API for landing pages)                │
 │  │   ├── VERIFIED/TRUSTED → Healthy Nodes                           │
-│  │   ├── SUSPICIOUS → Gate (re-verify)                              │
+│  │   ├── SUSPICIOUS → Gate (re-verify via proxy)                    │
 │  │   └── BURNED → Burned page                                       │
+│  │                                                                   │
+│  ├── Cached CAPTCHA Page Serving                                    │
+│  │   ├── Calls Gate API for pre-rendered pages                      │
+│  │   ├── Reduces per-request overhead for new visitors              │
+│  │   ├── Falls back to full proxy if API fails                      │
+│  │   └── Demoted users use full proxy (need 2-captcha flow)         │
 │  │                                                                   │
 │  ├── Behavioral Analysis                                            │
 │  │   ├── Per-request analysis                                       │
@@ -319,6 +325,12 @@ Fortify is a **decentralized Tor hidden service protection layer** that acts as 
 │  │   ├── Difficulty levels (easy/medium/hard)                      │
 │  │   ├── Random cycling option                                      │
 │  │   └── Type-specific configuration                               │
+│  │                                                                   │
+│  ├── Pre-rendered Page API                                          │
+│  │   ├── GET /gate/api/prerendered-page                             │
+│  │   ├── Returns JSON with HTML, session_id, cookies                │
+│  │   ├── Enables HTTP Proxy caching optimization                    │
+│  │   └── Session creation still happens on Gate                     │
 │  │                                                                   │
 │  ├── Captcha Verification                                           │
 │  │   ├── Case-insensitive text matching                            │

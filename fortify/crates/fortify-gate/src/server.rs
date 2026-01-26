@@ -160,6 +160,10 @@ async fn handle_request(
         // Admin API: update branding configuration
         (&Method::POST, "/gate/admin/branding") => handle_update_branding_config(req, gate).await,
 
+        // API: Get pre-rendered CAPTCHA page for HTTP Proxy caching
+        // Returns JSON with HTML, session_id, and cookie headers
+        (&Method::GET, "/gate/api/prerendered-page") => serve_prerendered_page_api(gate),
+
         // Catch-all: redirect everyone to /Fortify landing
         // Also clear any stale session cookie to prevent redirect loops
         _ => Response::builder()
@@ -311,6 +315,114 @@ fn serve_demoted_page(gate: Arc<Gate>) -> Response<BoxBody> {
         .status(StatusCode::OK)
         .header("Content-Type", "text/html")
         .body(Full::new(Bytes::from(html)))
+        .expect("valid response")
+}
+
+/// API endpoint for HTTP Proxy to fetch pre-rendered CAPTCHA pages
+/// Returns JSON with the rendered HTML and session metadata
+/// This allows HTTP Proxy to cache and serve pages without full proxy overhead
+fn serve_prerendered_page_api(gate: Arc<Gate>) -> Response<BoxBody> {
+    // Generate a new session ID for this visitor
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    // Get captcha configuration
+    let config = gate.get_captcha_config();
+    let captcha_type = config.gate_captcha_type;
+
+    // Create verification session and generate CAPTCHA
+    let state = match gate.create_verification_with_type(
+        session_id.clone(),
+        captcha_type,
+        crate::CaptchaDifficulty::Medium,
+        false, // not threat mode for new visitors
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to create verification session for API: {}", e);
+            let error_json = serde_json::json!({
+                "error": "failed_to_create_session",
+                "message": e.to_string()
+            });
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(error_json.to_string())))
+                .expect("valid response");
+        }
+    };
+
+    // Generate the CAPTCHA content HTML dynamically based on type
+    let (captcha_content, instruction, input_type) = if let Some(ref captcha_data) =
+        state.captcha_data
+    {
+        crate::captcha_html::render_captcha_content_for_landing(
+            &session_id,
+            &session_id,
+            captcha_data,
+        )
+    } else {
+        // Fallback for legacy BmpText (no captcha_data, uses image URL)
+        let content = format!(
+            r#"<img src="/gate/captcha/{}" alt="Security Challenge" style="max-width: 100%; height: auto;">"#,
+            session_id
+        );
+        (content, captcha_type.description().to_string(), "text")
+    };
+
+    // Generate input HTML based on whether this is text-based or selection-based
+    let input_html = if input_type == "text" {
+        r#"<div class="input-group">
+                    <label for="captcha">Enter Code</label>
+                    <input type="text" id="captcha" name="captcha" placeholder="• • • • • •" required autofocus autocomplete="off">
+                </div>"#.to_string()
+    } else {
+        // Selection-based CAPTCHAs don't need a text input - buttons submit directly
+        String::new()
+    };
+
+    // Generate submit button HTML (only for text-based CAPTCHAs)
+    let submit_html = if input_type == "text" {
+        r#"<button type="submit">Verify &amp; Enter</button>"#.to_string()
+    } else {
+        // Selection-based CAPTCHAs submit via the option buttons
+        String::new()
+    };
+
+    // Render the combined gate-challenge template
+    let engine = TemplateEngine::new();
+    let branding = gate.branding().clone();
+    let mut extra_vars = std::collections::HashMap::new();
+    extra_vars.insert("CAPTCHA_CONTENT".to_string(), captcha_content);
+    extra_vars.insert("CAPTCHA_INSTRUCTION".to_string(), instruction);
+    extra_vars.insert("CAPTCHA_INPUT".to_string(), input_html);
+    extra_vars.insert("CAPTCHA_SUBMIT".to_string(), submit_html);
+    extra_vars.insert("SESSION_ID".to_string(), session_id.clone());
+    extra_vars.insert("CAPTCHA_ID".to_string(), session_id.clone());
+
+    let html =
+        engine.render_with_branding(TemplateType::GateChallenge, &branding, Some(&extra_vars));
+
+    tracing::info!(
+        "API: Generated pre-rendered page for session: {}, captcha_type={:?}",
+        session_id,
+        captcha_type
+    );
+
+    // Return JSON with all the data HTTP Proxy needs
+    let response_json = serde_json::json!({
+        "html": html,
+        "session_id": session_id,
+        "captcha_id": session_id,
+        "cookies": [
+            format!("fortify_session=; Path=/; Max-Age=0; HttpOnly"),
+            format!("fortify_pending_session={}; Path=/; HttpOnly", session_id)
+        ]
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(response_json.to_string())))
         .expect("valid response")
 }
 

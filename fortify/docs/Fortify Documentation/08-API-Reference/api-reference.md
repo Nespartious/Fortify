@@ -186,6 +186,54 @@ Called by fortify-http proxy when user presents verification token.
 
 ---
 
+### GET /gate/api/prerendered-page
+
+**Internal API:** Fetch a pre-rendered CAPTCHA landing page for HTTP Proxy caching.
+
+This endpoint allows the HTTP Proxy to fetch pre-rendered CAPTCHA pages instead of doing a full HTTP proxy roundtrip. This reduces per-request overhead for new visitors.
+
+**Request:**
+```
+GET /gate/api/prerendered-page
+```
+
+No authentication required (internal API).
+
+**Response (Success):**
+```json
+{
+  "html": "<html>...full CAPTCHA page HTML...</html>",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "captcha_id": "550e8400-e29b-41d4-a716-446655440000",
+  "cookies": [
+    "fortify_session=; Path=/; Max-Age=0; HttpOnly",
+    "fortify_pending_session=550e8400-e29b-41d4-a716-446655440000; Path=/; HttpOnly"
+  ]
+}
+```
+
+**Response (Error):**
+```json
+{
+  "error": "failed_to_create_session",
+  "message": "Error details"
+}
+```
+
+**HTTP Proxy Usage:**
+1. Detect new visitor requesting landing page (`/` or `/Fortify`)
+2. Call this API instead of full proxy to Gate
+3. Parse JSON response
+4. Construct HTTP response with HTML body and Set-Cookie headers from `cookies` array
+5. Falls back to full proxy if API fails
+
+**Notes:**
+- Session creation still happens on Gate (maintains security model)
+- Only used for new visitors; demoted users use full proxy (need 2-captcha flow)
+- CAPTCHA verification still uses POST /gate/verify
+
+---
+
 ### Proof-of-Work at Tor Layer (ENABLED)
 
 **Note:** PoW (Proof-of-Work) defense is **ENABLED** at the Tor hidden service layer, not at the application HTTP layer. 
