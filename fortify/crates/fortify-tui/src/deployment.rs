@@ -827,6 +827,90 @@ impl DeploymentManager {
             .await
             .ok();
 
+        // Check 1: Stop old systemd services (fortify, fortifyd)
+        let systemctl_check = tokio::process::Command::new("systemctl")
+            .args(["is-active", "fortify", "fortifyd"])
+            .output()
+            .await;
+
+        if let Ok(output) = systemctl_check {
+            if output.status.success() || String::from_utf8_lossy(&output.stdout).contains("active")
+            {
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Warn,
+                        "cleanup",
+                        "Stopping old systemd services (fortify/fortifyd)...",
+                    ))
+                    .await
+                    .ok();
+
+                let _ = tokio::process::Command::new("sudo")
+                    .args(["systemctl", "stop", "fortify", "fortifyd"])
+                    .status()
+                    .await;
+            }
+        }
+
+        // Check 2: Port conflicts (8080-8090 range)
+        let netstat_check = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("netstat -tuln 2>/dev/null | grep -E ':(808[0-9]|8090)' | awk '{print $4}' | awk -F: '{print $NF}' | sort -u")
+            .output()
+            .await;
+
+        if let Ok(output) = netstat_check {
+            let ports = String::from_utf8_lossy(&output.stdout);
+            if !ports.trim().is_empty() {
+                self.log_tx
+                    .send(LogEntry::from_source(
+                        LogLevel::Warn,
+                        "cleanup",
+                        &format!(
+                            "Resolving port conflicts on: {}",
+                            ports.trim().replace('\n', ", ")
+                        ),
+                    ))
+                    .await
+                    .ok();
+
+                for port in ports.lines() {
+                    let port = port.trim();
+                    if !port.is_empty() {
+                        let _ = tokio::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(format!("sudo lsof -t -i :{} 2>/dev/null | xargs -r sudo kill -9 2>/dev/null || true", port))
+                            .status()
+                            .await;
+                    }
+                }
+            }
+        }
+
+        // Check 3: Stale PID files
+        let pid_dir = std::path::PathBuf::from("/tmp/fortify");
+        if pid_dir.exists() {
+            if let Ok(entries) = tokio::fs::read_dir(&pid_dir).await {
+                let mut entries = entries;
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if name.ends_with(".pid") {
+                            let _ = tokio::fs::remove_file(entry.path()).await;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.log_tx
+            .send(LogEntry::from_source(
+                LogLevel::Info,
+                "cleanup",
+                "Conflict detection complete - system ready",
+            ))
+            .await
+            .ok();
+
         // Delete stale mirror-addresses.txt to prevent confusion
         // This file will be regenerated when user exports mirrors after deployment
         let mirror_addresses_file =
