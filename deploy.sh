@@ -466,6 +466,70 @@ fi
 log_success "Configuration validated"
 
 #-------------------------------------------------------------------------------
+# DEPLOYMENT CONFLICT DETECTION & RESOLUTION
+#-------------------------------------------------------------------------------
+log_info "Checking for deployment conflicts..."
+
+# Check 1: Old systemd services
+CONFLICTS_FOUND=false
+if systemctl is-active --quiet fortify 2>/dev/null || systemctl is-active --quiet fortifyd 2>/dev/null; then
+    log_warn "Found active old systemd service(s)"
+    systemctl is-active --quiet fortify 2>/dev/null && log_info "  - fortify.service (stopping...)"
+    systemctl is-active --quiet fortifyd 2>/dev/null && log_info "  - fortifyd.service (stopping...)"
+    
+    systemctl stop fortify 2>/dev/null || true
+    systemctl stop fortifyd 2>/dev/null || true
+    systemctl disable fortify 2>/dev/null || true
+    systemctl disable fortifyd 2>/dev/null || true
+    
+    log_success "Old services stopped and disabled"
+    CONFLICTS_FOUND=true
+fi
+
+# Check 2: Port conflicts (8080-8090 range)
+PORTS_IN_USE=$(netstat -tuln 2>/dev/null | grep -E ":(808[0-9]|8090)" | awk '{print $4}' | awk -F: '{print $NF}' | sort -u || true)
+if [ -n "$PORTS_IN_USE" ]; then
+    log_warn "Found processes using Fortify ports (8080-8090)"
+    echo "$PORTS_IN_USE" | while read -r port; do
+        PIDS=$(lsof -t -i :$port 2>/dev/null || true)
+        if [ -n "$PIDS" ]; then
+            log_info "  - Port $port (killing PIDs: $PIDS)"
+            echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
+        fi
+    done
+    log_success "Port conflicts resolved"
+    CONFLICTS_FOUND=true
+fi
+
+# Check 3: Existing Fortify processes
+EXISTING_PROCS=$(pgrep -f 'fortify-|target/release/fortify' 2>/dev/null || true)
+if [ -n "$EXISTING_PROCS" ]; then
+    COUNT=$(echo "$EXISTING_PROCS" | wc -l)
+    log_warn "Found $COUNT existing Fortify process(es)"
+    pkill -9 -f 'fortify-' 2>/dev/null || true
+    pkill -9 -f 'target/release/fortify' 2>/dev/null || true
+    sleep 1
+    log_success "Existing processes terminated"
+    CONFLICTS_FOUND=true
+fi
+
+# Check 4: Stale PID files
+if [ -d "/tmp/fortify" ]; then
+    PID_FILES=$(find /tmp/fortify -name "*.pid" 2>/dev/null || true)
+    if [ -n "$PID_FILES" ]; then
+        rm -f /tmp/fortify/*.pid 2>/dev/null || true
+        log_success "Cleaned up stale PID files"
+        CONFLICTS_FOUND=true
+    fi
+fi
+
+if [ "$CONFLICTS_FOUND" = false ]; then
+    log_success "No deployment conflicts detected"
+else
+    log_success "All deployment conflicts resolved - ready to deploy"
+fi
+
+#-------------------------------------------------------------------------------
 # PHASE 2: SYSTEM PREPARATION
 #-------------------------------------------------------------------------------
 log_step 2 "SYSTEM PREPARATION"

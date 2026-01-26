@@ -19,6 +19,50 @@ echo -e "${GREEN}     Fortify DDoS Protection System    ${NC}"
 echo -e "${GREEN}═══════════════════════════════════════${NC}"
 echo ""
 
+#===============================================================================
+# PRE-START CONFLICT DETECTION & RESOLUTION
+#===============================================================================
+echo -e "${YELLOW}→${NC} Checking for deployment conflicts..."
+
+# Check 1: Old systemd services
+if systemctl is-active --quiet fortify 2>/dev/null || systemctl is-active --quiet fortifyd 2>/dev/null; then
+    echo -e "${YELLOW}⚠${NC} Found active old systemd service(s) - stopping..."
+    sudo systemctl stop fortify 2>/dev/null || true
+    sudo systemctl stop fortifyd 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} Old services stopped"
+fi
+
+# Check 2: Port conflicts
+PORTS_IN_USE=$(netstat -tuln 2>/dev/null | grep -E ":(808[0-9]|8090)" | awk '{print $4}' | awk -F: '{print $NF}' | sort -u || true)
+if [ -n "$PORTS_IN_USE" ]; then
+    echo -e "${YELLOW}⚠${NC} Resolving port conflicts..."
+    echo "$PORTS_IN_USE" | while read -r port; do
+        sudo lsof -t -i :$port 2>/dev/null | xargs -r sudo kill -9 2>/dev/null || true
+    done
+    echo -e "${GREEN}✓${NC} Port conflicts resolved"
+fi
+
+# Check 3: Existing Fortify processes
+if pgrep -f 'fortify-|target/release/fortify' >/dev/null 2>&1; then
+    echo -e "${YELLOW}⚠${NC} Terminating existing Fortify processes..."
+    pkill -9 -f 'fortify-' 2>/dev/null || true
+    pkill -9 -f 'target/release/fortify' 2>/dev/null || true
+    sleep 1
+    echo -e "${GREEN}✓${NC} Existing processes terminated"
+fi
+
+# Check 4: Stale PID files
+if [ -d "/tmp/fortify" ] && [ -n "$(find /tmp/fortify -name "*.pid" 2>/dev/null)" ]; then
+    rm -f /tmp/fortify/*.pid 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} Cleaned up stale PID files"
+fi
+
+echo -e "${GREEN}✓${NC} Pre-start checks complete\n"
+
+#===============================================================================
+# INITIALIZATION
+#===============================================================================
+
 # Generate secret key if not exists
 if [ ! -f "${RUNTIME_DIR}/config/secret.key" ]; then
     echo -e "${YELLOW}→${NC} Generating secret key..."
