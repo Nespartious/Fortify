@@ -1,7 +1,7 @@
 use crate::captcha_html::{
     render_captcha_page_with_timer, render_captcha_page_with_timer_and_reason,
 };
-use crate::captcha_types::CaptchaData;
+use crate::captcha_types::{CaptchaData, CaptchaType};
 use crate::Gate;
 use crate::GateError;
 use bytes::Bytes;
@@ -194,6 +194,8 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
     let captcha_type = config.gate_captcha_type;
 
     // Create verification session and generate CAPTCHA
+    // Multi-type CAPTCHAs (Emoji, Direction, etc.) are lightweight and should never fail
+    // If BmpText fails, fall back to Emoji which is guaranteed to work
     let state = match gate.create_verification_with_type(
         session_id.clone(),
         captcha_type,
@@ -202,16 +204,36 @@ fn serve_landing_page(gate: Arc<Gate>) -> Response<BoxBody> {
     ) {
         Ok(s) => s,
         Err(e) => {
-            tracing::error!("Failed to create verification session: {}", e);
-            // Fallback to old landing page without CAPTCHA
-            let engine = TemplateEngine::new();
-            let branding = gate.branding().clone();
-            let html = engine.render_with_branding(TemplateType::Gate, &branding, None);
-            return Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "text/html")
-                .body(Full::new(Bytes::from(html)))
-                .expect("valid response");
+            tracing::error!("Failed to create verification session with {:?}: {}", captcha_type, e);
+            tracing::warn!("Falling back to Emoji CAPTCHA type");
+            // Fallback to lightweight Emoji CAPTCHA which is guaranteed to work
+            match gate.create_verification_with_type(
+                session_id.clone(),
+                CaptchaType::Emoji,
+                crate::CaptchaDifficulty::Medium,
+                false,
+            ) {
+                Ok(s) => s,
+                Err(e2) => {
+                    tracing::error!("CRITICAL: Even Emoji CAPTCHA failed: {}", e2);
+                    // Return 503 Service Unavailable instead of old landing page
+                    return Response::builder()
+                        .status(StatusCode::SERVICE_UNAVAILABLE)
+                        .header("Content-Type", "text/html")
+                        .body(Full::new(Bytes::from(
+                            r#"<!DOCTYPE html>
+                            <html><head><meta charset="UTF-8"><title>Service Unavailable</title></head>
+                            <body style="background:#141417;color:#f5f0e8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+                                <div style="text-align:center;max-width:500px;padding:2rem;">
+                                    <h1 style="color:#e4bc5e;margin-bottom:1rem;">⚠ Service Temporarily Unavailable</h1>
+                                    <p>The security verification system is experiencing high load. Please wait a moment and try again.</p>
+                                    <p style="margin-top:2rem;"><a href="/" style="color:#9ab893;text-decoration:none;">← Retry</a></p>
+                                </div>
+                            </body></html>"#
+                        )))
+                        .expect("valid response");
+                }
+            }
         }
     };
 

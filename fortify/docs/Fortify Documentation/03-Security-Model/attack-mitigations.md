@@ -35,6 +35,30 @@ if active_circuits > 100 {
 
 **Result:** ✅ Attack traffic isolated per-circuit, legitimate users unaffected
 
+**CAPTCHA Fallback Under Load:**
+
+During extreme load, the system uses cascading fallback to ensure users always receive a CAPTCHA challenge:
+
+1. **Primary:** Configured CAPTCHA type (BmpText, Emoji, Direction, etc.)
+2. **Fallback:** Lightweight Emoji CAPTCHA (always succeeds)
+3. **Failure:** 503 Service Unavailable with retry instructions
+
+**The old "Request Entry" landing page is NEVER shown as a fallback.** This ensures consistent UX even under attack.
+
+```rust
+// Gate fallback logic (fortify-gate/src/server.rs)
+match create_verification_with_type(captcha_type) {
+    Ok(state) => serve_captcha(state),
+    Err(_) => {
+        // Try lightweight Emoji fallback
+        match create_verification_with_type(CaptchaType::Emoji) {
+            Ok(state) => serve_captcha(state),
+            Err(_) => serve_503_error(), // Never old landing page
+        }
+    }
+}
+```
+
 ---
 
 ### Slow-Loris / Slowdown Attacks
