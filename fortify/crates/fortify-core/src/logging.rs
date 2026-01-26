@@ -110,7 +110,8 @@ pub fn start_resource_logger(service_name: &'static str, interval: Duration) {
 
         loop {
             if let Ok(pid) = sysinfo::get_current_pid() {
-                sys.refresh_process(pid);
+                // sysinfo 0.38: refresh_processes with specific process list
+                sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), false);
                 sys.refresh_memory();
 
                 if let Some(proc) = sys.process(pid) {

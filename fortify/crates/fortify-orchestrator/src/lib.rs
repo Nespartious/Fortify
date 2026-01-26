@@ -3231,7 +3231,7 @@ impl Orchestrator {
                     let mut sys = sysinfo::System::new_all();
                     sys.refresh_all();
 
-                    let cpu_usage = sys.global_cpu_info().cpu_usage();
+                    let cpu_usage = sys.global_cpu_usage();
                     let memory_total = sys.total_memory() / 1024 / 1024; // MB
                     let memory_used = sys.used_memory() / 1024 / 1024;
                     let memory_available = sys.available_memory() / 1024 / 1024;
@@ -3812,7 +3812,7 @@ impl Orchestrator {
         // Lock and refresh CPU usage
         if let Ok(mut sys) = system.lock() {
             sys.refresh_cpu_usage();
-            sys.global_cpu_info().cpu_usage()
+            sys.global_cpu_usage()
         } else {
             // Fallback if lock fails
             tracing::warn!("Failed to lock CPU monitor, returning estimate");

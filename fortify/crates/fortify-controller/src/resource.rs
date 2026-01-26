@@ -21,13 +21,13 @@ impl ResourceMonitor {
 
     /// Update resource information
     pub fn update(&mut self) {
-        self.system.refresh_cpu();
+        self.system.refresh_cpu_all();
         self.system.refresh_memory();
     }
 
     /// Get CPU usage percentage (0-100)
     pub fn cpu_usage_percent(&self) -> f32 {
-        self.system.global_cpu_info().cpu_usage()
+        self.system.global_cpu_usage()
     }
 
     /// Get total memory in MB
