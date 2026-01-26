@@ -117,22 +117,24 @@ impl TrafficTier {
         }
     }
 
-    /// Returns the CAPTCHA pool size for this tier
+    /// Returns the CAPTCHA pool size for this tier (pre-rendered pages)
+    /// Memory usage: ~132 KB per page
+    /// Micro=128MB, Small=257MB, Medium=645MB, Large=1.3GB, Enterprise=2.6GB
     pub fn pool_size(&self) -> usize {
         match self {
-            TrafficTier::Micro => 50,
-            TrafficTier::Small => 500,
-            TrafficTier::Medium => 2_000,
-            TrafficTier::Large => 3_000, // Reduced from 5K for Tor realism
-            TrafficTier::Enterprise => 5_000, // Reduced from 10K for Tor realism
+            TrafficTier::Micro => 1_000,      // ~128 MB
+            TrafficTier::Small => 2_000,      // ~257 MB
+            TrafficTier::Medium => 5_000,     // ~645 MB
+            TrafficTier::Large => 10_000,     // ~1.3 GB
+            TrafficTier::Enterprise => 20_000, // ~2.6 GB
         }
     }
 
     /// Returns the minimum CAPTCHA pool size for this tier
     pub fn min_pool_size(&self) -> usize {
         match self {
-            TrafficTier::Micro => 10,
-            TrafficTier::Small => 100,
+            TrafficTier::Micro => 100,
+            TrafficTier::Small => 200,
             TrafficTier::Medium => 500,
             TrafficTier::Large => 1_000,
             TrafficTier::Enterprise => 2_000,
@@ -142,11 +144,11 @@ impl TrafficTier {
     /// Returns the maximum CAPTCHA pool size for this tier
     pub fn max_pool_size(&self) -> usize {
         match self {
-            TrafficTier::Micro => 100,
-            TrafficTier::Small => 1_000,
-            TrafficTier::Medium => 5_000,
-            TrafficTier::Large => 6_000, // Reduced from 10K for Tor realism
-            TrafficTier::Enterprise => 10_000, // Reduced from 20K for Tor realism
+            TrafficTier::Micro => 2_000,      // 2x pool_size
+            TrafficTier::Small => 4_000,      // 2x pool_size
+            TrafficTier::Medium => 10_000,    // 2x pool_size
+            TrafficTier::Large => 20_000,     // 2x pool_size
+            TrafficTier::Enterprise => 40_000, // 2x pool_size
         }
     }
 
