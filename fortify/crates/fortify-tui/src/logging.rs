@@ -72,10 +72,14 @@ pub struct SystemStatus {
     pub mirrors: (usize, usize, usize),
     /// Mirror overall status
     pub mirror_status: ComponentStatus,
-    /// CAPTCHA pool: (current, target)
+    /// CAPTCHA pool: (available, target)
     pub captcha_pool: (usize, usize),
     /// CAPTCHA pool status
     pub captcha_status: ComponentStatus,
+    /// CAPTCHA pages currently in use (served but not verified)
+    pub captcha_in_use: usize,
+    /// Total CAPTCHA pages served
+    pub captcha_pages_served: u64,
     /// Node counts: (healthy, threat)
     pub nodes: (usize, usize),
     /// Current deployment step: (current, total, description)

@@ -1546,30 +1546,73 @@ impl App {
             };
         }
 
-        // Also try to get CAPTCHA pool stats from orchestrator
+        // Get CAPTCHA pool stats directly from Gate (more accurate real-time data)
+        // Gate listens on port 8081 by default
+        if let Ok(pool_response) = client
+            .get("http://127.0.0.1:8081/gate/api/pool-stats")
+            .send()
+            .await
+        {
+            if let Ok(pool_json) = pool_response.json::<serde_json::Value>().await {
+                let available = pool_json
+                    .get("available")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let target = pool_json
+                    .get("target")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(self.config.captcha.pool_size as u64) as usize;
+                let in_use = pool_json
+                    .get("in_use")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+                let pages_served = pool_json
+                    .get("pages_served")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+
+                // Update pool stats - show available + in_use as current capacity
+                self.system_status.captcha_pool = (available, target);
+                self.system_status.captcha_pages_served = pages_served;
+                self.system_status.captcha_in_use = in_use;
+                self.system_status.captcha_status = if available >= target * 80 / 100 {
+                    ComponentStatus::Running
+                } else if available > 0 || in_use > 0 {
+                    ComponentStatus::Starting
+                } else {
+                    ComponentStatus::Pending
+                };
+            }
+        } else {
+            // Fallback: try to get CAPTCHA pool stats from orchestrator
+            if let Ok(stats_response) = client.get("http://127.0.0.1:8080/stats").send().await {
+                if let Ok(stats_json) = stats_response.json::<serde_json::Value>().await {
+                    // Parse CAPTCHA pool stats if available
+                    if let Some(captcha) = stats_json.get("captcha_pool") {
+                        let current = captcha
+                            .get("current_size")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as usize;
+                        let target = captcha
+                            .get("target_size")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(500) as usize;
+                        self.system_status.captcha_pool = (current, target);
+                        self.system_status.captcha_status = if current >= target * 80 / 100 {
+                            ComponentStatus::Running
+                        } else if current > 0 {
+                            ComponentStatus::Starting
+                        } else {
+                            ComponentStatus::Pending
+                        };
+                    }
+                }
+            }
+        }
+
+        // Also try to get orchestrator count from orchestrator /stats
         if let Ok(stats_response) = client.get("http://127.0.0.1:8080/stats").send().await {
             if let Ok(stats_json) = stats_response.json::<serde_json::Value>().await {
-                // Parse CAPTCHA pool stats if available
-                if let Some(captcha) = stats_json.get("captcha_pool") {
-                    let current = captcha
-                        .get("current_size")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize;
-                    let target = captcha
-                        .get("target_size")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(500) as usize;
-                    self.system_status.captcha_pool = (current, target);
-                    self.system_status.captcha_status = if current >= target * 80 / 100 {
-                        ComponentStatus::Running
-                    } else if current > 0 {
-                        ComponentStatus::Starting
-                    } else {
-                        ComponentStatus::Pending
-                    };
-                }
-
-                // Parse orchestrator count if available
                 if let Some(orch_count) = stats_json
                     .get("orchestrator_count")
                     .and_then(|v| v.as_u64())

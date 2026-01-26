@@ -72,7 +72,9 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Row 2: Resources + TWO STATUS LIGHTS (System + Security)
     let (orch_cur, _orch_tgt) = status.orchestrators;
     let (live, standby, _) = status.mirrors;
-    let (captcha_cur, captcha_tgt) = status.captcha_pool;
+    let (captcha_avail, captcha_tgt) = status.captcha_pool;
+    let captcha_in_use = status.captcha_in_use;
+    let captcha_served = status.captcha_pages_served;
 
     // Compute system health (internal services only)
     let (system_color, system_label) = compute_system_health(app);
@@ -85,6 +87,32 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Current time
     let now = Utc::now();
     let clock_str = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second());
+
+    // Calculate pool fill percentage for color
+    let pool_pct = if captcha_tgt > 0 {
+        (captcha_avail * 100) / captcha_tgt
+    } else {
+        0
+    };
+    let pool_color = if pool_pct >= 80 {
+        Color::Green
+    } else if pool_pct >= 50 {
+        Color::Yellow
+    } else if pool_pct >= 20 {
+        Color::Rgb(255, 165, 0) // Orange
+    } else {
+        Color::Red
+    };
+
+    // Format pool display: "POOL: 1850/2000 (15 in-use) | 234 served"
+    let pool_display = if captcha_in_use > 0 || captcha_served > 0 {
+        format!(
+            "POOL:{}/{} ({}⏳) {}✓",
+            captcha_avail, captcha_tgt, captcha_in_use, captcha_served
+        )
+    } else {
+        format!("POOL:{}/{}", captcha_avail, captcha_tgt)
+    };
 
     let row2 = Line::from(vec![
         Span::raw(" "),
@@ -99,8 +127,8 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw("  "),
         Span::styled(
-            format!("CAP:{}/{}", captcha_cur, captcha_tgt),
-            Style::default().fg(status.captcha_status.color()),
+            pool_display,
+            Style::default().fg(pool_color).add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(
