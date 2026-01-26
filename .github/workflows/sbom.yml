@@ -146,7 +146,7 @@ jobs:
           path: sbom/
 
       - name: Check SBOM with Grype
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         continue-on-error: true
         with:
           path: sbom/
