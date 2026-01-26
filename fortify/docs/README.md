@@ -33,17 +33,17 @@ See [planning/PLANNING-OVERVIEW.md](planning/PLANNING-OVERVIEW.md) for current s
 ### Planning & Progress
 | Document | Description |
 |----------|-------------|
-| [Planning Overview](planning/PLANNING-OVERVIEW.md) | Current sprint queue and workflow |
-| [Master Status](planning/MASTER-STATUS-2026-01-22.md) | Complete project status |
+| Planning Overview (missing) | Current sprint queue and workflow |
+| Master Status (missing) | Complete project status |
 
 ### Active Sprints (Dev_Progress)
 | Sprint | Priority | Est. Time |
 |--------|----------|-----------|
-| [Timeout Strategy](Dev_Progress/01-TIMEOUT-STRATEGY-SPRINT.md) | 🔴 CRITICAL | 2-3 days |
-| [Panic Audit](Dev_Progress/02-PANIC-AUDIT-SPRINT.md) | 🔴 CRITICAL | 3-5 days |
-| [CI Quality](Dev_Progress/03-CI-QUALITY-SPRINT.md) | 🟡 MEDIUM | 1-2 days |
-| [TUI Completion](Dev_Progress/04-TUI-COMPLETION-SPRINT.md) | 🟡 MEDIUM | 3-5 days |
-| [Clippy Fixes](Dev_Progress/CLIPPY-SPRINT.md) | 🟡 MEDIUM | 3-4 hours |
+| Timeout Strategy (archived) | 🔴 CRITICAL | 2-3 days |
+| Panic Audit (archived) | 🔴 CRITICAL | 3-5 days |
+| CI Quality (archived) | 🟡 MEDIUM | 1-2 days |
+| TUI Completion (archived) | 🟡 MEDIUM | 3-5 days |
+| Clippy Fixes (archived) | 🟡 MEDIUM | 3-4 hours |
 
 ### Reference Documentation
 | Document | Description |
@@ -170,7 +170,7 @@ cargo test --all
 
 ## Original Specifications
 
-Design documents archived in [specs/](specs/):
-- [fortify-master.md](specs/fortify-master.md) - Original architecture
-- [defensive-mechanisms.md](specs/defensive-mechanisms.md) - Security specifications
-- [development-stack.md](specs/development-stack.md) - Technology choices
+Design documents previously referenced in specs/ (directory missing):
+- fortify-master.md - Original architecture (MISSING)
+- defensive-mechanisms.md - Security specifications (MISSING)
+- development-stack.md - Technology choices (MISSING)

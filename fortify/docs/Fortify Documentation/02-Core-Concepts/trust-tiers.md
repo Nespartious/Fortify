@@ -138,8 +138,8 @@ User connects → No token found → Unknown tier → Redirect to /Fortify
 **Routing:** Served static "Burned" page, no further access.
 
 **Burn Triggers:**
-- 10+ total violations
-- 5+ violations while already SUSPICIOUS
+- 3 demotions (repeated pattern of being demoted and re-verified)
+- Session marked as killed (persistent violator)
 - Admin manual burn
 
 ---
@@ -181,12 +181,12 @@ User connects → No token found → Unknown tier → Redirect to /Fortify
 │      │                    │    (-1)     │                     │                  │
 │      │                    └──────┬──────┘                     │                  │
 │      │                           │                            │                  │
-│      │                    5+ violations                       │                  │
-│      │                    (while suspicious)                  │                  │
+│      │                    3 demotions                        │                  │
+│      │                    (persistent violator)              │                  │
 │      │                           │                            │                  │
 │      │                    ┌──────▼──────┐                     │                  │
 │      │                    │   BURNED    │◄────────────────────┘                  │
-│      │                    │    (-2)     │    10+ violations (any tier)          │
+│      │                    │    (-2)     │    3 demotions (kill threshold)       │
 │      │                    └─────────────┘                                       │
 │      │                                                                          │
 │      └──────────────────────────────────────────────────────────────────────────┘
