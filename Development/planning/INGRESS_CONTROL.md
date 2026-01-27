@@ -78,6 +78,85 @@ The core principle: **Kill connections we deem are threats FAST.** Like hiring i
 
 ---
 
+## Ingress Control: Comparative Analysis & Performance Ladder
+
+### 1. Nginx (Baseline, Already Near-Optimal)
+- Event-driven (epoll/kqueue), zero-copy sendfile, minimal allocations.
+- Battle-tested, within 5–10% of theoretical max efficiency for general-purpose proxies.
+- Marginal gains possible by disabling unneeded features (logs, gzip, regex, keepalive, etc.), using UNIX sockets, and `reuseport`.
+- Diminishing returns: as a generic HTTP proxy, Nginx is the end of the road for most setups.
+
+### 2. HAProxy (Serious Contender)
+- Faster connection teardown, more deterministic latency under load.
+- Excellent stick-tables for shared state (circuit reputation cache, per-connection state).
+- Very fast reject logic, strong at L4/L7 gating hybrids.
+- Downsides: Less flexible scripting than Lua Nginx, harder to serve challenge pages, smaller Tor-specific ecosystem.
+- Verdict: For "allow/deny/rate/kill" logic, HAProxy can equal or slightly beat Nginx.
+
+### 3. Envoy (Powerful, but Overkill)
+- Advanced filters, WASM extensibility, sophisticated rate limiting.
+- Cons: Memory heavy, complex, slower cold-path rejects, designed for microservices not onion defense.
+- Envoy is best when correctness > raw rejection speed. For Tor, you want the opposite.
+
+### 4. Kernel-Level Tricks (Where Real Gains Appear)
+- **iptables/nftables:** Fastest possible drops, zero userspace cost. No Tor/HTTP/session awareness, but great for SYN floods, known-bad patterns, emergency circuit nuking.
+- **eBPF/XDP:** Packet rejection before socket creation, near line-rate drops, microsecond decisions. Can enforce packet rate, handshake timing, byte thresholds. Complexity and portability are challenges. Still lacks clean Tor circuit identity, but is used by EndGame-class operators for coarse filtering.
+- **Special Emphasis:** Kernel drop is the absolute fastest way to reject traffic, and should be considered as a guardrail for Fortify.
+
+### 5. Custom Rust Ingress (Endgame Move)
+- Surpasses Nginx meaningfully: parses only enough HTTP to decide, allocates almost nothing, tracks per-connection micro-state, enforces PoW inline, closes connections before full request parse, integrates directly with Tor control port.
+- Enables circuit-aware reputation, difficulty escalation, dynamic challenge shaping, deterministic resource caps.
+- **Special Emphasis:** This is the only way to truly surpass Nginx and reach EndGame-class defense. Rust ingress is the "quiet enforcer"—circuit-aware, economic gating, and direct Tor integration.
+
+### 6. Tor-Native Tuning (High Leverage, Often Ignored)
+- Tor itself offers knobs: MaxClientCircuitsPending, MaxStreamsPerCircuit, CircuitBuildTimeout, stream idle timeouts, intro point limits.
+- These reduce attack surface before Nginx even sees traffic. EndGame-class setups always tune Tor aggressively.
+
+---
+
+## Honest Performance Ladder
+
+- **Kernel drop (iptables/XDP):** Fastest possible
+- **Custom Rust ingress:** Endgame tier
+- **HAProxy:** Very strong
+- **Nginx:** Excellent baseline
+- **Envoy:** Heavy, not ideal
+- **Backend app:** Too late
+
+---
+
+## Fortify Implementation Roadmap
+
+### Phase 1 (Now, Pragmatic)
+- Nginx as ingress
+- Lua for verify-or-drop
+- Aggressive timeouts
+- UNIX socket to Fortify
+- No feature creep
+
+### Phase 2 (EndGame Parity)
+- Replace Lua logic with Rust ingress
+- Nginx optional or removed
+- Direct Tor control integration
+- Circuit economics enforced before backend
+
+### Phase 3 (Nuclear)
+- Optional eBPF guardrail
+- Tor-native pressure tuning
+- Backend becomes almost irrelevant
+
+---
+
+## Key Takeaways
+- If Fortify stays "HTTP proxy + rules," it will never fully match EndGame.
+- To reach EndGame-class, Fortify must become a "circuit-aware economic gate that happens to speak HTTP."
+- **Special focus for future work:**
+  - Kernel-level drops for raw speed
+  - Custom Rust ingress for circuit-aware, economic gating
+  - HAProxy as a strong alternative to Nginx for certain gating logic
+
+---
+
 **Bottom line:**
 
-> Be ruthless at the door. Nginx is our first and fastest line of defense. The goal is not perfect hiring, but perfect firing—drop threats before they cost us resources. Fortify v2 must go beyond EndGame by actively killing abusive Tor circuits, not just HTTP requests.
+> Be ruthless at the door. Nginx is our first and fastest line of defense. But to truly reach EndGame-class, Fortify must evolve: kernel drops for speed, Rust ingress for intelligence, and circuit economics for true onion service resilience.
