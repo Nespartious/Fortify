@@ -144,7 +144,7 @@ jobs:
           cargo doc --no-deps --document-private-items
 
       - name: Upload documentation
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rustdoc-${{ github.sha }}
           path: fortify/target/doc/

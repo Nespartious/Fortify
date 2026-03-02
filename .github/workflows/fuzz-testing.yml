@@ -166,7 +166,7 @@ jobs:
           fi
 
       - name: Upload crash artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: steps.check-fuzz.outputs.has_targets == 'true'
         with:
           name: fuzz-crashes
@@ -175,7 +175,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload corpus
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: steps.check-fuzz.outputs.has_targets == 'true'
         with:
           name: fuzz-corpus
