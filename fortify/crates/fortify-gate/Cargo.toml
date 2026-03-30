@@ -23,6 +23,6 @@ serde_json = { workspace = true }
 uuid = { version = "1.19.0", features = ["v4", "fast-rng"] }
 form_urlencoded = "1.2.2"
 chrono = { version = "0.4", features = ["serde"] }
-hmac = "0.12"
+hmac = "0.13"
 base64 = "0.22"
 lazy_static = "1.4"

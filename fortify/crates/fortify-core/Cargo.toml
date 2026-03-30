@@ -16,5 +16,5 @@ chrono = { workspace = true }
 sysinfo = { workspace = true }
 rand = { workspace = true }
 sha2 = "0.10"
-hmac = "0.12"
+hmac = "0.13"
 base64 = "0.22"
