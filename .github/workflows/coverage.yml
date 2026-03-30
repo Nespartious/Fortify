@@ -57,7 +57,7 @@ jobs:
             || true  # Don't fail if coverage is low
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: ./fortify/coverage/cobertura.xml
           fail_ci_if_error: false
