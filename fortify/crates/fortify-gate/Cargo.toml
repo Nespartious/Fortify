@@ -15,7 +15,7 @@ hyper = { version = "1.8", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 http-body-util = "0.1"
 bytes = "1.5"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 rand = { workspace = true }
 serde = { workspace = true }
